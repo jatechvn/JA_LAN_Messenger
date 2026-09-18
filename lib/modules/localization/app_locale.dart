@@ -1,0 +1,866 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+
+enum AppLanguage {
+  vi('vi', 'Tiếng Việt', '🇻🇳 VI'),
+  en('en', 'English', '🇺🇸 EN'),
+  zh('zh', '简体中文', '🇨🇳 CN');
+
+  final String code;
+  final String label;
+  final String tag;
+  const AppLanguage(this.code, this.label, this.tag);
+
+  static AppLanguage fromCode(String? code) {
+    if (code == null) return AppLanguage.vi;
+    final lower = code.toLowerCase();
+    if (lower == 'zh' ||
+        lower == 'cn' ||
+        lower.startsWith('zh_') ||
+        lower.startsWith('zh-')) {
+      return AppLanguage.zh;
+    }
+    for (final l in AppLanguage.values) {
+      if (l.code.toLowerCase() == lower) return l;
+    }
+    return AppLanguage.en;
+  }
+}
+
+class LanguageProvider extends ChangeNotifier {
+  AppLanguage _currentLanguage = AppLanguage.vi;
+  static const String _prefFileName = 'app_preferences.json';
+
+  AppLanguage get currentLanguage => _currentLanguage;
+  String get code => _currentLanguage.code;
+  AppLanguage get nextLanguage =>
+      AppLanguage.values[(_currentLanguage.index + 1) %
+          AppLanguage.values.length];
+
+  LanguageProvider() {
+    _initLocale();
+  }
+
+  void _initLocale() {
+    // 1. Cố gắng đọc lựa chọn đã lưu của người dùng
+    try {
+      final file = File(_getPrefFilePath());
+      if (file.existsSync()) {
+        final content = file.readAsStringSync();
+        final data = jsonDecode(content) as Map<String, dynamic>;
+        if (data.containsKey('language')) {
+          _currentLanguage = AppLanguage.fromCode(data['language'] as String?);
+          return;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Mặc định tự nhận diện theo ngôn ngữ Windows
+    _currentLanguage = _detectWindowsLanguage();
+  }
+
+  static AppLanguage _detectWindowsLanguage() {
+    try {
+      final loc = Platform.localeName.toLowerCase();
+      if (loc.startsWith('zh') || loc.startsWith('cn')) {
+        return AppLanguage.zh;
+      }
+      if (loc.startsWith('vi')) {
+        return AppLanguage.vi;
+      }
+      return AppLanguage.en;
+    } catch (_) {
+      return AppLanguage.en;
+    }
+  }
+
+  static String _getPrefFilePath() {
+    final appData = Platform.environment['APPDATA'];
+    if (appData != null && appData.isNotEmpty) {
+      final dir = Directory('$appData\\JA_LAN_Messenger');
+      if (!dir.existsSync()) {
+        try {
+          dir.createSync(recursive: true);
+        } catch (_) {}
+      }
+      return '${dir.path}\\$_prefFileName';
+    }
+    return _prefFileName;
+  }
+
+  void setLanguage(AppLanguage language) {
+    if (_currentLanguage == language) return;
+    _currentLanguage = language;
+    _savePreference();
+    notifyListeners();
+  }
+
+  void cycleLanguage() {
+    final nextIndex = (_currentLanguage.index + 1) % AppLanguage.values.length;
+    setLanguage(AppLanguage.values[nextIndex]);
+  }
+
+  void _savePreference() {
+    try {
+      final file = File(_getPrefFilePath());
+      final Map<String, dynamic> data = file.existsSync()
+          ? (jsonDecode(file.readAsStringSync()) as Map<String, dynamic>? ?? {})
+          : {};
+      data['language'] = _currentLanguage.code;
+      file.writeAsStringSync(jsonEncode(data));
+    } catch (_) {}
+  }
+
+  /// Tra cứu chuỗi dịch
+  String tr(String key) {
+    final dict = _translations[_currentLanguage.code] ?? _translations['en']!;
+    return dict[key] ?? _translations['en']?[key] ?? key;
+  }
+
+  static final Map<String, Map<String, String>> _translations = {
+    'vi': {
+      'appName': 'JA LAN Messenger',
+      'tabChats': 'Trò chuyện',
+      'tabTransfers': 'Truyền tệp',
+      'tabSettings': 'Cài đặt hệ thống',
+      'searchHint': 'Tìm theo tên hoặc IP...',
+      'scanAdapters': 'Chọn card mạng để quét',
+      'scanAdaptersHelp':
+          'Quét toàn subnet bằng UDP và kết nối BeeBEEP TCP. Bỏ chọn các card không cần dùng.',
+      'rescanTooltip': 'Quét lại mạng LAN & ARP',
+      'addIpTooltip': 'Thêm IP thủ công',
+      'createGroupTooltip': 'Tạo nhóm mới',
+      'themeLight': 'Giao diện Sáng',
+      'themeDark': 'Giao diện Tối',
+      'langSwitch': 'Đổi ngôn ngữ (EN/VI/CN)',
+      'allUsersTitle': 'Toàn thể (All Users)',
+      'allUsersDesc': 'Kênh thông báo & chat toàn bộ thành viên',
+      'groupsSection': 'Nhóm trò chuyện',
+      'devicesOnline': 'máy online',
+      'scanning': 'Đang quét...',
+      'realtime': 'Thời gian thực',
+      'realtimeListening': 'Lắng nghe thời gian thực',
+      'emptyNoPeer': 'Chưa có máy nào online hoặc bấm nút "+" để nhập IP',
+      'emptySelectChat': 'Chọn một cuộc trò chuyện',
+      'emptySelectChatDesc':
+          'Chọn một máy trạm hoặc nhóm từ danh sách bên trái để bắt đầu chat hoặc truyền tệp qua mạng LAN',
+      'noMessages': 'Chưa có tin nhắn nào',
+      'noMessagesDesc': 'Hãy gửi lời chào đầu tiên để bắt đầu hội thoại!',
+      'inputHint': 'Nhập tin nhắn (Enter để gửi, Shift+Enter xuống dòng)...',
+      'send': 'Gửi',
+      'attachFile': 'Đính kèm tệp',
+      'pasteClipboard': 'Dán ảnh/tệp từ clipboard (Ctrl+V)',
+      'nudge': 'Rung chuông Nudge',
+      'addIpTitle': 'Thêm máy qua IP',
+      'addIpDesc': 'Nhập địa chỉ IP của máy trong mạng LAN hoặc VPN:',
+      'createGroupTitle': 'Tạo nhóm mới',
+      'groupNameHint': 'Nhập tên nhóm (e.g. Phòng Kỹ Thuật)...',
+      'selectMembers': 'Chọn thành viên tham gia nhóm:',
+      'noAvailableMembers': 'Không có thành viên online để thêm vào nhóm',
+      'groupMembersCount': 'thành viên',
+      'cancel': 'Hủy',
+      'connect': 'Kết nối',
+      'create': 'Tạo nhóm',
+      'save': 'Lưu',
+      'newPeerDiscovered': '✨ Phát hiện thiết bị mới:',
+      'scanCompleted': '✅ Đã quét xong: tìm thấy',
+      'pastingImage': '📷 Đang gửi ảnh chụp từ Clipboard...',
+      'pastingFiles': '📁 Đang gửi tệp từ Clipboard...',
+      'rescan': 'Quét lại',
+      'readyDiscover': 'Sẵn sàng dò tìm máy mới',
+      'listeningOn': 'Đang lắng nghe trên',
+      'cardAdapters': 'Card mạng',
+      'fileSent': 'Đã gửi tệp',
+      'imageSent': 'Đã gửi ảnh',
+      'conversationInfo': 'Thông tin hội thoại',
+      'mute': 'Tắt thông báo',
+      'unmute': 'Bật thông báo',
+      'pin': 'Ghim',
+      'unpin': 'Bỏ ghim',
+      'muteNotifications': 'Tắt thông báo',
+      'unmuteNotifications': 'Bật thông báo',
+      'pinChat': 'Ghim hội thoại',
+      'unpinChat': 'Bỏ ghim',
+      'createGroup': 'Tạo nhóm',
+      'editName': 'Đổi tên gợi nhớ',
+      'nickname': 'Tên gợi nhớ',
+      'mediaPhotos': 'Ảnh & Video',
+      'sharedFiles': 'Tệp tin đã chia sẻ',
+      'viewAll': 'Xem tất cả',
+      'noMediaShared': 'Chưa có ảnh/video được chia sẻ',
+      'noFilesShared': 'Chưa có File được chia sẻ trong hội thoại này',
+      'openFile': 'Mở tệp',
+      'openFolder': 'Mở thư mục chứa',
+      'clearHistory': 'Xóa lịch sử trò chuyện',
+      'clearHistoryConfirm':
+          'Bạn có chắc chắn muốn xóa toàn bộ tin nhắn trong cuộc trò chuyện này?',
+      'groupMembers': 'Thành viên nhóm',
+      'addMember': 'Thêm thành viên',
+      'leaveGroup': 'Rời nhóm',
+      'deleteGroup': 'Giải tán nhóm',
+      'copiedToClipboard': 'Đã sao chép vào bộ nhớ tạm',
+      'zoomImage': 'Phóng to ảnh',
+      'toggleDetails': 'Thông tin hội thoại',
+      'networkDetails': 'Chi tiết kết nối',
+      'ipAddress': 'Địa chỉ IP',
+      'port': 'Cổng kết nối',
+      'workgroup': 'Nhóm làm việc',
+      'status': 'Trạng thái',
+      'nextLang': 'Nhấn để chuyển sang',
+      'switchLanguage': 'Chuyển nhanh ngôn ngữ',
+      'nudgeReceived': 'vừa rung chuông Nudge!',
+      'scanCompletedSuffix': 'thiết bị trực tuyến',
+      'messageRevoked': 'Tin nhắn đã được thu hồi',
+      'revokeMessage': 'Thu hồi tin nhắn',
+      'revokeConfirm': 'Bạn có chắc chắn muốn thu hồi tin nhắn này không?',
+      'typing': 'đang soạn tin...',
+      'seen': 'Đã xem',
+      'newMessageNotification': 'Tin nhắn mới từ',
+      'copy': 'Sao chép',
+      // Truyền tệp
+      'transfersTitle': 'Quản lý truyền tệp LAN',
+      'openDownloadFolder': 'Mở thư mục tải về',
+      'noTransfers': 'Chưa có tác vụ truyền tệp nào',
+      'noTransfersDesc': 'Gửi tệp bằng nút Đính kèm trong khung Chat',
+      'transferSpeed': 'Tốc độ',
+      'transferCompleted': 'Hoàn thành',
+      'transferFailed': 'Thất bại',
+      'transferPreparing': 'Đang chuẩn bị...',
+      'transferring': 'Đang truyền',
+      'transferPending': 'Chờ',
+      'transferCancelled': 'Đã hủy',
+      // Cài đặt hệ thống
+      'systemSettings': 'Cài Đặt Hệ Thống',
+      'tabAdvancedSettings': 'Cài đặt nâng cao',
+      'tabAbout': 'Giới thiệu',
+      'tabUserGuide': 'Hướng dẫn sử dụng',
+      'defaults': 'Mặc định',
+      'saveChanges': 'Lưu thay đổi',
+      'myProfileOnLan': 'THÔNG TIN CỦA BẠN TRÊN MẠNG LAN',
+      'glassTuningTitle': 'HIỆU ỨNG KÍNH MỜ (GLASS TUNING)',
+      'cardBlur': 'Card Blur (Độ mờ thẻ)',
+      'cardOpacity': 'Card Opacity (Độ trong suốt thẻ)',
+      'dialogBlur': 'Dialog Blur (Độ mờ hộp thoại)',
+      'dialogOpacity': 'Dialog Opacity (Độ trong suốt hộp thoại)',
+      'networkConfigTitle': 'MÃ HÓA & CỔNG MẠNG (PORTS)',
+      'securityEncryptionTitle': 'BẢO MẬT & MÃ HÓA NỘI BỘ',
+      'customPasswordTitle': 'Dùng mật khẩu BeeBEEP tùy chỉnh',
+      'customPasswordSubtitle':
+          'Chat luôn mã hóa; mật khẩu phải khớp với BeeBEEP gốc',
+      'beebeepPasswordLabel': 'Mật khẩu mạng BeeBEEP',
+      // Lịch sử tìm kiếm
+      'searchHistory': 'Lịch sử tìm kiếm',
+      'clearSearchHistory': 'Xóa lịch sử',
+      'noSearchHistory': 'Chưa có lịch sử tìm kiếm',
+      // Thông báo Toast & Scan
+      'toastNewDevice': '✨ Phát hiện thiết bị mới:',
+      'toastScanning': '🔍 Đang quét lại mạng LAN & bảng ARP...',
+      'toastScanDone': '✅ Đã quét xong: tìm thấy',
+      'toastNudge': 'vừa rung chuông Nudge!',
+      'toastPastingImage': '📷 Đang gửi ảnh chụp từ Clipboard...',
+      'toastImageSent': '📷 Đã gửi yêu cầu truyền ảnh; đang chờ bên nhận tải.',
+      'toastPastingFiles': '📁 Đang gửi tệp từ Clipboard...',
+      'toastFilesSent':
+          '📁 Đã gửi yêu cầu truyền tệp; xem tiến độ trong danh sách truyền.',
+      'versionLabel': 'Phiên bản',
+      'aboutAppDesc1':
+          'JA LAN Messenger là ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless).',
+      'aboutAppDesc2':
+          'Dự án được xây dựng trên nền tảng Flutter Desktop (Dart) kết hợp ý tưởng và tương thích giao thức từ dự án mã nguồn mở BeeBEEP (C++/Qt) của tác giả Marco Mastroddi.',
+      'techInfoTitle': 'Thông tin kỹ thuật:',
+      'techInfoPureDart':
+          '• Pure Dart Sockets (Khởi động tức thì, RAM ~40-60MB)',
+      'guideStep1Title': 'Tự động tìm kiếm đồng nghiệp trong mạng',
+      'guideStep1Desc':
+          'Chỉ cần mở ứng dụng, JA LAN Messenger sẽ tự động phát sóng và lắng nghe các máy tính khác trong cùng dải mạng LAN qua cổng UDP 36475.',
+      'guideStep2Title': 'Kết nối máy khác dải mạng (Subnet / VPN)',
+      'guideStep2Desc':
+          'Nếu hai máy ở các lớp mạng khác nhau (ví dụ 192.168.1.x và 192.168.2.x), hãy bấm vào nút biểu tượng "+" ở cột danh bạ và nhập trực tiếp địa chỉ IP của máy đối tác.',
+      'guideStep3Title': 'Gửi tập tin dung lượng lớn tốc độ cao',
+      'guideStep3Desc':
+          'Bấm vào biểu tượng kẹp giấy ở khung chat để chọn file. File được stream trực tiếp qua kết nối TCP cổng 6476 với tốc độ tối đa của switch mạng mà không tốn dung lượng RAM.',
+      'guideStep4Title': 'Quyền tường lửa Windows Firewall',
+      'guideStep4Desc':
+          'Khi mở app lần đầu, hãy chắc chắn chọn "Allow access" trên hộp thoại Windows Defender Firewall để cho phép ứng dụng mở cổng lắng nghe.',
+      'transferTo': 'Tới',
+      'transferFrom': 'Từ',
+      'nudgeNotificationBody': 'Đã gửi một tín hiệu rung chuông!',
+      'emojis': 'Biểu tượng cảm xúc',
+      'categoryAll': 'Tất cả',
+      'categoryOnline': 'Trực tuyến',
+      'categoryGroups': 'Nhóm',
+      'systemAndStartup': 'Hệ thống & Khởi động',
+      'bootWithWindows': 'Khởi động cùng Windows',
+      'bootWithWindowsDesc':
+          'Tự động chạy JA LAN Messenger khi đăng nhập Windows',
+      'windowCloseAction': 'Hành vi khi đóng cửa sổ',
+      'closeActionAsk': 'Luôn hỏi mỗi lần đóng',
+      'closeActionMinimize': 'Thu nhỏ xuống khay hệ thống',
+      'closeActionExit': 'Thoát ứng dụng hoàn toàn',
+      'closeDialogTitle': 'Đóng ứng dụng',
+      'closeDialogPrompt': 'Bạn muốn thực hiện hành động nào khi đóng cửa sổ?',
+      'rememberChoice': 'Ghi nhớ lựa chọn (không hỏi lại)',
+      'trayOpen': 'Mở JA LAN Messenger',
+      'trayRescan': 'Quét lại mạng LAN',
+      'trayExit': 'Thoát ứng dụng',
+      'confirm': 'Xác nhận',
+      // Trợ lý JA-AI
+      'aiAssistant': 'Trợ lý JA-AI',
+      'aiAssistantDesc': 'Mô hình JA-AI cục bộ • Tự động xếp hàng',
+      'aiSettingsTitle': 'Trợ lý JA-AI',
+      'enableAiTitle': 'Bật tích hợp Trợ lý JA-AI',
+      'enableAiSubtitle':
+          'Hiển thị Trợ lý JA-AI trong danh bạ và cho phép trò chuyện trực tiếp',
+      'aiServerUrlLabel': 'Địa chỉ máy chủ JA-AI',
+      'testAiConnection': 'Kiểm tra kết nối',
+      'aiConnecting': 'Đang kiểm tra...',
+      'aiConnected': 'Đã kết nối thành công',
+      'aiConnectionFailed': 'Kết nối thất bại',
+      'defaultAiModel': 'Mô hình AI mặc định',
+      'thinkingMode': 'Chế độ suy nghĩ (Thinking)',
+      'thinkingModeDesc':
+          'Cho phép mô hình lập luận chi tiết trước khi trả lời (chỉ hỗ trợ Qwen 3.5)',
+      'thinkingOn': 'Thinking: BẬT',
+      'thinkingOff': 'Thinking: TẮT',
+      'aiSpecContext': 'Ngữ cảnh',
+      'aiSpecQueue': 'Hàng đợi',
+      'aiSpecTimeout': 'Thời gian chờ',
+      'aiThinkingHeader': 'Quá trình suy nghĩ',
+      'aiThinkingRunning': 'Đang suy nghĩ...',
+      'stopAiGeneration': 'Dừng tạo',
+      'clearAiChat': 'Xóa lịch sử chat',
+      'clearAiChatConfirm':
+          'Bạn có chắc muốn xóa toàn bộ lịch sử trò chuyện với AI?',
+      'aiQueueWaiting': 'Đang xếp hàng... (#%s)',
+      'aiQueueFull':
+          'Hàng đợi xử lý AI đang đầy (tối đa 4 lượt). Vui lòng đợi lượt trước hoàn tất.',
+      'aiModel': 'Model',
+      'aiGenerating': 'Đang tạo...',
+      'ready': 'Sẵn sàng',
+      'aiProcessing': 'Đang xử lý',
+      'aiQueue': 'Hàng đợi',
+      'aiDisabled': 'Đã tắt',
+      'copyCode': 'Sao chép mã',
+      'codeCopied': 'Đã sao chép mã!',
+      'copyMessage': 'Sao chép tin nhắn',
+      'messageCopied': 'Đã sao chép tin nhắn!',
+      'regenerateAi': 'Tạo lại câu trả lời',
+      'refreshAiModels': 'Làm mới danh sách mô hình',
+      'aiModelsRefreshed': 'Đã cập nhật %d mô hình từ máy chủ',
+      'noModelsOnServer': 'Không tìm thấy mô hình nào trên máy chủ',
+      'detectingModels': 'Đang tải danh sách mô hình...',
+      // Lưu trữ lịch sử tin nhắn
+      'chatHistoryTitle': 'LƯU TRỮ LỊCH SỬ TIN NHẮN',
+      'enableChatHistory': 'Lưu lịch sử trò chuyện vào máy',
+      'enableChatHistoryDesc':
+          'Tự động lưu tin nhắn trên máy tính để không bị mất khi tắt app',
+      'clearAllChatHistory': 'Xóa toàn bộ lịch sử trò chuyện',
+      'clearAllChatHistoryConfirm':
+          'Bạn có chắc chắn muốn xóa vĩnh viễn toàn bộ lịch sử tin nhắn của tất cả cuộc trò chuyện không?',
+      'chatHistoryCleared': 'Đã xóa toàn bộ lịch sử trò chuyện!',
+      'chatHistorySize': 'Dung lượng lưu trữ',
+      // Trích dẫn & Ghim tin nhắn
+      'quote': 'Trích dẫn',
+      'replyingTo': 'Đang trả lời',
+      'cancelReply': 'Hủy trả lời',
+      'pinMessage': 'Ghim tin nhắn',
+      'unpinMessage': 'Bỏ ghim tin nhắn',
+      'pinnedMessage': 'Tin nhắn đã ghim',
+      'pinnedMessagesCount': 'Tin nhắn đã ghim (%d/%d)',
+      'messagePinnedToast': 'Đã ghim tin nhắn vào đầu cuộc trò chuyện',
+      'messageUnpinnedToast': 'Đã bỏ ghim tin nhắn',
+    },
+    'en': {
+      'appName': 'JA LAN Messenger',
+      'tabChats': 'Chats',
+      'tabTransfers': 'Transfers',
+      'tabSettings': 'Settings',
+      'searchHint': 'Search by name or IP...',
+      'scanAdapters': 'Select network adapters',
+      'scanAdaptersHelp':
+          'Scan the entire subnet using UDP and BeeBEEP TCP connections. Uncheck adapters you do not need.',
+      'rescanTooltip': 'Rescan LAN & ARP',
+      'addIpTooltip': 'Add IP manually',
+      'createGroupTooltip': 'Create new group',
+      'themeLight': 'Light Mode',
+      'themeDark': 'Dark Mode',
+      'langSwitch': 'Change language (EN/VI/CN)',
+      'allUsersTitle': 'All Users (Broadcast)',
+      'allUsersDesc': 'Broadcast & announcement to all members',
+      'groupsSection': 'Chat Groups',
+      'devicesOnline': 'online',
+      'scanning': 'Scanning...',
+      'realtime': 'Realtime',
+      'realtimeListening': 'Listening realtime',
+      'emptyNoPeer': 'No devices online yet or click "+" to add IP',
+      'emptySelectChat': 'Select a conversation',
+      'emptySelectChatDesc':
+          'Select a workstation or group from the left list to start chatting or transferring files',
+      'noMessages': 'No messages yet',
+      'noMessagesDesc': 'Send a greeting to start the conversation!',
+      'inputHint': 'Type a message (Enter to send, Shift+Enter for newline)...',
+      'send': 'Send',
+      'attachFile': 'Attach file',
+      'pasteClipboard': 'Paste image/file from clipboard (Ctrl+V)',
+      'nudge': 'Nudge buzz',
+      'addIpTitle': 'Add Device by IP',
+      'addIpDesc': 'Enter IPv4 address of workstation in LAN or VPN:',
+      'createGroupTitle': 'Create New Group',
+      'groupNameHint': 'Enter group name (e.g. Engineering Team)...',
+      'selectMembers': 'Select group members:',
+      'noAvailableMembers': 'No online members available to add',
+      'groupMembersCount': 'members',
+      'cancel': 'Cancel',
+      'connect': 'Connect',
+      'create': 'Create Group',
+      'save': 'Save',
+      'newPeerDiscovered': '✨ New device discovered:',
+      'scanCompleted': '✅ Scan complete: found',
+      'pastingImage': '📷 Sending image from Clipboard...',
+      'pastingFiles': '📁 Sending files from Clipboard...',
+      'rescan': 'Rescan',
+      'readyDiscover': 'Ready to discover new devices',
+      'listeningOn': 'Listening on',
+      'cardAdapters': 'NIC',
+      'fileSent': 'Sent file',
+      'imageSent': 'Sent image',
+      'conversationInfo': 'Conversation Info',
+      'mute': 'Mute',
+      'unmute': 'Unmute',
+      'pin': 'Pin',
+      'unpin': 'Unpin',
+      'muteNotifications': 'Mute',
+      'unmuteNotifications': 'Unmute',
+      'pinChat': 'Pin Chat',
+      'unpinChat': 'Unpin',
+      'createGroup': 'Create Group',
+      'editName': 'Edit Nickname',
+      'nickname': 'Nickname',
+      'mediaPhotos': 'Photos & Media',
+      'sharedFiles': 'Shared Files',
+      'viewAll': 'View all',
+      'noMediaShared': 'No media shared in this conversation',
+      'noFilesShared': 'No files shared in this conversation',
+      'openFile': 'Open File',
+      'openFolder': 'Show in Folder',
+      'clearHistory': 'Clear Chat History',
+      'clearHistoryConfirm':
+          'Are you sure you want to clear all messages in this conversation?',
+      'groupMembers': 'Group Members',
+      'addMember': 'Add Member',
+      'leaveGroup': 'Leave Group',
+      'deleteGroup': 'Delete Group',
+      'copiedToClipboard': 'Copied to clipboard',
+      'zoomImage': 'Zoom Image',
+      'toggleDetails': 'Conversation Details',
+      'networkDetails': 'Connection Details',
+      'ipAddress': 'IP Address',
+      'port': 'Port',
+      'workgroup': 'Workgroup',
+      'status': 'Status',
+      'nextLang': 'Click to switch to',
+      'switchLanguage': 'Quick switch language',
+      'nudgeReceived': 'buzzed you!',
+      'scanCompletedSuffix': 'online devices',
+      'messageRevoked': 'Message was recalled',
+      'revokeMessage': 'Recall message',
+      'revokeConfirm': 'Are you sure you want to recall this message?',
+      'typing': 'is typing...',
+      'seen': 'Seen',
+      'newMessageNotification': 'New message from',
+      'copy': 'Copy',
+      // Transfers
+      'transfersTitle': 'LAN File Transfers',
+      'openDownloadFolder': 'Open Downloads Folder',
+      'noTransfers': 'No file transfers yet',
+      'noTransfersDesc': 'Send files using the Attach button in Chat',
+      'transferSpeed': 'Speed',
+      'transferCompleted': 'Completed',
+      'transferFailed': 'Failed',
+      'transferPreparing': 'Preparing...',
+      'transferring': 'Transferring',
+      'transferPending': 'Pending',
+      'transferCancelled': 'Cancelled',
+      // System Settings
+      'systemSettings': 'System Settings',
+      'tabAdvancedSettings': 'Advanced Settings',
+      'tabAbout': 'About',
+      'tabUserGuide': 'User Guide',
+      'defaults': 'Defaults',
+      'saveChanges': 'Save Changes',
+      'myProfileOnLan': 'YOUR PROFILE ON LAN',
+      'glassTuningTitle': 'GLASS TUNING (BLUR EFFECT)',
+      'cardBlur': 'Card Blur',
+      'cardOpacity': 'Card Opacity',
+      'dialogBlur': 'Dialog Blur',
+      'dialogOpacity': 'Dialog Opacity',
+      'networkConfigTitle': 'NETWORK & PORTS CONFIG',
+      'securityEncryptionTitle': 'SECURITY & ENCRYPTION',
+      'customPasswordTitle': 'Use custom BeeBEEP password',
+      'customPasswordSubtitle':
+          'Chat is always encrypted; password must match original BeeBEEP',
+      'beebeepPasswordLabel': 'BeeBEEP Network Password',
+      // Search History
+      'searchHistory': 'Search History',
+      'clearSearchHistory': 'Clear History',
+      'noSearchHistory': 'No recent searches',
+      // Toast & Scan Notifications
+      'toastNewDevice': '✨ New device discovered:',
+      'toastScanning': '🔍 Rescanning LAN & ARP table...',
+      'toastScanDone': '✅ Scan complete: found',
+      'toastNudge': 'buzzed you with Nudge!',
+      'toastPastingImage': '📷 Sending image from Clipboard...',
+      'toastImageSent':
+          '📷 Image transfer request sent; waiting for peer to download.',
+      'toastPastingFiles': '📁 Sending files from Clipboard...',
+      'toastFilesSent':
+          '📁 File transfer request sent; track progress in Transfers tab.',
+      'versionLabel': 'Version',
+      'aboutAppDesc1':
+          'JA LAN Messenger is a high-speed peer-to-peer (P2P) messaging and file transfer application designed specifically for office local area networks (LAN), requiring no intermediate server (Serverless).',
+      'aboutAppDesc2':
+          'Built on Flutter Desktop (Dart), combining design ideas and protocol compatibility from the open-source BeeBEEP (C++/Qt) project by Marco Mastroddi.',
+      'techInfoTitle': 'Technical Specifications:',
+      'techInfoPureDart': '• Pure Dart Sockets (Instant start, RAM ~40-60MB)',
+      'guideStep1Title': 'Auto-discover colleagues on LAN',
+      'guideStep1Desc':
+          'Simply launch the app; JA LAN Messenger automatically broadcasts and listens for other workstations across the local network via UDP port 36475.',
+      'guideStep2Title': 'Cross-subnet or VPN connections',
+      'guideStep2Desc':
+          'If workstations reside in different subnets (e.g. 192.168.1.x and 192.168.2.x), click the "+" button in the contacts list to directly enter the remote IP address.',
+      'guideStep3Title': 'High-speed large file transfers',
+      'guideStep3Desc':
+          'Click the paperclip icon in chat to select files. Data streams directly via TCP port 6476 at full wire speed without excessive memory usage.',
+      'guideStep4Title': 'Windows Firewall permissions',
+      'guideStep4Desc':
+          'When opening the app for the first time, make sure to select "Allow access" on Windows Defender Firewall to allow incoming connections.',
+      'transferTo': 'To',
+      'transferFrom': 'From',
+      'nudgeNotificationBody': 'Sent a nudge buzz!',
+      'emojis': 'Quick Emojis',
+      'categoryAll': 'All',
+      'categoryOnline': 'Online',
+      'categoryGroups': 'Groups',
+      'systemAndStartup': 'System & Startup',
+      'bootWithWindows': 'Launch with Windows',
+      'bootWithWindowsDesc':
+          'Automatically start JA LAN Messenger upon Windows login',
+      'windowCloseAction': 'Window Close Action',
+      'closeActionAsk': 'Ask every time',
+      'closeActionMinimize': 'Minimize to system tray',
+      'closeActionExit': 'Exit application completely',
+      'closeDialogTitle': 'Close Application',
+      'closeDialogPrompt': 'What would you like to do when closing the window?',
+      'rememberChoice': 'Remember my choice (do not ask again)',
+      'trayOpen': 'Open JA LAN Messenger',
+      'trayRescan': 'Rescan LAN',
+      'trayExit': 'Exit Application',
+      'confirm': 'Confirm',
+      // JA-AI Assistant
+      'aiAssistant': 'JA-AI Assistant',
+      'aiAssistantDesc': 'Local JA-AI model • Auto-queued',
+      'aiSettingsTitle': 'JA-AI Assistant',
+      'enableAiTitle': 'Enable JA-AI Assistant',
+      'enableAiSubtitle':
+          'Display JA-AI Assistant in contacts and enable direct chat',
+      'aiServerUrlLabel': 'JA-AI Server URL',
+      'testAiConnection': 'Test Connection',
+      'aiConnecting': 'Testing...',
+      'aiConnected': 'Connected successfully',
+      'aiConnectionFailed': 'Connection failed',
+      'defaultAiModel': 'Default AI Model',
+      'thinkingMode': 'Thinking Mode',
+      'thinkingModeDesc':
+          'Allow detailed reasoning before answering (Qwen 3.5 only)',
+      'thinkingOn': 'Thinking: ON',
+      'thinkingOff': 'Thinking: OFF',
+      'aiSpecContext': 'Context',
+      'aiSpecQueue': 'Max Queue',
+      'aiSpecTimeout': 'Timeout',
+      'aiThinkingHeader': 'Thought Process',
+      'aiThinkingRunning': 'Thinking...',
+      'stopAiGeneration': 'Stop',
+      'clearAiChat': 'Clear AI Chat',
+      'clearAiChatConfirm':
+          'Are you sure you want to clear conversation history with AI?',
+      'aiQueueWaiting': 'In queue... (#%s)',
+      'aiQueueFull':
+          'AI queue is full (max 4). Please wait for prior requests to finish.',
+      'aiModel': 'Model',
+      'aiGenerating': 'Generating...',
+      'ready': 'Ready',
+      'aiProcessing': 'Processing',
+      'aiQueue': 'Queue',
+      'aiDisabled': 'Disabled',
+      'copyCode': 'Copy code',
+      'codeCopied': 'Code copied!',
+      'copyMessage': 'Copy message',
+      'messageCopied': 'Message copied!',
+      'regenerateAi': 'Regenerate response',
+      'refreshAiModels': 'Refresh model list',
+      'aiModelsRefreshed': 'Updated %d models from server',
+      'noModelsOnServer': 'No models found on server',
+      'detectingModels': 'Detecting models...',
+      // Chat history persistence
+      'chatHistoryTitle': 'CHAT HISTORY STORAGE',
+      'enableChatHistory': 'Save chat history locally',
+      'enableChatHistoryDesc':
+          'Automatically persist messages locally across app restarts',
+      'clearAllChatHistory': 'Clear all chat history',
+      'clearAllChatHistoryConfirm':
+          'Are you sure you want to permanently delete all message history across all conversations?',
+      'chatHistoryCleared': 'All chat history has been cleared!',
+      'chatHistorySize': 'Storage size',
+      // Quote & Pin messages
+      'quote': 'Quote',
+      'replyingTo': 'Replying to',
+      'cancelReply': 'Cancel reply',
+      'pinMessage': 'Pin message',
+      'unpinMessage': 'Unpin message',
+      'pinnedMessage': 'Pinned message',
+      'pinnedMessagesCount': 'Pinned messages (%d/%d)',
+      'messagePinnedToast': 'Message pinned to top of chat',
+      'messageUnpinnedToast': 'Message unpinned',
+    },
+    'zh': {
+      'appName': 'JA LAN Messenger',
+      'tabChats': '聊天',
+      'tabTransfers': '传输',
+      'tabSettings': '系统设置',
+      'searchHint': '按名称或IP搜索...',
+      'scanAdapters': '选择扫描网卡',
+      'scanAdaptersHelp': '通过 UDP 和 BeeBEEP TCP 连接扫描整个子网。取消选择不需要的网卡。',
+      'rescanTooltip': '重新扫描局域网与ARP',
+      'addIpTooltip': '手动添加IP',
+      'createGroupTooltip': '创建新群组',
+      'themeLight': '明亮模式',
+      'themeDark': '暗黑模式',
+      'langSwitch': '切换语言 (EN/VI/CN)',
+      'allUsersTitle': '全体广播 (All Users)',
+      'allUsersDesc': '向所有在线成员广播通知与聊天',
+      'groupsSection': '聊天群组',
+      'devicesOnline': '台设备在线',
+      'scanning': '扫描中...',
+      'realtime': '实时',
+      'realtimeListening': '实时监听中',
+      'emptyNoPeer': '暂无在线设备，或点击"+"手动添加IP',
+      'emptySelectChat': '选择一个对话',
+      'emptySelectChatDesc': '从左侧列表中选择工作站或群组以开始局域网聊天或文件传输',
+      'noMessages': '暂无消息',
+      'noMessagesDesc': '发送第一条消息开始对话吧！',
+      'inputHint': '输入消息（Enter 发送，Shift+Enter 换行）...',
+      'send': '发送',
+      'attachFile': '附加文件',
+      'pasteClipboard': '从剪贴板粘贴图片/文件 (Ctrl+V)',
+      'nudge': '窗口抖动提醒',
+      'addIpTitle': '通过IP添加设备',
+      'addIpDesc': '输入局域网或VPN中工作站的IPv4地址：',
+      'createGroupTitle': '创建新群组',
+      'groupNameHint': '输入群组名称（例如：技术部）...',
+      'selectMembers': '选择群组成员：',
+      'noAvailableMembers': '暂无可添加的在线成员',
+      'groupMembersCount': '位成员',
+      'cancel': '取消',
+      'connect': '连接',
+      'create': '创建群组',
+      'save': '保存',
+      'newPeerDiscovered': '✨ 发现新设备：',
+      'scanCompleted': '✅ 扫描完成：发现',
+      'pastingImage': '📷 正在发送剪贴板图片...',
+      'pastingFiles': '📁 正在发送剪贴板文件...',
+      'rescan': '重新扫描',
+      'readyDiscover': '准备发现新设备',
+      'listeningOn': '正在监听于',
+      'cardAdapters': '网卡',
+      'fileSent': '已发送文件',
+      'imageSent': '已发送图片',
+      'conversationInfo': '会话详情',
+      'mute': '静音',
+      'unmute': '取消静音',
+      'pin': '置顶',
+      'unpin': '取消置顶',
+      'muteNotifications': '静音通知',
+      'unmuteNotifications': '开启通知',
+      'pinChat': '置顶会话',
+      'unpinChat': '取消置顶',
+      'createGroup': '创建群组',
+      'editName': '修改备注',
+      'nickname': '备注名',
+      'mediaPhotos': '图片与视频',
+      'sharedFiles': '已发文件',
+      'viewAll': '查看全部',
+      'noMediaShared': '此会话暂无图片或视频',
+      'noFilesShared': '此会话暂无文件分享',
+      'openFile': '打开文件',
+      'openFolder': '打开所在文件夹',
+      'clearHistory': '清空聊天记录',
+      'clearHistoryConfirm': '确定要清空此会话的所有聊天记录吗？',
+      'groupMembers': '群成员',
+      'addMember': '添加成员',
+      'leaveGroup': '退出群组',
+      'deleteGroup': '解散群组',
+      'copiedToClipboard': '已复制到剪贴板',
+      'zoomImage': '查看大图',
+      'toggleDetails': '会话详情',
+      'networkDetails': '连接详情',
+      'ipAddress': 'IP 地址',
+      'port': '端口',
+      'workgroup': '工作组',
+      'status': '状态',
+      'nextLang': '点击切换为',
+      'switchLanguage': '快速切换语言',
+      'nudgeReceived': '给您发送了一个窗口抖动！',
+      'scanCompletedSuffix': '台在线设备',
+      'messageRevoked': '消息已撤回',
+      'revokeMessage': '撤回消息',
+      'revokeConfirm': '确定要撤回这条消息吗？',
+      'typing': '正在输入...',
+      'seen': '已读',
+      'newMessageNotification': '新消息来自',
+      'copy': '复制',
+      // 文件传输
+      'transfersTitle': '局域网文件传输管理',
+      'openDownloadFolder': '打开下载文件夹',
+      'noTransfers': '暂无传输任务',
+      'noTransfersDesc': '在聊天窗口中使用附件按钮发送文件',
+      'transferSpeed': '速度',
+      'transferCompleted': '已完成',
+      'transferFailed': '失败',
+      'transferPreparing': '准备中...',
+      'transferring': '传输中',
+      'transferPending': '等待',
+      'transferCancelled': '已取消',
+      // 系统设置
+      'systemSettings': '系统设置',
+      'tabAdvancedSettings': '高级设置',
+      'tabAbout': '关于',
+      'tabUserGuide': '使用指南',
+      'defaults': '恢复默认',
+      'saveChanges': '保存更改',
+      'myProfileOnLan': '您的局域网配置',
+      'glassTuningTitle': '毛玻璃效果微调 (GLASS TUNING)',
+      'cardBlur': '卡片模糊度 (Card Blur)',
+      'cardOpacity': '卡片透明度 (Card Opacity)',
+      'dialogBlur': '对话框模糊度 (Dialog Blur)',
+      'dialogOpacity': '对话框透明度 (Dialog Opacity)',
+      'networkConfigTitle': '网络端口与加密配置',
+      'securityEncryptionTitle': '内网安全与加密',
+      'customPasswordTitle': '使用自定义BeeBEEP密码',
+      'customPasswordSubtitle': '聊天全程加密；密码需与原生BeeBEEP一致',
+      'beebeepPasswordLabel': 'BeeBEEP网络密码',
+      // 搜索历史
+      'searchHistory': '搜索历史',
+      'clearSearchHistory': '清空历史',
+      'noSearchHistory': '暂无搜索历史记录',
+      // Toast与扫描通知
+      'toastNewDevice': '✨ 发现新设备：',
+      'toastScanning': '🔍 正在重新扫描局域网与ARP表...',
+      'toastScanDone': '✅ 扫描完成：发现',
+      'toastNudge': '向您发送了一个窗口抖动！',
+      'toastPastingImage': '📷 正在发送剪贴板图片...',
+      'toastImageSent': '📷 已发送图片传输请求；等待对方下载。',
+      'toastPastingFiles': '📁 正在发送剪贴板文件...',
+      'toastFilesSent': '📁 已发送文件传输请求；可在传输列表中查看进度。',
+      'versionLabel': '版本',
+      'aboutAppDesc1':
+          'JA LAN Messenger 是一款专为办公室局域网 (LAN) 设计的高速点对点 (P2P) 消息与文件传输应用，完全无需中继服务器 (Serverless)。',
+      'aboutAppDesc2':
+          '基于 Flutter Desktop (Dart) 构建，融合了 Marco Mastroddi 开源项目 BeeBEEP (C++/Qt) 的设计理念与协议兼容性。',
+      'techInfoTitle': '技术规格：',
+      'techInfoPureDart': '• 原生 Dart Sockets（即时启动，内存仅约 ~40-60MB）',
+      'guideStep1Title': '局域网内自动发现同事',
+      'guideStep1Desc':
+          '只需打开应用，JA LAN Messenger 将通过 UDP 36475 端口在局域网内自动广播并发现其他工作站。',
+      'guideStep2Title': '跨网段或 VPN 连接',
+      'guideStep2Desc':
+          '若两台机器位于不同子网（如 192.168.1.x 与 192.168.2.x），点击联系人栏上方的 "+" 按钮直接输入对方 IP 地址即可连接。',
+      'guideStep3Title': '超大文件极速直传',
+      'guideStep3Desc':
+          '点击聊天窗口的附件回形针图标选择文件。数据通过 TCP 6476 端口全速流式直传，充分利用千兆/万兆内网带宽且极低内存占用。',
+      'guideStep4Title': 'Windows 防火墙权限设置',
+      'guideStep4Desc':
+          '首次启动软件时，请务必在 Windows Defender 防火墙提示窗口中勾选“允许访问”，以允许软件打开监听端口。',
+      'transferTo': '发送至',
+      'transferFrom': '来自',
+      'nudgeNotificationBody': '发送了一个窗口抖动提醒！',
+      'emojis': '快捷表情',
+      'categoryAll': '全部',
+      'categoryOnline': '在线',
+      'categoryGroups': '群组',
+      'systemAndStartup': '系统与启动',
+      'bootWithWindows': '开机自启动',
+      'bootWithWindowsDesc': '登录 Windows 时自动启动 JA LAN Messenger',
+      'windowCloseAction': '关闭窗口动作',
+      'closeActionAsk': '每次询问',
+      'closeActionMinimize': '最小化到系统托盘',
+      'closeActionExit': '退出应用程序',
+      'closeDialogTitle': '关闭应用',
+      'closeDialogPrompt': '关闭窗口时您希望执行什么操作？',
+      'rememberChoice': '记住我的选择（不再询问）',
+      'trayOpen': '打开 JA LAN Messenger',
+      'trayRescan': '重新扫描局域网',
+      'trayExit': '退出应用',
+      'confirm': '确认',
+      // JA-AI 助手
+      'aiAssistant': 'JA-AI 助手',
+      'aiAssistantDesc': '局域网本地 JA-AI 模型 • 自动排队',
+      'aiSettingsTitle': 'JA-AI 助手',
+      'enableAiTitle': '启用 JA-AI 助手',
+      'enableAiSubtitle': '在联系人中显示 JA-AI 助手并允许直接对话',
+      'aiServerUrlLabel': 'JA-AI 服务器地址',
+      'testAiConnection': '测试连接',
+      'aiConnecting': '正在测试...',
+      'aiConnected': '连接成功',
+      'aiConnectionFailed': '连接失败',
+      'defaultAiModel': '默认 AI 模型',
+      'thinkingMode': '深度思考模式 (Thinking)',
+      'thinkingModeDesc': '允许在回答前进行深度思考推理 (仅支持 Qwen 3.5)',
+      'thinkingOn': '思考: 开启',
+      'thinkingOff': '思考: 关闭',
+      'aiSpecContext': '上下文',
+      'aiSpecQueue': '最大排队',
+      'aiSpecTimeout': '超时时间',
+      'aiThinkingHeader': '思考过程',
+      'aiThinkingRunning': '思考中...',
+      'stopAiGeneration': '停止生成',
+      'clearAiChat': '清空对话记录',
+      'clearAiChatConfirm': '确定要清空与 AI 的全部对话记录吗？',
+      'aiQueueWaiting': '排队中... (#%s)',
+      'aiQueueFull': 'AI 处理队列已满 (最多 4 个)，请稍候。',
+      'aiModel': '模型',
+      'aiGenerating': '正在生成...',
+      'ready': '就绪',
+      'aiProcessing': '正在处理',
+      'aiQueue': '排队',
+      'aiDisabled': '已停用',
+      'copyCode': '复制代码',
+      'codeCopied': '代码已复制！',
+      'copyMessage': '复制消息',
+      'messageCopied': '消息已复制！',
+      'regenerateAi': '重新生成回答',
+      'refreshAiModels': '刷新模型列表',
+      'aiModelsRefreshed': '已从服务器更新 %d 个模型',
+      'noModelsOnServer': '未在服务器上找到任何模型',
+      'detectingModels': '正在获取模型列表...',
+      // 聊天记录存储
+      'chatHistoryTitle': '聊天记录存储',
+      'enableChatHistory': '在本地保存聊天记录',
+      'enableChatHistoryDesc': '退出应用后自动在本地保存聊天记录',
+      'clearAllChatHistory': '清空全部聊天记录',
+      'clearAllChatHistoryConfirm': '确定要永久清空所有对话的聊天记录吗？',
+      'chatHistoryCleared': '已清空全部聊天记录！',
+      'chatHistorySize': '存储大小',
+      // 引用与置顶
+      'quote': '引用',
+      'replyingTo': '正在回复',
+      'cancelReply': '取消回复',
+      'pinMessage': '置顶消息',
+      'unpinMessage': '取消置顶',
+      'pinnedMessage': '置顶消息',
+      'pinnedMessagesCount': '置顶消息 (%d/%d)',
+      'messagePinnedToast': '消息已置顶到顶部',
+      'messageUnpinnedToast': '已取消置顶消息',
+    },
+  };
+}

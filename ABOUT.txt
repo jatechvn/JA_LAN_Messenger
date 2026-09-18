@@ -1,0 +1,23 @@
+================================================================================
+JA LAN Messenger - Lightweight P2P Office LAN Messenger
+================================================================================
+Version: 1.1.0+2
+Developer: JA Team
+Language: Dart / Flutter Desktop
+Architecture: Pure Dart P2P Sockets (UDP Broadcast/Multicast + TCP Streaming)
+Protocol: Dual-Mode (BeeBEEP Compatible + JA Modern Packet)
+Features:
+- Decentralized serverless P2P communication on local area networks (LAN)
+- Automatic peer discovery via UDP Broadcast (255.255.255.255:36475) & Multicast (224.0.64.75)
+- Direct instant messaging over TCP port 6475
+- High-speed binary chunked file transfer over TCP port 6476
+- Dynamic AI Assistant (JA-AI / Ollama) with live model detection, capability heuristics & auto-switch
+- Message quoting & multi-message top pinning with jump-to-message navigation
+- Compact, lightweight, responsive UI with Bento Glassmorphism styling & live glass tuning
+- Native Windows 10 (Aero Blur) & Windows 11 (Mica/Acrylic) frame integration
+- Safe atomic chat history persistence with offline message recovery & storage stats
+- Multi-adapter selection and full-subnet active sweep
+- Trilingual support: Tiếng Việt, English, 简体中文
+- Ultra-low memory footprint (~40-60 MB RAM)
+================================================================================
+
