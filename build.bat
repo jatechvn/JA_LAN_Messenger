@@ -62,26 +62,26 @@ if exist "%~dp0CHANGELOG.md" copy /y "%~dp0CHANGELOG.md" "%TARGET_DIR%\" >nul
 if exist "%~dp0USERGUIDE.md" copy /y "%~dp0USERGUIDE.md" "%TARGET_DIR%\" >nul
 if exist "%~dp0LICENSE" copy /y "%~dp0LICENSE" "%TARGET_DIR%\" >nul
 
-:: Dong bo bo cai dat vao dist neu thu muc dist ton tai
-if exist "%~dp0dist\" (
-    if exist "%~dp0install.bat" copy /y "%~dp0install.bat" "%~dp0dist\install.bat" >nul
-    if exist "%~dp0uninstall.bat" copy /y "%~dp0uninstall.bat" "%~dp0dist\uninstall.bat" >nul
-    copy /y "%~dp0uninstall.ps1" "%~dp0dist\uninstall.ps1" >nul
+:: 4. Dong bo toan bo Release sang dist va tao goi zip chuan dart-build-pro
+echo [4/6] Dong bo sang dist va dong goi zip chuan phat hanh...
+if exist "%~dp0windows\packaging\package_dist.ps1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0windows\packaging\package_dist.ps1"
 )
 
-:: 4. Tao Shortcut den thu muc Release ngay tai goc du an
-echo [4/5] Tao shortcut .Release - Shortcut.lnk tai goc du an...
+:: 5. Tao Shortcut den thu muc Release ngay tai goc du an
+echo [5/6] Tao shortcut .Release - Shortcut.lnk tai goc du an...
 set "SHORTCUT_PATH=%~dp0.Release - Shortcut.lnk"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut($env:SHORTCUT_PATH); $s.TargetPath = $env:TARGET_DIR; $s.Save()" >nul 2>&1
 
-:: 5. Tu dong mo thu muc Release va Active len tren cung man hinh
-echo [5/5] Mo thu muc Release va active len tren cung (Foreground Window)...
+:: 6. Tu dong mo thu muc Release va Active len tren cung man hinh
+echo [6/6] Mo thu muc Release va active len tren cung (Foreground Window)...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$dir = '%TARGET_DIR%'; explorer.exe $dir; Start-Sleep -Milliseconds 500; $ws = New-Object -ComObject WScript.Shell; $sh = New-Object -ComObject Shell.Application; $activated = $false; foreach ($w in $sh.Windows()) { try { if ($w.Document.Folder.Self.Path -eq $dir) { [void]$ws.AppActivate($w.HWND); $activated = $true; break } } catch {} }; if (-not $activated) { [void]$ws.AppActivate('Release') }"
 
 echo.
 echo ========================================================
 echo   [HOAN TAT] BUILD THANH CONG VA DA ACTIVE THU MUC
 echo   - Thu muc: %TARGET_DIR%
+echo   - Dist: %~dp0dist
 echo   - Runner debug: %TARGET_DIR%\debug.bat
 echo ========================================================
 echo Nhan phim bat ky de dong cua so nay (tu dong dong sau 5s)...
