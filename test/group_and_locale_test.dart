@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ja_lan_messenger/modules/localization/app_locale.dart';
 import 'package:ja_lan_messenger/modules/models/group_model.dart';
@@ -5,6 +6,14 @@ import 'package:ja_lan_messenger/modules/models/peer_model.dart';
 
 void main() {
   group('LanguageProvider Tests', () {
+    setUp(() {
+      LanguageProvider.disableDiskPersistenceForTesting = true;
+    });
+
+    tearDown(() {
+      LanguageProvider.disableDiskPersistenceForTesting = false;
+    });
+
     test('AppLanguage enum values and fromCode resolution', () {
       expect(AppLanguage.fromCode('vi'), equals(AppLanguage.vi));
       expect(AppLanguage.fromCode('en'), equals(AppLanguage.en));
@@ -68,6 +77,44 @@ void main() {
 
       provider.cycleLanguage();
       expect(provider.currentLanguage, equals(AppLanguage.vi));
+    });
+
+    test('LanguageProvider isolates disk persistence during tests', () {
+      final appData = Platform.environment['APPDATA'];
+      final realFile = File('$appData\\JA_LAN_Messenger\\app_preferences.json');
+      final existedBefore = realFile.existsSync();
+
+      final provider = LanguageProvider();
+      provider.setLanguage(AppLanguage.zh);
+
+      if (!existedBefore) {
+        expect(
+          realFile.existsSync(),
+          isFalse,
+          reason:
+              'Test mode should never pollute the user real app_preferences.json',
+        );
+      }
+    });
+
+    test('LanguageProvider correctly persists to customFileForTesting', () {
+      final tempDir = Directory.systemTemp.createTempSync('lang_test_');
+      final tempFile = File('${tempDir.path}/custom_pref.json');
+
+      try {
+        LanguageProvider.customFileForTesting = tempFile;
+        final provider = LanguageProvider();
+        provider.setLanguage(AppLanguage.zh);
+
+        expect(tempFile.existsSync(), isTrue);
+        expect(tempFile.readAsStringSync(), contains('"language":"zh"'));
+
+        provider.setLanguage(AppLanguage.vi);
+        expect(tempFile.readAsStringSync(), contains('"language":"vi"'));
+      } finally {
+        LanguageProvider.customFileForTesting = null;
+        if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+      }
     });
   });
 

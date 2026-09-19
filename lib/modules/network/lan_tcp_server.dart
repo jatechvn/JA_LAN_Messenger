@@ -24,6 +24,14 @@ typedef OnBuzzCallback = void Function(String senderId);
 typedef OnTypingCallback = void Function(String senderId, bool isTyping);
 typedef OnReadCallback = void Function(String senderId, String messageId);
 typedef OnRevokeCallback = void Function(String senderId, String messageId);
+typedef OnReactionCallback =
+    void Function(
+      String endpoint,
+      String messageId,
+      String emoji,
+      String action,
+      String senderName,
+    );
 
 class LanTcpServer {
   ServerSocket? _serverSocket;
@@ -43,6 +51,7 @@ class LanTcpServer {
   OnTypingCallback? onTyping;
   OnReadCallback? onRead;
   OnRevokeCallback? onRevoke;
+  OnReactionCallback? onReaction;
   void Function(String endpoint)? onDisconnected;
   void Function(String endpoint)? onActivity;
   int get port => _port;
@@ -124,6 +133,17 @@ class LanTcpServer {
             onRead?.call(endpoint!, text);
           case ProtocolBeebeep.headerRevoke:
             onRevoke?.call(endpoint!, text);
+          case ProtocolBeebeep.headerReaction:
+            final parsed = ProtocolBeebeep.parseReactionPacket(message);
+            if (parsed != null) {
+              onReaction?.call(
+                endpoint!,
+                parsed['messageId']!,
+                parsed['emoji']!,
+                parsed['action']!,
+                parsed['senderName']!,
+              );
+            }
           case ProtocolBeebeep.headerUser:
             final flags = (message['flags'] as int?) ?? 0;
             if (flags & 2 != 0) {

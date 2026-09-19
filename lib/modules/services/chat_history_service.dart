@@ -102,6 +102,15 @@ class ChatHistoryService {
     });
   }
 
+  /// Hủy bỏ toàn bộ timer ghi đĩa đang chờ (dùng khi dispose coordinator hoặc reset)
+  void cancelAll() {
+    for (final timer in _debounceTimers.values) {
+      timer.cancel();
+    }
+    _debounceTimers.clear();
+    _pending.clear();
+  }
+
   /// Ghi ngay lập tức danh sách tin nhắn vào file tương ứng
   Future<void> saveImmediately(
     String conversationId,

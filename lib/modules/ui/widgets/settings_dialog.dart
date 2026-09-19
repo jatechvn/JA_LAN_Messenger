@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -12,7 +13,11 @@ import '../../services/chat_history_service.dart';
 import '../../constants.dart';
 import '../../build_info.dart';
 import '../../models/ai_config_model.dart';
+import '../../ime/ime_service.dart';
+import '../../ime/ime_types.dart';
+import '../../services/ota_update_service.dart';
 import 'glass_dialog.dart';
+import 'glass_update_dialog.dart';
 
 void showSettingsDialog(BuildContext context) {
   showGeneralDialog(
@@ -89,6 +94,27 @@ class _SettingsDialogState extends State<SettingsDialog>
   // Chat History mirror
   late bool _localChatHistoryEnabled;
 
+  // Buzz Alert mirrors
+  late bool _localBuzzFlashScreen;
+  late bool _localBuzzShakeWindow;
+  late bool _localBuzzBringToFront;
+
+  // IME mirrors
+  late String _localImeMode;
+  late bool _localImeAutoBypassExternal;
+
+  // OTA Update mirrors
+  late String _localOtaCheckInterval;
+  late TextEditingController _otaServerPathController;
+  late TextEditingController _otaUsernameController;
+  late TextEditingController _otaPasswordController;
+  bool _obscureOtaPassword = true;
+  bool _isTestingServerConnection = false;
+  String? _serverConnectionResult;
+  bool? _serverConnectionSuccess;
+  bool _isCheckingForUpdates = false;
+  UpdateCheckResult? _manualUpdateCheckResult;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -98,7 +124,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
 
     final theme = context.read<ThemeProvider>();
     _initialCardBlur = theme.cardBlur;
@@ -138,6 +164,16 @@ class _SettingsDialogState extends State<SettingsDialog>
     _localAiSelectedModel = prefs.aiSelectedModel;
     _localAiThinkingEnabled = prefs.aiThinkingEnabled;
     _localChatHistoryEnabled = prefs.chatHistoryEnabled;
+    _localBuzzFlashScreen = prefs.buzzFlashScreen;
+    _localBuzzShakeWindow = prefs.buzzShakeWindow;
+    _localBuzzBringToFront = prefs.buzzBringToFront;
+    _localImeMode = prefs.imeMode;
+    _localImeAutoBypassExternal = prefs.imeAutoBypassExternal;
+
+    _localOtaCheckInterval = prefs.otaCheckInterval;
+    _otaServerPathController = TextEditingController(text: prefs.otaServerPath);
+    _otaUsernameController = TextEditingController(text: prefs.otaUsername);
+    _otaPasswordController = TextEditingController(text: prefs.otaPassword);
 
     _localAvailableModels = List.of(coordinator.availableAiModels);
     if (!_localAvailableModels.any((m) => m.id == _localAiSelectedModel)) {
@@ -173,6 +209,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     _filePortController.dispose();
     _passwordController.dispose();
     _aiServerUrlController.dispose();
+    _otaServerPathController.dispose();
+    _otaUsernameController.dispose();
+    _otaPasswordController.dispose();
     super.dispose();
   }
 
@@ -194,8 +233,21 @@ class _SettingsDialogState extends State<SettingsDialog>
       _localAiSelectedModel = 'qwen3.5:4b';
       _localAiThinkingEnabled = false;
       _localChatHistoryEnabled = true;
+      _localBuzzFlashScreen = true;
+      _localBuzzShakeWindow = true;
+      _localBuzzBringToFront = true;
+      _localImeMode = 'auto';
+      _localImeAutoBypassExternal = true;
       _aiConnectionTestResult = null;
       _aiConnectionTestSuccess = null;
+      _localOtaCheckInterval = 'daily';
+      _otaServerPathController.text =
+          r'\\10.81.141.226\temp\FBT\JA_PROJECT\JA_Update\JA_LAN_Messenger';
+      _otaUsernameController.text = 'user';
+      _otaPasswordController.text = 'user';
+      _serverConnectionResult = null;
+      _serverConnectionSuccess = null;
+      _manualUpdateCheckResult = null;
     });
     _themeProvider?.setLiveGlassmorphism(
       cardBlur: 24.0,
@@ -289,6 +341,7 @@ class _SettingsDialogState extends State<SettingsDialog>
 
     final theme = context.read<ThemeProvider>();
     final coordinator = context.read<MessengerCoordinator>();
+    final ime = context.read<ImeService>();
 
     await theme.saveGlassTuning(
       cardBlur: _localCardBlur,
@@ -307,6 +360,32 @@ class _SettingsDialogState extends State<SettingsDialog>
       thinkingEnabled: _localAiThinkingEnabled,
     );
     await prefs.setChatHistoryEnabled(_localChatHistoryEnabled);
+    await prefs.setBuzzAlertSettings(
+      flashScreen: _localBuzzFlashScreen,
+      shakeWindow: _localBuzzShakeWindow,
+      bringToFront: _localBuzzBringToFront,
+    );
+    await prefs.setImeSettings(
+      mode: _localImeMode,
+      autoBypassExternal: _localImeAutoBypassExternal,
+    );
+    ime.setMode(ImeMode.fromId(_localImeMode));
+    ime.setAutoBypassExternal(_localImeAutoBypassExternal);
+
+    await prefs.setOtaSettings(
+      checkInterval: _localOtaCheckInterval,
+      serverPath: _otaServerPathController.text.trim(),
+      username: _otaUsernameController.text.trim(),
+      password: _otaPasswordController.text.trim(),
+    );
+    unawaited(OtaUpdateService().saveExternalConfigFile(
+      OtaUpdateConfig(
+        serverPath: _otaServerPathController.text.trim(),
+        username: _otaUsernameController.text.trim(),
+        password: _otaPasswordController.text.trim(),
+        checkInterval: _localOtaCheckInterval,
+      ),
+    ));
 
     coordinator.security.isEncryptionEnabled = _encryptionEnabled;
     coordinator.security.setPassword(_passwordController.text.trim());
@@ -397,7 +476,7 @@ class _SettingsDialogState extends State<SettingsDialog>
 
     Widget dialogContent = Center(
       child: Container(
-        width: 540,
+        width: 580,
         margin: const EdgeInsets.all(24),
         child: Stack(
           children: [
@@ -456,7 +535,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                       ),
                     ),
 
-                    // Tab Bar: 3 Tabs (Advanced Settings, About, User Guide)
+                    // Tab Bar: 4 Tabs (Advanced Settings, OTA Update, About, User Guide)
                     TabBar(
                       controller: _tabController,
                       indicatorColor: theme.colors.accentBlue,
@@ -470,6 +549,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                       ),
                       tabs: [
                         Tab(text: lang.tr('tabAdvancedSettings')),
+                        Tab(text: lang.tr('tabUpdate')),
                         Tab(text: lang.tr('tabAbout')),
                         Tab(text: lang.tr('tabUserGuide')),
                       ],
@@ -482,6 +562,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                         controller: _tabController,
                         children: [
                           _buildAdvancedSettingsTab(theme, lang),
+                          _buildOtaUpdateTab(theme, lang),
                           _buildAboutTab(theme, lang),
                           _buildUserGuideTab(theme, lang),
                         ],
@@ -870,6 +951,184 @@ class _SettingsDialogState extends State<SettingsDialog>
                 ],
               ),
             ),
+          ),
+          const SizedBox(height: 16),
+          // 4.5. Buzz / Nudge Alert Settings
+          Row(
+            children: [
+              Icon(
+                Icons.notifications_active_rounded,
+                size: 16,
+                color: theme.colors.accentAmber,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  lang.tr('buzzAlertSettings'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colors.accentAmber,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  minimumSize: const Size(60, 26),
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.play_arrow_rounded, size: 14),
+                label: const Text('Test Buzz', style: TextStyle(fontSize: 11)),
+                onPressed: () {
+                  context.read<MessengerCoordinator>().triggerBuzzAlertForTesting();
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              lang.tr('buzzFlashScreen'),
+              style: const TextStyle(fontSize: 12.5),
+            ),
+            subtitle: Text(
+              lang.tr('buzzFlashScreenDesc'),
+              style: const TextStyle(fontSize: 11),
+            ),
+            value: _localBuzzFlashScreen,
+            activeTrackColor: theme.colors.accentBlue,
+            onChanged: (val) => setState(() => _localBuzzFlashScreen = val),
+          ),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              lang.tr('buzzShakeWindow'),
+              style: const TextStyle(fontSize: 12.5),
+            ),
+            subtitle: Text(
+              lang.tr('buzzShakeWindowDesc'),
+              style: const TextStyle(fontSize: 11),
+            ),
+            value: _localBuzzShakeWindow,
+            activeTrackColor: theme.colors.accentBlue,
+            onChanged: (val) => setState(() => _localBuzzShakeWindow = val),
+          ),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              lang.tr('buzzBringToFront'),
+              style: const TextStyle(fontSize: 12.5),
+            ),
+            subtitle: Text(
+              lang.tr('buzzBringToFrontDesc'),
+              style: const TextStyle(fontSize: 11),
+            ),
+            value: _localBuzzBringToFront,
+            activeTrackColor: theme.colors.accentBlue,
+            onChanged: (val) => setState(() => _localBuzzBringToFront = val),
+          ),
+          const SizedBox(height: 16),
+          // 4.8. Built-in Input Method (IME) Settings
+          Row(
+            children: [
+              Icon(
+                Icons.keyboard_alt_outlined,
+                size: 16,
+                color: theme.colors.accentEmerald,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  lang.tr('imeSettings'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colors.accentEmerald,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  lang.tr('imeMode'),
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ),
+              const SizedBox(width: 8),
+              DropdownButton<String>(
+                value: _localImeMode,
+                isDense: true,
+                dropdownColor: theme.isDark
+                    ? const Color(0xFF1E293B)
+                    : Colors.white,
+                underline: const SizedBox.shrink(),
+                items: [
+                  DropdownMenuItem(
+                    value: 'auto',
+                    child: Text(
+                      lang.tr('imeAuto'),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'telex',
+                    child: Text(
+                      lang.tr('imeTelex'),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'pinyin',
+                    child: Text(
+                      lang.tr('imePinyin'),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'off',
+                    child: Text(
+                      lang.tr('imeOff'),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() => _localImeMode = val);
+                  }
+                },
+              ),
+            ],
+          ),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              lang.tr('imeAutoBypass'),
+              style: const TextStyle(fontSize: 12.5),
+            ),
+            subtitle: Text(
+              lang.tr('imeAutoBypassDesc'),
+              style: const TextStyle(fontSize: 11),
+            ),
+            value: _localImeAutoBypassExternal,
+            activeTrackColor: theme.colors.accentBlue,
+            onChanged: (val) =>
+                setState(() => _localImeAutoBypassExternal = val),
           ),
           const SizedBox(height: 16),
           // 5. AI Assistant (Ollama) Settings
@@ -1263,6 +1522,634 @@ class _SettingsDialogState extends State<SettingsDialog>
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _testServerConnection() async {
+    setState(() {
+      _isTestingServerConnection = true;
+      _serverConnectionResult = null;
+      _serverConnectionSuccess = null;
+    });
+
+    final path = _otaServerPathController.text.trim();
+    final user = _otaUsernameController.text.trim();
+    final pass = _otaPasswordController.text.trim();
+
+    try {
+      final success = await OtaUpdateService().connectSmbShare(
+        path: path,
+        username: user,
+        password: pass,
+      );
+      if (mounted) {
+        final lang = context.read<LanguageProvider>();
+        setState(() {
+          _isTestingServerConnection = false;
+          _serverConnectionSuccess = success;
+          _serverConnectionResult = success
+              ? lang.tr('serverConnectionSuccess')
+              : lang.tr('serverConnectionFailed', ['Không thể truy cập']);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        final lang = context.read<LanguageProvider>();
+        setState(() {
+          _isTestingServerConnection = false;
+          _serverConnectionSuccess = false;
+          _serverConnectionResult =
+              lang.tr('serverConnectionFailed', [e.toString()]);
+        });
+      }
+    }
+  }
+
+  Future<void> _checkForUpdatesManually() async {
+    setState(() {
+      _isCheckingForUpdates = true;
+      _manualUpdateCheckResult = null;
+    });
+
+    final path = _otaServerPathController.text.trim();
+
+    try {
+      final result = await OtaUpdateService().checkForUpdates(
+        overrideServerPath: path,
+        isManual: true,
+      );
+      if (mounted) {
+        setState(() {
+          _isCheckingForUpdates = false;
+          _manualUpdateCheckResult = result;
+        });
+        if (result.hasUpdate && result.packageInfo != null) {
+          showGlassUpdateDialog(
+            context: context,
+            packageInfo: result.packageInfo!,
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isCheckingForUpdates = false;
+          _manualUpdateCheckResult = UpdateCheckResult(
+            hasUpdate: false,
+            currentVersion: appVersion,
+            isConnectionSuccess: false,
+            errorMessage: e.toString(),
+          );
+        });
+      }
+    }
+  }
+
+  void _openConfigFolder() {
+    final file = OtaUpdateService().getConfigFile();
+    if (Platform.isWindows) {
+      if (file.existsSync()) {
+        Process.run('explorer.exe', ['/select,', file.path]);
+      } else {
+        Process.run('explorer.exe', [file.parent.path]);
+      }
+    }
+  }
+
+  Widget _buildOtaUpdateTab(ThemeProvider theme, LanguageProvider lang) {
+    final prefs = AppPreferences();
+    final isDark = theme.isDark;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 1. Version Status Card
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: (isDark ? Colors.white : Colors.black).withValues(
+                alpha: isDark ? 0.05 : 0.03,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: (isDark ? Colors.white : Colors.black).withValues(
+                  alpha: 0.08,
+                ),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            theme.colors.accentBlue,
+                            theme.colors.accentCyan,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.system_update_alt_rounded,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${lang.tr('currentVersion')}: v$appVersion',
+                            style: const TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            prefs.otaLastCheckTime != null
+                                ? '${lang.tr('lastChecked')}: ${prefs.otaLastCheckTime!.hour.toString().padLeft(2, '0')}:${prefs.otaLastCheckTime!.minute.toString().padLeft(2, '0')} ${prefs.otaLastCheckTime!.day}/${prefs.otaLastCheckTime!.month}/${prefs.otaLastCheckTime!.year}'
+                                : lang.tr('neverChecked'),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.white54 : Colors.black54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    FilledButton.icon(
+                      key: const ValueKey('ota-check-button'),
+                      onPressed:
+                          _isCheckingForUpdates ? null : _checkForUpdatesManually,
+                      icon: _isCheckingForUpdates
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Icon(Icons.refresh_rounded, size: 15),
+                      label: Text(
+                        _isCheckingForUpdates
+                            ? lang.tr('checkingUpdates')
+                            : lang.tr('checkUpdatesNow'),
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: theme.colors.accentBlue,
+                        foregroundColor: Colors.white,
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_manualUpdateCheckResult != null) ...[
+                  const SizedBox(height: 10),
+                  if (_manualUpdateCheckResult!.hasUpdate) ...[
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: theme.colors.accentEmerald
+                            .withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: theme.colors.accentEmerald
+                              .withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.check_circle_rounded,
+                            size: 16,
+                            color: theme.colors.accentEmerald,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              lang.tr('updateAvailable', [
+                                _manualUpdateCheckResult!.packageInfo?.version
+                                        .toString() ??
+                                    '',
+                              ]),
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: theme.colors.accentEmerald,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              if (_manualUpdateCheckResult?.packageInfo !=
+                                  null) {
+                                showGlassUpdateDialog(
+                                  context: context,
+                                  packageInfo:
+                                      _manualUpdateCheckResult!.packageInfo!,
+                                );
+                              }
+                            },
+                            child: Text(lang.tr('updateNow')),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else if (_manualUpdateCheckResult!.errorMessage != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: theme.colors.accentRose.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: theme.colors.accentRose.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.error_outline_rounded,
+                            size: 16,
+                            color: theme.colors.accentRose,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _manualUpdateCheckResult!.errorMessage!,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: theme.colors.accentRose,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: theme.colors.accentBlue.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: theme.colors.accentBlue.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.verified_rounded,
+                            size: 16,
+                            color: theme.colors.accentBlue,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              lang.tr('noUpdatesAvailable', ['v$appVersion']),
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: isDark ? Colors.white70 : Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          // 2. Check Interval Setting
+          Row(
+            children: [
+              Icon(
+                Icons.schedule_rounded,
+                size: 16,
+                color: theme.colors.accentBlue,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                lang.tr('otaCheckInterval'),
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.bold,
+                  color: theme.colors.accentBlue,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: (isDark ? Colors.white : Colors.black).withValues(
+                alpha: isDark ? 0.05 : 0.04,
+              ),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: (isDark ? Colors.white : Colors.black)
+                    .withValues(alpha: 0.08),
+              ),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                key: const ValueKey('ota-interval-dropdown'),
+                value: _localOtaCheckInterval,
+                isExpanded: true,
+                dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                items: [
+                  DropdownMenuItem(
+                    value: 'daily',
+                    child: Text(
+                      lang.tr('intervalDaily'),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'weekly',
+                    child: Text(
+                      lang.tr('intervalWeekly'),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'monthly',
+                    child: Text(
+                      lang.tr('intervalMonthly'),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'off',
+                    child: Text(
+                      lang.tr('intervalOff'),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+                onChanged: (val) {
+                  if (val != null) setState(() => _localOtaCheckInterval = val);
+                },
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          // 3. Server Configuration
+          Row(
+            children: [
+              Icon(Icons.dns_rounded, size: 16, color: theme.colors.accentBlue),
+              const SizedBox(width: 6),
+              Text(
+                lang.tr('otaServerPath'),
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.bold,
+                  color: theme.colors.accentBlue,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            key: const ValueKey('ota-server-path-input'),
+            controller: _otaServerPathController,
+            style: const TextStyle(
+              fontSize: 12,
+              fontFamily: 'Consolas, monospace',
+            ),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: lang.tr('otaServerPathHint'),
+              hintStyle: TextStyle(
+                fontSize: 11,
+                color: isDark ? Colors.white30 : Colors.black26,
+              ),
+              filled: true,
+              fillColor: (isDark ? Colors.white : Colors.black).withValues(
+                alpha: isDark ? 0.05 : 0.04,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: (isDark ? Colors.white : Colors.black)
+                      .withValues(alpha: 0.12),
+                ),
+              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Username & Password row
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      lang.tr('otaUsername'),
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: isDark ? Colors.white60 : Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: _otaUsernameController,
+                      style: const TextStyle(fontSize: 12),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        filled: true,
+                        fillColor:
+                            (isDark ? Colors.white : Colors.black).withValues(
+                          alpha: isDark ? 0.05 : 0.04,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(
+                            color: (isDark ? Colors.white : Colors.black)
+                                .withValues(alpha: 0.12),
+                          ),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      lang.tr('otaPassword'),
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: isDark ? Colors.white60 : Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: _otaPasswordController,
+                      obscureText: _obscureOtaPassword,
+                      style: const TextStyle(fontSize: 12),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        filled: true,
+                        fillColor:
+                            (isDark ? Colors.white : Colors.black).withValues(
+                          alpha: isDark ? 0.05 : 0.04,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(
+                            color: (isDark ? Colors.white : Colors.black)
+                                .withValues(alpha: 0.12),
+                          ),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureOtaPassword
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            size: 16,
+                          ),
+                          splashRadius: 14,
+                          onPressed: () => setState(
+                            () => _obscureOtaPassword = !_obscureOtaPassword,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Action buttons: Test connection & Open config folder
+          Row(
+            children: [
+              OutlinedButton.icon(
+                key: const ValueKey('ota-test-connection-button'),
+                onPressed: _isTestingServerConnection
+                    ? null
+                    : _testServerConnection,
+                icon: _isTestingServerConnection
+                    ? const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.wifi_find_rounded, size: 14),
+                label: Text(lang.tr('testServerConnection')),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  textStyle: const TextStyle(fontSize: 11),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: _openConfigFolder,
+                icon: const Icon(Icons.folder_open_rounded, size: 14),
+                label: Text(lang.tr('openConfigFolder')),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  textStyle: const TextStyle(fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+
+          if (_serverConnectionResult != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: (_serverConnectionSuccess == true
+                        ? theme.colors.accentEmerald
+                        : theme.colors.accentRose)
+                    .withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: (_serverConnectionSuccess == true
+                          ? theme.colors.accentEmerald
+                          : theme.colors.accentRose)
+                      .withValues(alpha: 0.35),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _serverConnectionSuccess == true
+                        ? Icons.check_circle_outline
+                        : Icons.error_outline,
+                    size: 14,
+                    color: _serverConnectionSuccess == true
+                        ? theme.colors.accentEmerald
+                        : theme.colors.accentRose,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _serverConnectionResult!,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: _serverConnectionSuccess == true
+                            ? theme.colors.accentEmerald
+                            : theme.colors.accentRose,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

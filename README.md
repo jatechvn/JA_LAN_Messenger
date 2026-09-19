@@ -1,6 +1,6 @@
 # JA LAN Messenger
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](CHANGELOG.md)
 [![Flutter Version](https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter)](https://flutter.dev)
 [![Dart Version](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com/windows)
@@ -14,6 +14,10 @@ A modern, ultra-lightweight, high-performance **Peer-to-Peer (P2P) Office LAN Me
 ## ⚡ Key Highlights
 
 - **Serverless Decentralized P2P**: Zero central server setup required. Instant plug-and-play communication in local networks.
+- **Over-The-Air (OTA) LAN Updates**: Automated in-network update checker with configurable intervals (daily, weekly, monthly, off), SMB/UNC share sync, and 1-click self-updating handoff script.
+- **One-Click Windows Installer & Uninstaller**: Full Control Panel / Windows Settings integration with Desktop/Start Menu shortcuts and clean self-cleaning uninstallation.
+- **Staged Multi-File Attachments & Lightbox Preview**: Stage multiple files/images in the input composer before sending, complete with image zoom/lightbox and document preview dialogs.
+- **Built-in Smart IME Engine**: Native Vietnamese Telex and Chinese Pinyin input support with zero external software needed and automatic bypass when system IME is active.
 - **Dynamic AI Assistant (JA-AI)**: Native integration with local Ollama engine, automatic server model detection (`/api/tags`), smart capability heuristics (Vision, Thinking, Coder), live model switching, offline caching, and collapsible Thought Process markdown display.
 - **Message Quoting & Multi-Message Pinning**: Direct quote reply with smooth auto-scroll to original message, multi-message pinning bar with counter and rapid navigation.
 - **Ultra-Lightweight & Fast-Loading**: Pure Dart networking (`RawDatagramSocket`, `ServerSocket`, `Socket`). Minimal memory footprint (~40–60 MB RAM).
@@ -65,6 +69,21 @@ The compiled binaries and shortcut `.Release - Shortcut.lnk` will be generated i
 build\windows\x64\runner\Release\
 ```
 
+### Installation & Uninstallation
+
+- **One-Click Installation (`install.bat`)**:
+  - Installs to `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` without requiring administrator / UAC elevation.
+  - Automatically creates Desktop and Start Menu shortcuts.
+  - Registers the app in Windows **Control Panel (`Programs and Features`)** and **Windows Settings (`Installed apps`)**.
+  - Close the installed app first. Portable instances are not force-stopped. Existing configuration is preserved; program files are backed up in `%TEMP%` before reinstalling.
+- **Clean Uninstallation (`uninstall.bat`)**:
+  - Can be triggered directly from **Control Panel**, Start Menu, or by executing `uninstall.bat`.
+  - Supports interactive confirmation or silent execution (`/silent`).
+  - Prompts to optionally preserve or purge user chat history and configuration (`%APPDATA%\JA_LAN_Messenger`).
+  - Requires the registered installation path; refuses to remove portable/source folders. `/silent` preserves user data. Keep `uninstall.ps1` with the scripts.
+- **Inno Setup Packaging (`windows/packaging/installer.iss`)**:
+  - Separate Inno-managed installation in `%LOCALAPPDATA%\Programs\JA_LAN_Messenger_Setup`, with its own uninstaller. Compilation requires Inno Setup and has not been verified on this workstation.
+
 ---
 
 ## 📂 Project Structure
@@ -74,7 +93,8 @@ JA_LAN_Messenger/
 ├── reference_sources/
 │   └── beebeep/                # Cloned BeeBEEP C++ reference source
 ├── windows/
-│   └── runner/                 # Native C++ Win32 runner with Acrylic & Aero Glass
+│   ├── runner/                 # Native C++ Win32 runner with Acrylic & Aero Glass
+│   └── packaging/              # Inno Setup packaging script (installer.iss)
 ├── lib/
 │   ├── main.dart               # App entry point
 │   └── modules/
@@ -88,6 +108,8 @@ JA_LAN_Messenger/
 │       ├── services/           # MessengerCoordinator orchestrator
 │       └── ui/                 # Compact UI (Sidebar, Peer list, Chat, Transfers, Settings)
 ├── run.bat                     # Rapid dev runner
-├── build.bat                   # Release compiler
+├── build.bat                   # Release compiler & packager
+├── install.bat                 # Standard Windows one-click installer
+├── uninstall.bat               # Windows uninstaller (Control Panel integrated)
 └── clean_project.bat           # Deep cleanup utility
 ```

@@ -28,6 +28,35 @@ class AppPreferences extends ChangeNotifier {
   double? _dialogBlur;
   double? _dialogOpacity;
 
+  bool _isCompactMode = false;
+  bool _isAlwaysOnTop = false;
+  double? _compactWidth;
+  double? _compactHeight;
+  double? _compactPosX;
+  double? _compactPosY;
+  double? _normalWidth;
+  double? _normalHeight;
+  double? _normalPosX;
+  double? _normalPosY;
+
+  // Cảnh báo rung chuông (Buzz / Nudge)
+  bool _buzzFlashScreen = true;
+  bool _buzzShakeWindow = true;
+  bool _buzzBringToFront = true;
+
+  // Bộ gõ tích hợp (Built-in IME)
+  String _imeMode = 'auto';
+  bool _imeAutoBypassExternal = true;
+
+  // Cập nhật OTA qua mạng nội bộ (SMB/UNC)
+  String _otaCheckInterval = 'daily'; // 'daily', 'weekly', 'monthly', 'off'
+  String _otaServerPath =
+      r'\\10.81.141.226\temp\FBT\JA_PROJECT\JA_Update\JA_LAN_Messenger';
+  String _otaUsername = 'user';
+  String _otaPassword = 'user';
+  DateTime? _otaLastCheckTime;
+  String? _otaCachedUpdateVersion;
+
   String get closeBehavior => _closeBehavior;
   bool get rememberCloseBehavior => _rememberCloseBehavior;
 
@@ -44,6 +73,31 @@ class AppPreferences extends ChangeNotifier {
   double? get cardOpacity => _cardOpacity;
   double? get dialogBlur => _dialogBlur;
   double? get dialogOpacity => _dialogOpacity;
+
+  bool get isCompactMode => _isCompactMode;
+  bool get isAlwaysOnTop => _isAlwaysOnTop;
+  double? get compactWidth => _compactWidth;
+  double? get compactHeight => _compactHeight;
+  double? get compactPosX => _compactPosX;
+  double? get compactPosY => _compactPosY;
+  double? get normalWidth => _normalWidth;
+  double? get normalHeight => _normalHeight;
+  double? get normalPosX => _normalPosX;
+  double? get normalPosY => _normalPosY;
+
+  bool get buzzFlashScreen => _buzzFlashScreen;
+  bool get buzzShakeWindow => _buzzShakeWindow;
+  bool get buzzBringToFront => _buzzBringToFront;
+
+  String get imeMode => _imeMode;
+  bool get imeAutoBypassExternal => _imeAutoBypassExternal;
+
+  String get otaCheckInterval => _otaCheckInterval;
+  String get otaServerPath => _otaServerPath;
+  String get otaUsername => _otaUsername;
+  String get otaPassword => _otaPassword;
+  DateTime? get otaLastCheckTime => _otaLastCheckTime;
+  String? get otaCachedUpdateVersion => _otaCachedUpdateVersion;
 
   bool isPeerPinned(String key) => _pinnedKeys.contains(key);
 
@@ -65,6 +119,28 @@ class AppPreferences extends ChangeNotifier {
     _cardOpacity = null;
     _dialogBlur = null;
     _dialogOpacity = null;
+    _isCompactMode = false;
+    _isAlwaysOnTop = false;
+    _compactWidth = null;
+    _compactHeight = null;
+    _compactPosX = null;
+    _compactPosY = null;
+    _normalWidth = null;
+    _normalHeight = null;
+    _normalPosX = null;
+    _normalPosY = null;
+    _buzzFlashScreen = true;
+    _buzzShakeWindow = true;
+    _buzzBringToFront = true;
+    _imeMode = 'auto';
+    _imeAutoBypassExternal = true;
+    _otaCheckInterval = 'daily';
+    _otaServerPath =
+        r'\\10.81.141.226\temp\FBT\JA_PROJECT\JA_Update\JA_LAN_Messenger';
+    _otaUsername = 'user';
+    _otaPassword = 'user';
+    _otaLastCheckTime = null;
+    _otaCachedUpdateVersion = null;
   }
 
   void setCustomFileForTesting(File? file) {
@@ -157,12 +233,117 @@ class AppPreferences extends ChangeNotifier {
           if (data.containsKey('dialogOpacity')) {
             _dialogOpacity = (data['dialogOpacity'] as num?)?.toDouble();
           }
+          if (data.containsKey('isCompactMode')) {
+            _isCompactMode = data['isCompactMode'] as bool? ?? false;
+          }
+          if (data.containsKey('isAlwaysOnTop')) {
+            _isAlwaysOnTop = data['isAlwaysOnTop'] as bool? ?? false;
+          }
+          if (data.containsKey('compactWidth')) {
+            _compactWidth = (data['compactWidth'] as num?)?.toDouble();
+          }
+          if (data.containsKey('compactHeight')) {
+            _compactHeight = (data['compactHeight'] as num?)?.toDouble();
+          }
+          if (data.containsKey('compactPosX')) {
+            _compactPosX = (data['compactPosX'] as num?)?.toDouble();
+          }
+          if (data.containsKey('compactPosY')) {
+            _compactPosY = (data['compactPosY'] as num?)?.toDouble();
+          }
+          if (data.containsKey('normalWidth')) {
+            _normalWidth = (data['normalWidth'] as num?)?.toDouble();
+          }
+          if (data.containsKey('normalHeight')) {
+            _normalHeight = (data['normalHeight'] as num?)?.toDouble();
+          }
+          if (data.containsKey('normalPosX')) {
+            _normalPosX = (data['normalPosX'] as num?)?.toDouble();
+          }
+          if (data.containsKey('normalPosY')) {
+            _normalPosY = (data['normalPosY'] as num?)?.toDouble();
+          }
+          if (data.containsKey('buzzFlashScreen')) {
+            _buzzFlashScreen = data['buzzFlashScreen'] as bool? ?? true;
+          }
+          if (data.containsKey('buzzShakeWindow')) {
+            _buzzShakeWindow = data['buzzShakeWindow'] as bool? ?? true;
+          }
+          if (data.containsKey('buzzBringToFront')) {
+            _buzzBringToFront = data['buzzBringToFront'] as bool? ?? true;
+          }
+          if (data.containsKey('imeMode')) {
+            _imeMode = data['imeMode'] as String? ?? 'auto';
+          }
+          if (data.containsKey('imeAutoBypassExternal')) {
+            _imeAutoBypassExternal =
+                data['imeAutoBypassExternal'] as bool? ?? true;
+          }
+          if (data.containsKey('otaCheckInterval')) {
+            _otaCheckInterval = data['otaCheckInterval'] as String? ?? 'daily';
+          }
+          if (data.containsKey('otaServerPath')) {
+            _otaServerPath = data['otaServerPath'] as String? ??
+                r'\\10.81.141.226\temp\FBT\JA_PROJECT\JA_Update\JA_LAN_Messenger';
+          }
+          if (data.containsKey('otaUsername')) {
+            _otaUsername = data['otaUsername'] as String? ?? 'user';
+          }
+          if (data.containsKey('otaPassword')) {
+            _otaPassword = data['otaPassword'] as String? ?? 'user';
+          }
+          if (data.containsKey('otaLastCheckTime')) {
+            final str = data['otaLastCheckTime'] as String?;
+            if (str != null) _otaLastCheckTime = DateTime.tryParse(str);
+          }
+          if (data.containsKey('otaCachedUpdateVersion')) {
+            _otaCachedUpdateVersion =
+                data['otaCachedUpdateVersion'] as String?;
+          }
           notifyListeners();
         }
       }
     } catch (e) {
       debugPrint('[AppPreferences] Load error: $e');
     }
+  }
+
+  Future<void> setCompactMode(bool enabled) async {
+    _isCompactMode = enabled;
+    notifyListeners();
+    await _save();
+  }
+
+  Future<void> setAlwaysOnTop(bool enabled) async {
+    _isAlwaysOnTop = enabled;
+    notifyListeners();
+    await _save();
+  }
+
+  Future<void> saveCompactGeometry({
+    double? width,
+    double? height,
+    double? x,
+    double? y,
+  }) async {
+    if (width != null) _compactWidth = width;
+    if (height != null) _compactHeight = height;
+    if (x != null) _compactPosX = x;
+    if (y != null) _compactPosY = y;
+    await _save();
+  }
+
+  Future<void> saveNormalGeometry({
+    double? width,
+    double? height,
+    double? x,
+    double? y,
+  }) async {
+    if (width != null) _normalWidth = width;
+    if (height != null) _normalHeight = height;
+    if (x != null) _normalPosX = x;
+    if (y != null) _normalPosY = y;
+    await _save();
   }
 
   Future<void> setChatHistoryEnabled(bool enabled) async {
@@ -225,6 +406,51 @@ class AppPreferences extends ChangeNotifier {
     await _save();
   }
 
+  Future<void> setBuzzAlertSettings({
+    bool? flashScreen,
+    bool? shakeWindow,
+    bool? bringToFront,
+  }) async {
+    if (flashScreen != null) _buzzFlashScreen = flashScreen;
+    if (shakeWindow != null) _buzzShakeWindow = shakeWindow;
+    if (bringToFront != null) _buzzBringToFront = bringToFront;
+    notifyListeners();
+    await _save();
+  }
+
+  Future<void> setImeSettings({
+    String? mode,
+    bool? autoBypassExternal,
+  }) async {
+    if (mode != null) _imeMode = mode;
+    if (autoBypassExternal != null) {
+      _imeAutoBypassExternal = autoBypassExternal;
+    }
+    notifyListeners();
+    await _save();
+  }
+
+  Future<void> setOtaSettings({
+    String? checkInterval,
+    String? serverPath,
+    String? username,
+    String? password,
+    DateTime? lastCheckTime,
+    String? cachedUpdateVersion,
+  }) async {
+    if (checkInterval != null) _otaCheckInterval = checkInterval;
+    if (serverPath != null) _otaServerPath = serverPath;
+    if (username != null) _otaUsername = username;
+    if (password != null) _otaPassword = password;
+    if (lastCheckTime != null) _otaLastCheckTime = lastCheckTime;
+    if (cachedUpdateVersion != null) {
+      _otaCachedUpdateVersion =
+          cachedUpdateVersion.isEmpty ? null : cachedUpdateVersion;
+    }
+    notifyListeners();
+    await _save();
+  }
+
   Future<void> _save() async {
     _loadGeneration++;
     try {
@@ -255,6 +481,27 @@ class AppPreferences extends ChangeNotifier {
       if (_cardOpacity != null) data['cardOpacity'] = _cardOpacity;
       if (_dialogBlur != null) data['dialogBlur'] = _dialogBlur;
       if (_dialogOpacity != null) data['dialogOpacity'] = _dialogOpacity;
+      data['isCompactMode'] = _isCompactMode;
+      data['isAlwaysOnTop'] = _isAlwaysOnTop;
+      if (_compactWidth != null) data['compactWidth'] = _compactWidth;
+      if (_compactHeight != null) data['compactHeight'] = _compactHeight;
+      if (_compactPosX != null) data['compactPosX'] = _compactPosX;
+      if (_compactPosY != null) data['compactPosY'] = _compactPosY;
+      if (_normalWidth != null) data['normalWidth'] = _normalWidth;
+      if (_normalHeight != null) data['normalHeight'] = _normalHeight;
+      if (_normalPosX != null) data['normalPosX'] = _normalPosX;
+      if (_normalPosY != null) data['normalPosY'] = _normalPosY;
+      data['buzzFlashScreen'] = _buzzFlashScreen;
+      data['buzzShakeWindow'] = _buzzShakeWindow;
+      data['buzzBringToFront'] = _buzzBringToFront;
+      data['imeMode'] = _imeMode;
+      data['imeAutoBypassExternal'] = _imeAutoBypassExternal;
+      data['otaCheckInterval'] = _otaCheckInterval;
+      data['otaServerPath'] = _otaServerPath;
+      data['otaUsername'] = _otaUsername;
+      data['otaPassword'] = _otaPassword;
+      data['otaLastCheckTime'] = _otaLastCheckTime?.toIso8601String();
+      data['otaCachedUpdateVersion'] = _otaCachedUpdateVersion;
       await file.writeAsString(jsonEncode(data), flush: true);
     } catch (e) {
       debugPrint('[AppPreferences] Save error: $e');

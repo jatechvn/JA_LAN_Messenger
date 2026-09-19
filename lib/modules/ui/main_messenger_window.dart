@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:tray_manager/tray_manager.dart';
@@ -18,6 +19,11 @@ import 'widgets/transfer_list_view.dart';
 import 'widgets/conversation_details_panel.dart';
 import 'widgets/close_action_dialog.dart';
 import 'widgets/glass_background.dart';
+import 'widgets/glass_components.dart';
+import 'widgets/compact_messenger_view.dart';
+import 'widgets/buzz_flash_overlay.dart';
+import 'widgets/glass_dialog.dart';
+import 'widgets/glass_update_dialog.dart';
 
 class MainMessengerWindow extends StatefulWidget {
   const MainMessengerWindow({super.key});
@@ -62,6 +68,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
       final Menu menu = Menu(
         items: [
           MenuItem(key: 'show_window', label: lang.tr('trayOpen')),
+          MenuItem(key: 'toggle_compact', label: lang.tr('compactMode')),
           MenuItem.separator(),
           MenuItem(key: 'rescan_lan', label: lang.tr('trayRescan')),
           MenuItem.separator(),
@@ -99,6 +106,10 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
       await windowManager.show();
       await windowManager.restore();
       await windowManager.focus();
+    } else if (menuItem.key == 'toggle_compact') {
+      if (mounted) {
+        context.read<MessengerCoordinator>().toggleCompactMode();
+      }
     } else if (menuItem.key == 'rescan_lan') {
       if (mounted) {
         context.read<MessengerCoordinator>().rescanNetwork();
@@ -171,129 +182,218 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
         ? coordinator.currentToast!.format(lang)
         : coordinator.lastToastMessage;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(theme.isWin11 ? 12 : 0),
-          border: Border.all(
-            color: (theme.isDark ? Colors.white : Colors.black).withValues(
-              alpha: theme.isDark ? 0.12 : 0.08,
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyM, control: true): () {
+          coordinator.toggleCompactMode();
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(theme.isWin11 ? 12 : 0),
+              border: Border.all(
+                color: (theme.isDark ? Colors.white : Colors.black).withValues(
+                  alpha: theme.isDark ? 0.12 : 0.08,
+                ),
+                width: 1,
+              ),
             ),
-            width: 1,
-          ),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(theme.isWin11 ? 12 : 0),
-          child: Stack(
-            children: [
-              // 1. Mesh Gradient Base Tint (Translucent)
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        theme.colors.bgSecondary,
-                        theme.colors.bgSecondary.withValues(alpha: 0.5),
-                        theme.colors.bgSecondary.withValues(alpha: 0.2),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-              // 2. GPU-Composited Floating Ambient Mesh Orbs
-              Positioned.fill(
-                child: RepaintBoundary(
-                  child: MeshBackground(
-                    colors: theme.colors,
-                    enableAnimation: theme.effectiveTier != HardwareTier.lite,
-                  ),
-                ),
-              ),
-
-              // 3. Foreground Window Layout
-              Column(
-                children: [
-                  // Custom Window Subheader
-                  _CustomTitleBar(
-                    onlinePeersCount: coordinator.peers.length,
-                    localIdentity: coordinator.localUsername,
-                    isScanning: coordinator.isScanning,
-                  ),
-
-                  // Main Messenger Workspace with Floating Toast Pill overlay
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        Row(
-                          children: [
-                            // Column 1: Compact Sidebar Rail (58px)
-                            CompactSidebar(
-                              activeTab: _activeTab,
-                              onTabChanged: (tab) =>
-                                  setState(() => _activeTab = tab),
-                            ),
-
-                            // Column 2, 3 & 4: Views based on active tab
-                            if (_activeTab == MainViewTab.chats) ...[
-                              // Column 2: Peer List (260px)
-                              const PeerListView(),
-
-                              // Column 3: Active Chat Conversation
-                              Expanded(
-                                child: ChatViewPanel(
-                                  isDetailsOpen: _showDetailsPanel,
-                                  onToggleDetails: () {
-                                    setState(() {
-                                      _showDetailsPanel = !_showDetailsPanel;
-                                    });
-                                  },
-                                ),
-                              ),
-
-                              // Column 4: Right Conversation Details Panel
-                              if (_showDetailsPanel &&
-                                  coordinator.selectedPeer != null)
-                                ConversationDetailsPanel(
-                                  onClose: () {
-                                    setState(() {
-                                      _showDetailsPanel = false;
-                                    });
-                                  },
-                                ),
-                            ] else ...[
-                              // Transfers Manager View
-                              const Expanded(child: TransferListView()),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(theme.isWin11 ? 12 : 0),
+              child: BuzzFlashOverlay(
+                buzzTrigger: coordinator.buzzTriggerCount,
+                enableFlash: AppPreferences().buzzFlashScreen,
+                enableShake: AppPreferences().buzzShakeWindow,
+                child: Stack(
+                  children: [
+                    // 1. Mesh Gradient Base Tint (Translucent)
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              theme.colors.bgSecondary,
+                              theme.colors.bgSecondary.withValues(alpha: 0.5),
+                              theme.colors.bgSecondary.withValues(alpha: 0.2),
                             ],
-                          ],
-                        ),
-
-                        // Floating Glass Toast Pill
-                        if (toastMsg != null && toastMsg.isNotEmpty)
-                          Positioned(
-                            top: 14,
-                            left: 0,
-                            right: 0,
-                            child: Center(
-                              child: _FloatingToastPill(
-                                key: ValueKey(toastMsg),
-                                message: toastMsg,
-                                onDismiss: () {
-                                  coordinator.clearToast();
-                                  coordinator.lastToastMessage = null;
-                                },
-                              ),
-                            ),
                           ),
-                      ],
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+
+                    // 2. GPU-Composited Floating Ambient Mesh Orbs
+                    Positioned.fill(
+                      child: RepaintBoundary(
+                        child: MeshBackground(
+                          colors: theme.colors,
+                          enableAnimation:
+                              theme.effectiveTier != HardwareTier.lite,
+                        ),
+                      ),
+                    ),
+
+                    // 3. Foreground Window Layout with Smooth Mode Transition
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 250),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      layoutBuilder: (currentChild, previousChildren) {
+                        return Stack(
+                          fit: StackFit.expand,
+                          alignment: Alignment.center,
+                          children: <Widget>[
+                            ...previousChildren,
+                            ?currentChild,
+                          ],
+                        );
+                      },
+                      transitionBuilder: (child, animation) {
+                        final isCompact =
+                            child.key == const ValueKey('compact_mode_view');
+                        return FadeTransition(
+                          opacity: CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeInOutCubic,
+                          ),
+                          child: ScaleTransition(
+                            scale: Tween<double>(
+                              begin: isCompact ? 0.94 : 1.03,
+                              end: 1.0,
+                            ).animate(CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeOutCubic,
+                            )),
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: coordinator.isCompactMode
+                          ? const CompactMessengerView(
+                              key: ValueKey('compact_mode_view'),
+                            )
+                          : LayoutBuilder(
+                              key: const ValueKey('standard_mode_view'),
+                              builder: (context, constraints) {
+                                final effectiveWidth = constraints.maxWidth < 680
+                                    ? 680.0
+                                    : constraints.maxWidth;
+                                return ClipRect(
+                                  child: OverflowBox(
+                                    alignment: Alignment.topLeft,
+                                    minWidth: effectiveWidth,
+                                    maxWidth: effectiveWidth,
+                                    minHeight: constraints.maxHeight,
+                                    maxHeight: constraints.maxHeight,
+                                    child: SizedBox(
+                                      width: effectiveWidth,
+                                      height: constraints.maxHeight,
+                                      child: Column(
+                                        children: [
+                                          // Custom Window Subheader
+                                          _CustomTitleBar(
+                                            onlinePeersCount:
+                                                coordinator.peers.length,
+                                            localIdentity:
+                                                coordinator.localUsername,
+                                            isScanning: coordinator.isScanning,
+                                          ),
+
+                                          // Main Messenger Workspace with Floating Toast Pill overlay
+                                          Expanded(
+                                            child: Stack(
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    // Column 1: Compact Sidebar Rail (58px)
+                                                    CompactSidebar(
+                                                      activeTab: _activeTab,
+                                                      onTabChanged: (tab) =>
+                                                          setState(() =>
+                                                              _activeTab = tab),
+                                                    ),
+
+                                                    // Column 2, 3 & 4: Views based on active tab
+                                                    if (_activeTab ==
+                                                        MainViewTab.chats) ...[
+                                                      // Column 2: Peer List (260px)
+                                                      const PeerListView(),
+
+                                                      // Column 3: Active Chat Conversation
+                                                      Expanded(
+                                                        child: ChatViewPanel(
+                                                          isDetailsOpen:
+                                                              _showDetailsPanel,
+                                                          onToggleDetails: () {
+                                                            setState(() {
+                                                              _showDetailsPanel =
+                                                                  !_showDetailsPanel;
+                                                            });
+                                                          },
+                                                        ),
+                                                      ),
+
+                                                      // Column 4: Right Conversation Details Panel
+                                                      if (_showDetailsPanel &&
+                                                          coordinator
+                                                                  .selectedPeer !=
+                                                              null)
+                                                        ConversationDetailsPanel(
+                                                          onClose: () {
+                                                            setState(() {
+                                                              _showDetailsPanel =
+                                                                  false;
+                                                            });
+                                                          },
+                                                        ),
+                                                    ] else ...[
+                                                      // Transfers Manager View
+                                                      const Expanded(
+                                                        child:
+                                                            TransferListView(),
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    // Floating Glass Toast Pill with smooth vertical sliding
+                    if (toastMsg != null && toastMsg.isNotEmpty)
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOutCubic,
+                        top: coordinator.isCompactMode ? 42 : 52,
+                        left: 8,
+                        right: 8,
+                        child: Center(
+                          child: _FloatingToastPill(
+                            key: ObjectKey(coordinator.currentToast),
+                            message: toastMsg,
+                            onDismiss: () {
+                              coordinator.clearToast();
+                              coordinator.lastToastMessage = null;
+                            },
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -302,6 +402,50 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
 }
 
 class _CustomTitleBar extends StatelessWidget {
+  Future<void> _editOwnNickname(BuildContext context) async {
+    final coordinator = context.read<MessengerCoordinator>();
+    final lang = context.read<LanguageProvider>();
+    var draft = coordinator.localUsername;
+    final name = await showGlassDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          void save() {
+            if (draft.trim().isNotEmpty) Navigator.of(ctx).pop(draft.trim());
+          }
+
+          return GlassDialog(
+            title: lang.tr('editNickname'),
+            icon: Icons.edit_rounded,
+            width: 350,
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(lang.tr('cancel')),
+              ),
+              FilledButton(
+                onPressed: draft.trim().isEmpty ? null : save,
+                child: Text(lang.tr('save')),
+              ),
+            ],
+            child: TextFormField(
+              key: const ValueKey('own-nickname-input'),
+              initialValue: draft,
+              autofocus: true,
+              maxLength: 64,
+              decoration: InputDecoration(labelText: lang.tr('nickname')),
+              onChanged: (value) => setDialogState(() => draft = value),
+              onFieldSubmitted: (_) => save(),
+            ),
+          );
+        },
+      ),
+    );
+    if (name != null && context.mounted) {
+      coordinator.updateProfile(username: name);
+    }
+  }
+
   final int onlinePeersCount;
   final String localIdentity;
   final bool isScanning;
@@ -316,6 +460,7 @@ class _CustomTitleBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ThemeProvider.of(context);
     final lang = context.watch<LanguageProvider>();
+    final coordinator = context.watch<MessengerCoordinator>();
 
     return Container(
       height: 38,
@@ -328,133 +473,229 @@ class _CustomTitleBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.wifi_tethering_rounded,
-            size: 16,
-            color: isScanning
-                ? theme.colors.accentBlue
-                : theme.colors.accentEmerald,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            appName,
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: theme.isDark ? const Color(0xFFF8FAFC) : Colors.black87,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-            decoration: BoxDecoration(
-              color:
-                  (isScanning
-                          ? theme.colors.accentBlue
-                          : theme.colors.accentEmerald)
-                      .withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
+          Expanded(
             child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  margin: const EdgeInsets.only(right: 5),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isScanning
-                        ? theme.colors.accentBlue
-                        : theme.colors.accentEmerald,
-                  ),
-                ),
-                Text(
-                  isScanning
-                      ? lang.tr('scanning')
-                      : '$onlinePeersCount ${lang.tr('devicesOnline')}',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: isScanning
-                        ? theme.colors.accentBlue
-                        : theme.colors.accentEmerald,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (BuildInfo.isDebug) ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
-              decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: Colors.amber.withValues(alpha: 0.35),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.bug_report_rounded,
-                    size: 11,
-                    color: Colors.amber,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'DEBUG · v${BuildInfo.version} (${BuildInfo.debugTimestamp})',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'Consolas',
-                      color: Colors.amber,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          const Spacer(),
-
-          // Định danh máy trạm hiện tại: user@hostname
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: (theme.isDark ? const Color(0xFF1E293B) : Colors.black)
-                  .withValues(alpha: theme.isDark ? 0.75 : 0.06),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: (theme.isDark ? Colors.white : Colors.black).withValues(
-                  alpha: theme.isDark ? 0.12 : 0.08,
-                ),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  Icons.laptop_chromebook_rounded,
-                  size: 13,
-                  color: theme.colors.accentBlue,
+                  Icons.wifi_tethering_rounded,
+                  size: 16,
+                  color: isScanning
+                      ? theme.colors.accentBlue
+                      : theme.colors.accentEmerald,
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 Text(
-                  localIdentity,
+                  appName,
                   style: TextStyle(
-                    fontSize: 11,
-                    fontFamily: 'Consolas',
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
                     color: theme.isDark
                         ? const Color(0xFFF8FAFC)
                         : Colors.black87,
-                    fontWeight: FontWeight.w500,
                   ),
                 ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1.5,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        (isScanning
+                                ? theme.colors.accentBlue
+                                : theme.colors.accentEmerald)
+                            .withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        margin: const EdgeInsets.only(right: 5),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isScanning
+                              ? theme.colors.accentBlue
+                              : theme.colors.accentEmerald,
+                        ),
+                      ),
+                      Text(
+                        isScanning
+                            ? lang.tr('scanning')
+                            : '$onlinePeersCount ${lang.tr('devicesOnline')}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: isScanning
+                              ? theme.colors.accentBlue
+                              : theme.colors.accentEmerald,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (BuildInfo.isDebug) ...[
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 1.5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: Colors.amber.withValues(alpha: 0.35),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.bug_report_rounded,
+                            size: 11,
+                            color: Colors.amber,
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              'DEBUG · v${BuildInfo.version} (${BuildInfo.debugTimestamp})',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'Consolas',
+                                color: Colors.amber,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
+          ),
+          const SizedBox(width: 12),
+
+          // Định danh máy trạm hiện tại: user@hostname
+          Tooltip(
+            message: localIdentity,
+            child: InkWell(
+              key: const ValueKey('own-nickname-button'),
+              onTap: () => _editOwnNickname(context),
+              borderRadius: BorderRadius.circular(6),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 180),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        (theme.isDark ? const Color(0xFF1E293B) : Colors.black)
+                            .withValues(alpha: theme.isDark ? 0.75 : 0.06),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: (theme.isDark ? Colors.white : Colors.black)
+                          .withValues(alpha: theme.isDark ? 0.12 : 0.08),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.laptop_chromebook_rounded,
+                        size: 13,
+                        color: theme.colors.accentBlue,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          localIdentity,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontFamily: 'Consolas',
+                            color: theme.isDark
+                                ? const Color(0xFFF8FAFC)
+                                : Colors.black87,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Nút huy hiệu cập nhật OTA nếu có bản mới
+          if (coordinator.availableUpdate != null) ...[
+            Tooltip(
+              message: '${lang.tr('updateAvailable')}: v${coordinator.availableUpdate!.version}',
+              child: InkWell(
+                key: const ValueKey('ota-update-badge-button'),
+                onTap: () {
+                  showGlassUpdateDialog(
+                    context: context,
+                    packageInfo: coordinator.availableUpdate!,
+                  );
+                },
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: const Color(0xFF10B981).withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.system_update_alt_rounded,
+                        size: 13,
+                        color: Color(0xFF10B981),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        'v${coordinator.availableUpdate!.version}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF10B981),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(width: 8),
+          // Nút chuyển chế độ thu nhỏ (Compact Mode)
+          GlassIconButton(
+            icon: Icons.picture_in_picture_alt_rounded,
+            tooltip: lang.tr('compactMode'),
+            color: theme.colors.accentBlue,
+            size: 28,
+            onPressed: () =>
+                context.read<MessengerCoordinator>().toggleCompactMode(),
           ),
         ],
       ),
@@ -562,17 +803,19 @@ class _FloatingToastPillState extends State<_FloatingToastPill>
                     color: theme.colors.accentAmber,
                   ),
                   const SizedBox(width: 9),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 420),
-                    child: Text(
-                      widget.message,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w500,
-                        color: theme.isDark ? Colors.white : Colors.black87,
+                  Flexible(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: Text(
+                        widget.message,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
+                          color: theme.isDark ? Colors.white : Colors.black87,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: 10),

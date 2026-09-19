@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../../theme/theme_provider.dart';
@@ -42,14 +43,24 @@ class GlassDialog extends StatelessWidget {
       alpha: isDark ? 0.12 : 0.08,
     );
 
-    Widget dialogBody = Center(
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          width: width,
-          height: height,
-          margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          decoration: BoxDecoration(
+    Widget dialogBody = LayoutBuilder(
+      builder: (context, constraints) {
+        final screenWidth = constraints.maxWidth;
+        final horizontalMargin = screenWidth < 420 ? 12.0 : 24.0;
+        final maxDialogWidth = math.max(260.0, screenWidth - (horizontalMargin * 2));
+        final effectiveWidth = math.min(width, maxDialogWidth);
+
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: effectiveWidth,
+              height: height,
+              margin: EdgeInsets.symmetric(
+                horizontal: horizontalMargin,
+                vertical: 24,
+              ),
+              decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: borderColor, width: 1),
@@ -143,11 +154,17 @@ class GlassDialog extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
-                      vertical: 12,
+                      vertical: 10,
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: actions!,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(
+                        alignment: WrapAlignment.end,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: actions!,
+                      ),
                     ),
                   ),
                 ],
@@ -157,6 +174,8 @@ class GlassDialog extends StatelessWidget {
         ),
       ),
     );
+  },
+);
 
     if (effectiveBlur > 0) {
       dialogBody = BackdropFilter(

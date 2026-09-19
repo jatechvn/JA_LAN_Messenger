@@ -70,6 +70,9 @@ class MessageModel {
   // Pin message in conversation
   bool isPinned;
 
+  // Emoji reactions: emoji -> list of user names
+  Map<String, List<String>> reactions;
+
   MessageModel({
     required this.id,
     required this.senderId,
@@ -90,11 +93,47 @@ class MessageModel {
     this.replyToSender,
     this.replyToText,
     this.isPinned = false,
-  }) : timestamp = timestamp ?? DateTime.now();
+    Map<String, List<String>>? reactions,
+  })  : timestamp = timestamp ?? DateTime.now(),
+        reactions = reactions ?? {};
 
   bool get hasAttachment => fileAttachment != null && !isRevoked;
   bool get isReply => replyToText != null && replyToText!.isNotEmpty;
   String get conversationId => isMine ? recipientId : senderId;
+
+  bool hasUserReacted(String emoji, String username) {
+    return reactions[emoji]?.contains(username) ?? false;
+  }
+
+  bool toggleReaction(String emoji, String username) {
+    final list = reactions.putIfAbsent(emoji, () => <String>[]);
+    if (list.contains(username)) {
+      list.remove(username);
+      if (list.isEmpty) {
+        reactions.remove(emoji);
+      }
+      return false;
+    } else {
+      list.add(username);
+      return true;
+    }
+  }
+
+  void addReaction(String emoji, String username) {
+    final list = reactions.putIfAbsent(emoji, () => <String>[]);
+    if (!list.contains(username)) {
+      list.add(username);
+    }
+  }
+
+  void removeReaction(String emoji, String username) {
+    if (reactions.containsKey(emoji)) {
+      reactions[emoji]!.remove(username);
+      if (reactions[emoji]!.isEmpty) {
+        reactions.remove(emoji);
+      }
+    }
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -115,6 +154,8 @@ class MessageModel {
     if (replyToSender != null) 'replyToSender': replyToSender,
     if (replyToText != null) 'replyToText': replyToText,
     'isPinned': isPinned,
+    if (reactions.isNotEmpty)
+      'reactions': reactions.map((k, v) => MapEntry(k, List<String>.from(v))),
   };
 
   factory MessageModel.fromJson(Map<String, dynamic> json) {
@@ -135,6 +176,16 @@ class MessageModel {
         : null;
 
     final attachmentJson = json['fileAttachment'] as Map<String, dynamic>?;
+
+    final reactionsMap = <String, List<String>>{};
+    if (json['reactions'] is Map) {
+      (json['reactions'] as Map).forEach((key, val) {
+        if (val is List) {
+          reactionsMap[key.toString()] =
+              val.map((e) => e.toString()).toList();
+        }
+      });
+    }
 
     return MessageModel(
       id: json['id'] as String? ?? '',
@@ -158,6 +209,7 @@ class MessageModel {
       replyToSender: json['replyToSender'] as String?,
       replyToText: json['replyToText'] as String?,
       isPinned: json['isPinned'] as bool? ?? false,
+      reactions: reactionsMap,
     );
   }
 }

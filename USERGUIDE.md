@@ -1,16 +1,25 @@
-﻿# Hướng dẫn sử dụng JA LAN Messenger v1.1.0
+# Hướng dẫn sử dụng JA LAN Messenger v1.2.0
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
 ---
 
-## 1. Yêu cầu hệ thống & Cài đặt
+## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
-- **Cài đặt:** 
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.1.0_Windows_x64.zip`.
-  2. Giải nén toàn bộ thư mục vào vị trí mong muốn (ví dụ: `D:\Tools\JA_LAN_Messenger\`).
-  3. Nhấp đúp vào file `ja_lan_messenger.exe` (hoặc chạy qua `debug.bat` để theo dõi console log).
-  4. **Tường lửa Windows Defender:** Trong lần chạy đầu tiên, chọn **"Allow access" (Cho phép truy cập)** cho cả mạng Private và Public để ứng dụng có thể lắng nghe và nhận diện thiết bị trên mạng LAN qua cổng UDP 36475 và TCP 6475/6476.
+- **Cài đặt chuẩn (Khuyên dùng):**
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.2.0_Windows_x64.zip` và giải nén.
+  2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
+  3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
+  4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
+  - Thoát bản đã cài trước khi cài lại. Bộ cài không cưỡng bức đóng app; giữ cấu hình và sao lưu file chương trình vào `%TEMP%` trước khi thay thế.
+- **Chạy trực tiếp dạng Portable (Không cần cài đặt):**
+  - Mở thư mục giải nén, nhấp đúp chạy trực tiếp `ja_lan_messenger.exe` (hoặc qua `debug.bat` để xem console log).
+- **Gỡ cài đặt (Uninstall):**
+  - Mở **Control Panel (`Programs and Features`)** hoặc **Windows Settings (`Installed apps`)** -> tìm `JA LAN Messenger` -> chọn **Uninstall**.
+  - Hoặc chạy trực tiếp file **`uninstall.bat`** trong thư mục cài đặt / Start Menu.
+  - Bộ gỡ cài đặt cho phép tùy chọn giữ lại hoặc xóa lịch sử trò chuyện cá nhân.
+  - `/silent` luôn giữ dữ liệu. Cần giữ `uninstall.ps1` đi kèm; bộ gỡ chỉ xóa thư mục cài đã đăng ký, không xóa thư mục portable hoặc mã nguồn. Lựa chọn xóa dữ liệu cũng xóa logs tại `%LOCALAPPDATA%\JA_LAN_Messenger`.
+- **Tường lửa Windows Defender:** Trong lần chạy đầu tiên, chọn **"Allow access" (Cho phép truy cập)** cho cả mạng Private và Public để ứng dụng có thể lắng nghe và nhận diện thiết bị trên mạng LAN qua cổng UDP 36475 và TCP 6475/6476.
 
 ---
 
@@ -48,6 +57,20 @@
 ### 2.6. Quản lý Card mạng & Lịch sử trò chuyện
 - **Chọn Card mạng:** Trong Cài đặt, bạn có thể tích chọn các card mạng mong muốn hoặc bỏ chọn card ảo (VMware, VirtualBox, WSL) để tối ưu tốc độ quét mạng LAN.
 - **Lưu trữ lịch sử an toàn:** Cơ chế ghi đĩa nguyên tử (atomic file write) bảo vệ lịch sử trò chuyện không bị hỏng file hay mất dữ liệu khi tắt máy đột ngột.
+
+### 2.7. Tự động cập nhật OTA qua mạng nội bộ (Over-The-Air Update)
+- **Tự động quét bản mới:** Tích hợp kiểm tra cập nhật qua thư mục mạng chia sẻ nội bộ (SMB/UNC, ví dụ: `\\10.81.141.226\temp\...\JA_LAN_Messenger`).
+- **Chu kỳ linh hoạt:** Trong **Cài đặt > Tab Cập nhật OTA**, bạn có thể chọn tần suất: *Hàng ngày, Hàng tuần, Hàng tháng, hoặc Tắt*.
+- **Cấu hình độc lập:** Có thể cấu hình trực tiếp trong app hoặc qua file `update_config.json` đặt cạnh ứng dụng.
+- **Cập nhật 1-chạm:** Khi có bản cập nhật mới, thanh tiêu đề hiển thị huy hiệu xanh lá `vX.Y.Z`. Bấm vào để mở hộp thoại xem Release Notes và bấm "Cập nhật ngay" để tự động tải, giải nén và khởi động lại phiên bản mới.
+
+### 2.8. Đính kèm nhiều tệp & Xem trước (Staged Attachments & File Preview)
+- **Gắn tệp vào khung soạn thảo:** Dán (`Ctrl + V`) ảnh/file từ clipboard hoặc chọn từ nút kẹp giấy. Các tệp đính kèm sẽ hiển thị trực tiếp thành các thẻ thu nhỏ ngay trên thanh nhập liệu, cho phép đính kèm nhiều tệp cùng lúc trước khi bấm gửi.
+- **Xem trước tức thì:** Nhấp vào ảnh đính kèm để mở hộp thoại Lightbox phóng to/thu nhỏ/xoay ảnh; nhấp vào tệp tài liệu để xem thông tin chi tiết trước khi gửi hoặc tải về.
+
+### 2.9. Bộ gõ tiếng Việt / tiếng Trung tích hợp (Built-in IME)
+- **Hỗ trợ gõ trực tiếp:** Tích hợp bộ gõ **Telex (Tiếng Việt)** và **Pinyin (Tiếng Trung)** ngay trong ứng dụng mà không cần cài đặt phần mềm ngoài.
+- **Tự động thích ứng:** Nút chuyển đổi nhanh ở góc phải khung chat, tự động tránh xung đột khi phát hiện bộ gõ hệ thống (Unikey, EVKey, Microsoft IME).
 
 ---
 

@@ -15,7 +15,8 @@ class ProtocolBeebeep {
       headerBuzz = 'BEE-BUZZ',
       headerPing = 'BEE-PING',
       headerPong = 'BEE-PONG',
-      headerRevoke = 'BEE-RCOV';
+      headerRevoke = 'BEE-RCOV',
+      headerReaction = 'BEE-REACT';
   static const protocolVersion = 95;
   static const idWritingMessage = 12;
 
@@ -153,6 +154,33 @@ class ProtocolBeebeep {
 
   static List<int> buildRevokePacket(String messageId) =>
       packet(headerRevoke, '35', text: messageId, flags: 1);
+
+  static List<int> buildReactionPacket({
+    required String messageId,
+    required String emoji,
+    required String action,
+    required String senderName,
+  }) =>
+      packet(
+        headerReaction,
+        '40',
+        text: '$messageId$dataFieldSeparator$emoji$dataFieldSeparator$action',
+        data: senderName,
+        flags: 1,
+      );
+
+  static Map<String, String>? parseReactionPacket(Map<String, dynamic> message) {
+    if (message['header'] != headerReaction) return null;
+    final text = message['text'] as String? ?? '';
+    final parts = text.split(dataFieldSeparator);
+    if (parts.length < 3) return null;
+    return {
+      'messageId': parts[0],
+      'emoji': parts[1],
+      'action': parts[2],
+      'senderName': message['data'] as String? ?? '',
+    };
+  }
 
   static Map<String, dynamic>? parseMessage(String payload) {
     final parts = payload.split(protocolFieldSeparator);

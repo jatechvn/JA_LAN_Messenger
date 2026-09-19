@@ -132,6 +132,7 @@ void test() {
       final theme = ThemeProvider();
       final lang = LanguageProvider();
       final coordinator = MessengerCoordinator();
+      addTearDown(() => coordinator.dispose());
 
       final peer = coordinator.allUsersPeer;
       coordinator.selectPeer(peer);
@@ -147,6 +148,7 @@ void test() {
               'Here is some code:\n```dart\nint add(int a, int b) => a + b;\n```',
           timestamp: DateTime.now(),
           isMine: false,
+          status: MessageStatus.read,
         ),
       ];
 

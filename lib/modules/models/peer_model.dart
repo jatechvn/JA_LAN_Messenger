@@ -66,6 +66,21 @@ class PeerModel {
 
   bool get isAiAssistant => id == '__AI_ASSISTANT__';
 
+  /// A session may have multiple NICs, but a nickname alone is not identity.
+  String get networkSessionIdentity {
+    if (isAiAssistant || isAllUsers || isGroup) return id;
+    final host = (hostname ?? '').trim().toLowerCase();
+    final account = (accountName ?? '').trim().toLowerCase();
+    if (host.isEmpty ||
+        host == 'localhost' ||
+        host == '???' ||
+        account.isEmpty ||
+        account == '???') {
+      return '$ip:$port';
+    }
+    return '$account@$host:$port';
+  }
+
   /// Định danh duy nhất chuẩn tắc của thiết bị (để hợp nhất nhiều card mạng của cùng 1 máy)
   String get canonicalIdentity {
     if (isAiAssistant) return '__AI_ASSISTANT__';

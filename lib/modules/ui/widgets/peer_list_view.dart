@@ -9,6 +9,7 @@ import '../../models/group_model.dart';
 import 'glass_components.dart';
 import 'glass_dialog.dart';
 import 'glass_search_history_field.dart';
+import 'bounce_marquee_text.dart';
 
 enum _PeerCategory { all, online, groups }
 
@@ -426,13 +427,6 @@ class _SearchAndActionHeaderState extends State<_SearchAndActionHeader> {
             ),
           ),
           const SizedBox(width: 4),
-          GlassIconButton(
-            icon: Icons.refresh_rounded,
-            tooltip: lang.tr('rescanTooltip'),
-            size: 30,
-            onPressed: () => coordinator.rescanNetwork(),
-          ),
-          const SizedBox(width: 3),
           GlassIconButton(
             icon: Icons.group_add_rounded,
             tooltip: lang.tr('createGroupTooltip'),
@@ -1310,41 +1304,20 @@ class _ScanStatusBanner extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              subnetText,
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                                fontFamily: 'Consolas',
-                                color: theme.isDark
-                                    ? Colors.white.withValues(alpha: 0.9)
-                                    : Colors.black87,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Flexible(
-                            child: Text(
-                              '• $adapterCount ${lang.tr('cardAdapters')}',
-                              style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w500,
-                                color: theme.isDark
-                                    ? Colors.white54
-                                    : Colors.black54,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
+                      BounceMarqueeText(
+                        text: '$subnetText • $adapterCount ${lang.tr('cardAdapters')}',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Consolas',
+                          color: theme.isDark
+                              ? Colors.white.withValues(alpha: 0.9)
+                              : Colors.black87,
+                        ),
                       ),
                       const SizedBox(height: 1.5),
-                      Text(
-                        coordinator.getLocalizedScanStatus(lang),
+                      BounceMarqueeText(
+                        text: coordinator.getLocalizedScanStatus(lang),
                         style: TextStyle(
                           fontSize: 10,
                           color: isScanning
@@ -1356,60 +1329,15 @@ class _ScanStatusBanner extends StatelessWidget {
                               ? FontWeight.w500
                               : FontWeight.normal,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 6),
-                // Pill tag
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isScanning
-                        ? theme.colors.accentBlue.withValues(alpha: 0.15)
-                        : theme.colors.accentEmerald.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isScanning
-                          ? theme.colors.accentBlue.withValues(alpha: 0.3)
-                          : theme.colors.accentEmerald.withValues(alpha: 0.25),
-                      width: 0.8,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isScanning)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 3),
-                          child: SizedBox(
-                            width: 8,
-                            height: 8,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 1.5,
-                              color: theme.colors.accentBlue,
-                            ),
-                          ),
-                        ),
-                      Text(
-                        isScanning
-                            ? '${(coordinator.scanProgress * 100).toInt()}%'
-                            : '${coordinator.peers.length} ${lang.tr('devicesOnline')}',
-                        style: TextStyle(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.bold,
-                          color: isScanning
-                              ? theme.colors.accentBlue
-                              : theme.colors.accentEmerald,
-                        ),
-                      ),
-                    ],
-                  ),
+                _ScanActionButton(
+                  isScanning: isScanning,
+                  tooltip: lang.tr('rescanTooltip'),
+                  onPressed: () => coordinator.rescanNetwork(),
                 ),
               ],
             ),
@@ -1428,6 +1356,116 @@ class _ScanStatusBanner extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _ScanActionButton extends StatefulWidget {
+  final bool isScanning;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  const _ScanActionButton({
+    required this.isScanning,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  @override
+  State<_ScanActionButton> createState() => _ScanActionButtonState();
+}
+
+class _ScanActionButtonState extends State<_ScanActionButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  bool _isHovered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    if (widget.isScanning) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _ScanActionButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isScanning && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!widget.isScanning && _controller.isAnimating) {
+      _controller.stop();
+      _controller.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ThemeProvider.of(context);
+    final isDark = theme.isDark;
+
+    return Tooltip(
+      message: widget.tooltip,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: widget.onPressed,
+            borderRadius: BorderRadius.circular(8),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: widget.isScanning
+                    ? theme.colors.accentBlue.withValues(alpha: 0.16)
+                    : (_isHovered
+                        ? (isDark ? Colors.white : Colors.black)
+                            .withValues(alpha: 0.08)
+                        : (isDark ? Colors.white : Colors.black)
+                            .withValues(alpha: 0.03)),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: widget.isScanning
+                      ? theme.colors.accentBlue.withValues(alpha: 0.35)
+                      : (_isHovered
+                          ? (isDark ? Colors.white : Colors.black)
+                              .withValues(alpha: 0.15)
+                          : (isDark ? Colors.white : Colors.black)
+                              .withValues(alpha: 0.07)),
+                  width: 1,
+                ),
+              ),
+              child: Center(
+                child: RotationTransition(
+                  turns: _controller,
+                  child: Icon(
+                    Icons.refresh_rounded,
+                    size: 16,
+                    color: widget.isScanning
+                        ? theme.colors.accentBlue
+                        : (_isHovered
+                            ? (isDark ? Colors.white : Colors.black87)
+                            : (isDark ? Colors.white70 : Colors.black54)),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

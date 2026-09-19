@@ -42,11 +42,32 @@ if exist "%~dp0debug.bat" (
     copy /y "%~dp0debug.bat" "%TARGET_DIR%\debug.bat" >nul
     echo       - Da chep debug.bat vao thu muc Release.
 )
+if exist "%~dp0install.bat" (
+    copy /y "%~dp0install.bat" "%TARGET_DIR%\install.bat" >nul
+    echo       - Da chep install.bat vao thu muc Release.
+)
+if exist "%~dp0uninstall.bat" (
+    copy /y "%~dp0uninstall.bat" "%TARGET_DIR%\uninstall.bat" >nul
+    echo       - Da chep uninstall.bat vao thu muc Release.
+)
 if exist "%~dp0ABOUT.txt" copy /y "%~dp0ABOUT.txt" "%TARGET_DIR%\" >nul
+copy /y "%~dp0uninstall.ps1" "%TARGET_DIR%\uninstall.ps1" >nul
+if errorlevel 1 (
+    echo [ERROR] Cannot package uninstall.ps1.
+    pause
+    exit /b 1
+)
 if exist "%~dp0README.md" copy /y "%~dp0README.md" "%TARGET_DIR%\" >nul
 if exist "%~dp0CHANGELOG.md" copy /y "%~dp0CHANGELOG.md" "%TARGET_DIR%\" >nul
 if exist "%~dp0USERGUIDE.md" copy /y "%~dp0USERGUIDE.md" "%TARGET_DIR%\" >nul
 if exist "%~dp0LICENSE" copy /y "%~dp0LICENSE" "%TARGET_DIR%\" >nul
+
+:: Dong bo bo cai dat vao dist neu thu muc dist ton tai
+if exist "%~dp0dist\" (
+    if exist "%~dp0install.bat" copy /y "%~dp0install.bat" "%~dp0dist\install.bat" >nul
+    if exist "%~dp0uninstall.bat" copy /y "%~dp0uninstall.bat" "%~dp0dist\uninstall.bat" >nul
+    copy /y "%~dp0uninstall.ps1" "%~dp0dist\uninstall.ps1" >nul
+)
 
 :: 4. Tao Shortcut den thu muc Release ngay tai goc du an
 echo [4/5] Tao shortcut .Release - Shortcut.lnk tai goc du an...

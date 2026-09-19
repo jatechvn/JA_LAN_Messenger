@@ -2,6 +2,24 @@
 
 All notable changes to the **JA LAN Messenger** project will be documented in this file.
 
+## [1.2.0] - 2026-09-19
+
+### 🚀 Nâng cấp & Tính năng mới
+- **Cập nhật tự động OTA qua mạng nội bộ (Over-The-Air Update)**: Tự động phát hiện và cập nhật phiên bản mới qua thư mục chia sẻ mạng LAN (SMB/UNC), hỗ trợ cấu hình chu kỳ (hàng ngày, hàng tuần, hàng tháng, tắt) qua file JSON và giao diện; hộp thoại `GlassUpdateDialog` hiển thị Release Notes, thanh tiến trình tải và áp dụng bản cập nhật không khóa tệp.
+- **Bộ cài đặt & gỡ cài đặt chuẩn Windows (Control Panel Integration)**: Cung cấp `install.bat` cài đặt per-user (`%LOCALAPPDATA%\Programs\JA_LAN_Messenger`) không cần quyền UAC, tự tạo shortcut Desktop & Start Menu, đăng ký chính thức vào Windows Control Panel (`Programs and Features`) và Windows Settings; `uninstall.bat` & `uninstall.ps1` hỗ trợ gỡ cài đặt sạch sẽ, an toàn, tùy chọn lưu giữ dữ liệu cá nhân và cơ chế tự hủy không khóa tệp. Kèm kịch bản Inno Setup chuẩn hóa (`windows/packaging/installer.iss`).
+- **Đính kèm nhiều tệp & Xem trước (Staged Attachments & File Preview)**: Cho phép dán hoặc chọn nhiều file/ảnh trực tiếp vào thanh soạn thảo trước khi gửi; xem trước ảnh qua Lightbox tương tác (phóng to, thu nhỏ, xoay ảnh) và hộp thoại xem chi tiết tài liệu.
+- **Bộ gõ thông minh tích hợp (Built-in IME Telex & Pinyin)**: Tích hợp engine gõ tiếng Việt Telex và tiếng Trung Pinyin trực tiếp trong app với nút chuyển đổi nhanh và cơ chế tự động tránh xung đột khi bộ gõ ngoài (Unikey, EVKey, Microsoft IME) đang bật.
+- **Tối ưu trải nghiệm chuyển đổi Compact Mode**: Hiệu ứng chuyển cảnh mượt mà giữa chế độ chuẩn (Standard) và chế độ thu nhỏ góc màn hình (Compact Mode); tối ưu diện tích hiển thị danh sách mạng và di chuyển nút scan mạng LAN.
+
+### 🐛 Sửa lỗi & Tối ưu hóa
+- Khắc phục triệt để lỗi test suite ghi đè file cấu hình thực tế của người dùng dẫn đến app luôn khởi động bằng tiếng Trung sau khi build.
+- Bổ sung cơ chế cách ly kiểm thử `_isInTest` và `customFileForTesting` trong `LanguageProvider`, tự động nhận diện ngôn ngữ hệ điều hành Windows chính xác (`en_US` ➔ English, `vi_VN` ➔ Tiếng Việt, `zh_CN` ➔ Tiếng Trung).
+- Sửa lỗi tràn giao diện (RenderFlex overflow) trong hộp thoại Cài đặt khi chuyển đổi giữa các ngôn ngữ có độ dài văn bản khác nhau.
+- Dọn dẹp tệp thừa trùng lặp `lib/modules/theme/language_provider.dart`.
+
+### 📦 Phát hành
+- Đồng bộ version `1.2.0+3` trong `pubspec.yaml`, `constants.dart`, `Runner.rc`, `ABOUT.txt`, `install.bat`, `installer.iss`, `README.md`, `USERGUIDE.md`, `RELEASE_NOTES.md`.
+
 ## [1.1.0] - 2026-09-18
 
 ### 🚀 Nâng cấp & Tính năng mới

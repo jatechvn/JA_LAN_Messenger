@@ -32,6 +32,14 @@ class LanguageProvider extends ChangeNotifier {
   AppLanguage _currentLanguage = AppLanguage.vi;
   static const String _prefFileName = 'app_preferences.json';
 
+  /// Dành riêng cho Unit Test: Tránh ghi đè file cấu hình thật của người dùng
+  static File? customFileForTesting;
+  static bool disableDiskPersistenceForTesting = false;
+
+  static bool get _isInTest =>
+      disableDiskPersistenceForTesting ||
+      Platform.environment.containsKey('FLUTTER_TEST');
+
   AppLanguage get currentLanguage => _currentLanguage;
   String get code => _currentLanguage.code;
   AppLanguage get nextLanguage =>
@@ -43,6 +51,11 @@ class LanguageProvider extends ChangeNotifier {
   }
 
   void _initLocale() {
+    if (_isInTest && customFileForTesting == null) {
+      _currentLanguage = _detectWindowsLanguage();
+      return;
+    }
+
     // 1. Cố gắng đọc lựa chọn đã lưu của người dùng
     try {
       final file = File(_getPrefFilePath());
@@ -76,6 +89,9 @@ class LanguageProvider extends ChangeNotifier {
   }
 
   static String _getPrefFilePath() {
+    if (customFileForTesting != null) {
+      return customFileForTesting!.path;
+    }
     final appData = Platform.environment['APPDATA'];
     if (appData != null && appData.isNotEmpty) {
       final dir = Directory('$appData\\JA_LAN_Messenger');
@@ -102,6 +118,9 @@ class LanguageProvider extends ChangeNotifier {
   }
 
   void _savePreference() {
+    if (_isInTest && customFileForTesting == null) {
+      return;
+    }
     try {
       final file = File(_getPrefFilePath());
       final Map<String, dynamic> data = file.existsSync()
@@ -113,9 +132,19 @@ class LanguageProvider extends ChangeNotifier {
   }
 
   /// Tra cứu chuỗi dịch
-  String tr(String key) {
+  String tr(String key, [List<dynamic>? args]) {
     final dict = _translations[_currentLanguage.code] ?? _translations['en']!;
-    return dict[key] ?? _translations['en']?[key] ?? key;
+    var str = dict[key] ?? _translations['en']?[key] ?? key;
+    if (args != null && args.isNotEmpty) {
+      for (final arg in args) {
+        if (str.contains('%s')) {
+          str = str.replaceFirst('%s', arg.toString());
+        } else if (str.contains('%d')) {
+          str = str.replaceFirst('%d', arg.toString());
+        }
+      }
+    }
+    return str;
   }
 
   static final Map<String, Map<String, String>> _translations = {
@@ -370,6 +399,103 @@ class LanguageProvider extends ChangeNotifier {
       'pinnedMessagesCount': 'Tin nhắn đã ghim (%d/%d)',
       'messagePinnedToast': 'Đã ghim tin nhắn vào đầu cuộc trò chuyện',
       'messageUnpinnedToast': 'Đã bỏ ghim tin nhắn',
+      // Cuộn trang
+      'scrollToTop': 'Cuộn lên trên cùng',
+      'scrollToBottom': 'Cuộn xuống dưới cùng',
+      'newMessagesCount': '%d tin nhắn mới',
+      'unreadMessagesBanner': 'Tin nhắn chưa đọc',
+      // Chế độ thu nhỏ (Compact Mode)
+      'compactMode': 'Chế độ thu nhỏ (Compact)',
+      'standardMode': 'Chế độ chuẩn (Standard)',
+      'alwaysOnTop': 'Ghim trên cùng',
+      'unpinFromTop': 'Bỏ ghim trên cùng',
+      'backToChats': 'Quay lại danh sách',
+      'allFilter': 'Tất cả',
+      'unreadFilter': 'Chưa đọc',
+      'onlineFilter': 'Trực tuyến',
+      'contactInfo': 'Thông tin máy trạm',
+      'viewContactInfo': 'Xem thông tin máy trạm',
+      'hostname': 'Tên máy trạm',
+      'closeDialog': 'Đóng',
+      // Buzz Alert Settings
+      'buzzAlertSettings': 'Cảnh báo rung chuông (Buzz / Nudge)',
+      'buzzFlashScreen': 'Nhấp nháy chớp sáng màn hình (White Strobe)',
+      'buzzFlashScreenDesc':
+          'Chớp sáng trắng đa nhịp toàn màn hình để dễ nhận biết từ xa',
+      'buzzShakeWindow': 'Rung chấn vật lý cửa sổ (Window Shake)',
+      'buzzShakeWindowDesc':
+          'Rung lắc cửa sổ mô phỏng cú gõ bàn của Yahoo Messenger',
+      'buzzBringToFront': 'Tự động nổi lên trước (Bring to Front)',
+      'buzzBringToFrontDesc':
+          'Tự động khôi phục và đưa cửa sổ lên trên cùng khi nhận Buzz',
+      // IME Built-in Settings
+      'imeSettings': 'Bộ gõ văn bản tích hợp (Built-in IME)',
+      'imeMode': 'Chế độ bộ gõ',
+      'imeAuto': 'Tự động (Thích ứng theo ngôn ngữ giao diện)',
+      'imeTelex': 'Tiếng Việt (Telex)',
+      'imePinyin': 'Tiếng Trung giản thể (Pinyin)',
+      'imeOff': 'Tắt bộ gõ (Tiếng Anh / Raw)',
+      'imeAutoBypass': 'Tự động ngắt khi phát hiện bộ gõ ngoài',
+      'imeAutoBypassDesc':
+          'Tránh xung đột và gõ đúp chữ khi đang chạy EVKey, UniKey, Sogou...',
+      'imeBypassedDesc': 'Đã tự ngắt do phát hiện bộ gõ ngoài',
+      'buzzSent': 'Bạn đã gửi rung chuông tới %s',
+      'editNickname': 'Đổi biệt danh',
+      'nicknameHint': 'Nhập biệt danh hiển thị mới...',
+      'resetDefaultName': 'Khôi phục tên gốc',
+      'addReaction': 'Thả cảm xúc',
+      'reactions': 'Cảm xúc',
+      'quickRename': 'Đổi tên nhanh',
+      'attachedFiles': 'Tệp đính kèm',
+      'stagedFilesCount': '%d tệp đính kèm',
+      'removeAttachment': 'Gỡ bỏ tệp này',
+      'clearAllAttachments': 'Gỡ tất cả tệp',
+      'filePreview': 'Xem trước tệp',
+      'openWithApp': 'Mở tệp',
+      'fileSize': 'Kích thước',
+      'fileType': 'Loại tệp',
+      'filePath': 'Đường dẫn tệp',
+      'copyPath': 'Sao chép đường dẫn',
+      'pathCopied': 'Đã sao chép đường dẫn vào bộ nhớ tạm!',
+      'textPreviewTruncated': 'Đang hiển thị xem trước %s đầu tiên',
+      'binaryNoPreview':
+          'Định dạng tệp này không hỗ trợ xem trước văn bản trực tiếp. Nhấn "Mở tệp" để xem bằng ứng dụng mặc định.',
+      'fileNotFound': 'Tệp không tồn tại hoặc đã bị di chuyển!',
+      // Cập nhật OTA
+      'tabUpdate': 'Cập nhật OTA',
+      'otaUpdateTitle': 'Cập nhật phần mềm tự động (OTA)',
+      'otaUpdateDesc':
+          'Kiểm tra và cài đặt phiên bản mới qua thư mục chia sẻ mạng nội bộ',
+      'otaCheckInterval': 'Chu kỳ tự động kiểm tra',
+      'intervalDaily': 'Mỗi ngày (24 giờ)',
+      'intervalWeekly': 'Mỗi tuần (7 ngày)',
+      'intervalMonthly': 'Mỗi tháng (30 ngày)',
+      'intervalOff': 'Tắt (Chỉ kiểm tra thủ công)',
+      'otaServerPath': 'Đường dẫn máy chủ cập nhật (SMB / UNC)',
+      'otaServerPathHint':
+          r'\\10.81.141.226\temp\FBT\JA_PROJECT\JA_Update\JA_LAN_Messenger',
+      'otaUsername': 'Tài khoản máy chủ (User)',
+      'otaPassword': 'Mật khẩu máy chủ (Password)',
+      'checkUpdatesNow': 'Kiểm tra cập nhật ngay',
+      'checkingUpdates': 'Đang kiểm tra cập nhật...',
+      'noUpdatesAvailable': 'Bạn đang sử dụng phiên bản mới nhất (%s)',
+      'updateAvailable': 'Đã có bản cập nhật mới: %s',
+      'updateNow': 'Cập nhật ngay',
+      'updateLater': 'Để sau',
+      'downloadingUpdate': 'Đang tải bản cập nhật...',
+      'extractingUpdate': 'Đang giải nén gói cập nhật...',
+      'readyToRestart':
+          'Sẵn sàng áp dụng cập nhật. Ứng dụng sẽ khởi động lại...',
+      'testServerConnection': 'Kiểm tra kết nối',
+      'serverConnectionSuccess': 'Kết nối tới máy chủ cập nhật thành công!',
+      'serverConnectionFailed': 'Không thể truy cập máy chủ cập nhật: %s',
+      'openConfigFolder': 'Mở thư mục cấu hình',
+      'currentVersion': 'Phiên bản hiện tại',
+      'latestVersion': 'Phiên bản mới nhất',
+      'lastChecked': 'Lần kiểm tra cuối',
+      'neverChecked': 'Chưa kiểm tra lần nào',
+      'releaseNotes': 'Ghi chú phát hành',
+      'updateError': 'Lỗi cập nhật: %s',
     },
     'en': {
       'appName': 'JA LAN Messenger',
@@ -622,6 +748,100 @@ class LanguageProvider extends ChangeNotifier {
       'pinnedMessagesCount': 'Pinned messages (%d/%d)',
       'messagePinnedToast': 'Message pinned to top of chat',
       'messageUnpinnedToast': 'Message unpinned',
+      // Scroll navigation
+      'scrollToTop': 'Scroll to top',
+      'scrollToBottom': 'Scroll to bottom',
+      'newMessagesCount': '%d new messages',
+      'unreadMessagesBanner': 'Unread messages',
+      // Compact Mode
+      'compactMode': 'Compact mode',
+      'standardMode': 'Standard mode',
+      'alwaysOnTop': 'Always on top',
+      'unpinFromTop': 'Unpin from top',
+      'backToChats': 'Back to chats',
+      'allFilter': 'All',
+      'unreadFilter': 'Unread',
+      'onlineFilter': 'Online',
+      'contactInfo': 'Workstation Info',
+      'viewContactInfo': 'View workstation information',
+      'hostname': 'Computer Name',
+      'closeDialog': 'Close',
+      // Buzz Alert Settings
+      'buzzAlertSettings': 'Buzz / Nudge Alert Settings',
+      'buzzFlashScreen': 'Screen White Strobe Flash',
+      'buzzFlashScreenDesc':
+          'Multi-pulse white strobe flashes for distant visibility',
+      'buzzShakeWindow': 'Physical Window Shake',
+      'buzzShakeWindowDesc': 'Physically shake the application window on buzz',
+      'buzzBringToFront': 'Auto Bring to Front',
+      'buzzBringToFrontDesc':
+          'Automatically restore and bring window to front on buzz',
+      // IME Built-in Settings
+      'imeSettings': 'Built-in Input Method (IME)',
+      'imeMode': 'Input Method Mode',
+      'imeAuto': 'Auto (Adaptive to UI language)',
+      'imeTelex': 'Vietnamese (Telex)',
+      'imePinyin': 'Simplified Chinese (Pinyin)',
+      'imeOff': 'Turn off (English / Raw)',
+      'imeAutoBypass': 'Auto-bypass when external IME is detected',
+      'imeAutoBypassDesc':
+          'Avoid conflicts and double typing when EVKey, UniKey, Sogou is running',
+      'imeBypassedDesc': 'Auto-bypassed: External IME active',
+      'buzzSent': 'You sent a buzz to %s',
+      'editNickname': 'Edit Nickname',
+      'nicknameHint': 'Enter new display nickname...',
+      'resetDefaultName': 'Reset to Default Name',
+      'addReaction': 'Add Reaction',
+      'reactions': 'Reactions',
+      'quickRename': 'Quick Rename',
+      'attachedFiles': 'Attached Files',
+      'stagedFilesCount': '%d attached files',
+      'removeAttachment': 'Remove this file',
+      'clearAllAttachments': 'Clear all files',
+      'filePreview': 'File Preview',
+      'openWithApp': 'Open File',
+      'fileSize': 'Size',
+      'fileType': 'File Type',
+      'filePath': 'File Path',
+      'copyPath': 'Copy Path',
+      'pathCopied': 'Path copied to clipboard!',
+      'textPreviewTruncated': 'Showing preview of first %s',
+      'binaryNoPreview':
+          'This file format does not support direct text preview. Click "Open File" to view with default application.',
+      'fileNotFound': 'File does not exist or has been moved!',
+      // OTA Update
+      'tabUpdate': 'OTA Update',
+      'otaUpdateTitle': 'Automatic OTA Updates',
+      'otaUpdateDesc': 'Check and install new versions via local network share',
+      'otaCheckInterval': 'Check Interval',
+      'intervalDaily': 'Daily (24 hours)',
+      'intervalWeekly': 'Weekly (7 days)',
+      'intervalMonthly': 'Monthly (30 days)',
+      'intervalOff': 'Off (Manual only)',
+      'otaServerPath': 'Update Server Path (SMB / UNC)',
+      'otaServerPathHint':
+          r'\\10.81.141.226\temp\FBT\JA_PROJECT\JA_Update\JA_LAN_Messenger',
+      'otaUsername': 'Server Username',
+      'otaPassword': 'Server Password',
+      'checkUpdatesNow': 'Check for Updates Now',
+      'checkingUpdates': 'Checking for updates...',
+      'noUpdatesAvailable': 'You are using the latest version (%s)',
+      'updateAvailable': 'New version available: %s',
+      'updateNow': 'Update Now',
+      'updateLater': 'Later',
+      'downloadingUpdate': 'Downloading update package...',
+      'extractingUpdate': 'Extracting update files...',
+      'readyToRestart': 'Ready to apply update. Application will restart...',
+      'testServerConnection': 'Test Connection',
+      'serverConnectionSuccess': 'Successfully connected to update server!',
+      'serverConnectionFailed': 'Cannot access update server: %s',
+      'openConfigFolder': 'Open Config Folder',
+      'currentVersion': 'Current Version',
+      'latestVersion': 'Latest Version',
+      'lastChecked': 'Last Checked',
+      'neverChecked': 'Never checked',
+      'releaseNotes': 'Release Notes',
+      'updateError': 'Update error: %s',
     },
     'zh': {
       'appName': 'JA LAN Messenger',
@@ -861,6 +1081,96 @@ class LanguageProvider extends ChangeNotifier {
       'pinnedMessagesCount': '置顶消息 (%d/%d)',
       'messagePinnedToast': '消息已置顶到顶部',
       'messageUnpinnedToast': '已取消置顶消息',
+      // 页面滚动
+      'scrollToTop': '滚动到顶部',
+      'scrollToBottom': '滚动到底部',
+      'newMessagesCount': '%d 条新消息',
+      'unreadMessagesBanner': '未读消息',
+      // 紧凑模式
+      'compactMode': '紧凑模式 (Compact)',
+      'standardMode': '标准模式 (Standard)',
+      'alwaysOnTop': '置顶窗口',
+      'unpinFromTop': '取消置顶',
+      'backToChats': '返回会话列表',
+      'allFilter': '全部',
+      'unreadFilter': '未读',
+      'onlineFilter': '在线',
+      'contactInfo': '工作站信息',
+      'viewContactInfo': '查看工作站信息',
+      'hostname': '计算机名称',
+      'closeDialog': '关闭',
+      // Buzz Alert Settings
+      'buzzAlertSettings': '窗口抖动提醒设置 (Buzz / Nudge)',
+      'buzzFlashScreen': '全屏白色强光闪烁 (White Strobe)',
+      'buzzFlashScreenDesc': '全屏多频次闪烁白色强光，便于远距离察觉',
+      'buzzShakeWindow': '物理抖动窗口 (Window Shake)',
+      'buzzShakeWindowDesc': '收到抖动时窗口剧烈震动模拟敲桌效果',
+      'buzzBringToFront': '自动置顶窗口 (Bring to Front)',
+      'buzzBringToFrontDesc': '收到抖动时自动恢复并置顶窗口至最前台',
+      // IME Built-in Settings
+      'imeSettings': '内置输入法设置 (IME)',
+      'imeMode': '输入法模式',
+      'imeAuto': '自动 (跟随界面语言)',
+      'imeTelex': '越南语 (Telex)',
+      'imePinyin': '简体中文 (拼音)',
+      'imeOff': '关闭输入法 (英文原生)',
+      'imeAutoBypass': '检测到外部输入法时自动停用',
+      'imeAutoBypassDesc': '避免在运行 EVKey, UniKey, 搜狗等外部输入法时产生按键冲突或重字',
+      'imeBypassedDesc': '检测到外部输入法，已自动停用',
+      'buzzSent': '您向 %s 发送了窗口抖动提醒',
+      'editNickname': '修改备注名',
+      'nicknameHint': '输入新的备注名...',
+      'resetDefaultName': '恢复默认名称',
+      'addReaction': '添加表情回应',
+      'reactions': '回应',
+      'quickRename': '快速重命名',
+      'attachedFiles': '已选附件',
+      'stagedFilesCount': '%d 个附件',
+      'removeAttachment': '移除此文件',
+      'clearAllAttachments': '清除所有附件',
+      'filePreview': '文件预览',
+      'openWithApp': '打开文件',
+      'fileSize': '大小',
+      'fileType': '文件类型',
+      'filePath': '文件路径',
+      'copyPath': '复制路径',
+      'pathCopied': '已复制路径到剪贴板！',
+      'textPreviewTruncated': '正在显示前 %s 预览',
+      'binaryNoPreview': '此文件格式不支持直接文本预览。点击“打开文件”使用默认应用程序查看。',
+      'fileNotFound': '文件不存在或已被移动！',
+      // OTA 更新
+      'tabUpdate': 'OTA 更新',
+      'otaUpdateTitle': '软件自动更新 (OTA)',
+      'otaUpdateDesc': '通过局域网共享文件夹检查并安装新版本',
+      'otaCheckInterval': '自动检查周期',
+      'intervalDaily': '每天 (24小时)',
+      'intervalWeekly': '每周 (7天)',
+      'intervalMonthly': '每月 (30天)',
+      'intervalOff': '关闭 (仅手动检查)',
+      'otaServerPath': '更新服务器路径 (SMB / UNC)',
+      'otaServerPathHint':
+          r'\\10.81.141.226\temp\FBT\JA_PROJECT\JA_Update\JA_LAN_Messenger',
+      'otaUsername': '服务器用户名',
+      'otaPassword': '服务器密码',
+      'checkUpdatesNow': '立即检查更新',
+      'checkingUpdates': '正在检查更新...',
+      'noUpdatesAvailable': '当前已是最新版本 (%s)',
+      'updateAvailable': '发现新版本: %s',
+      'updateNow': '立即更新',
+      'updateLater': '稍后',
+      'downloadingUpdate': '正在下载更新包...',
+      'extractingUpdate': '正在解压更新文件...',
+      'readyToRestart': '准备就绪，应用即将自动重启...',
+      'testServerConnection': '测试连接',
+      'serverConnectionSuccess': '成功连接到更新服务器！',
+      'serverConnectionFailed': '无法访问更新服务器: %s',
+      'openConfigFolder': '打开配置目录',
+      'currentVersion': '当前版本',
+      'latestVersion': '最新版本',
+      'lastChecked': '上次检查',
+      'neverChecked': '从未检查',
+      'releaseNotes': '更新日志',
+      'updateError': '更新出错: %s',
     },
   };
 }

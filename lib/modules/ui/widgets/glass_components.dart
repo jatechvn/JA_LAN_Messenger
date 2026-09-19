@@ -127,19 +127,23 @@ class StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dot = Container(
-      width: 9,
-      height: 9,
-      decoration: BoxDecoration(
-        color: status.color,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: status.color.withValues(alpha: 0.45),
-            blurRadius: 4,
-            spreadRadius: 1,
-          ),
-        ],
+    final dot = Tooltip(
+      message: status.label,
+      waitDuration: const Duration(milliseconds: 300),
+      child: Container(
+        width: 9,
+        height: 9,
+        decoration: BoxDecoration(
+          color: status.color,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: status.color.withValues(alpha: 0.45),
+              blurRadius: 4,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
       ),
     );
 

@@ -12,6 +12,10 @@ import 'modules/build_info.dart';
 import 'modules/constants.dart';
 import 'modules/logger_config.dart';
 import 'modules/window_helper.dart';
+import 'modules/services/app_preferences.dart';
+import 'modules/services/ota_update_service.dart';
+import 'modules/ime/ime_service.dart';
+import 'modules/ime/ime_types.dart';
 
 void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,10 +40,27 @@ void main(List<String> args) async {
   }
 
   // Khởi tạo cửa sổ Desktop nhỏ gọn, nhẹ, tốc độ cao
+  final prefs = AppPreferences();
+  await prefs.load();
+  // Tự động nạp cấu hình OTA từ update_config.json nếu có
+  await OtaUpdateService().syncExternalConfigToPreferences();
+
+  // Khởi tạo bộ gõ IME từ cấu hình đã lưu
+  final ime = ImeService();
+  ime.setMode(ImeMode.fromId(prefs.imeMode));
+  ime.setAutoBypassExternal(prefs.imeAutoBypassExternal);
+
   await initGlassWindow(
     title: appName,
-    size: const Size(defaultWindowWidth, defaultWindowHeight),
-    minSize: const Size(minWindowWidth, minWindowHeight),
+    size: prefs.isCompactMode
+        ? Size(
+            restoredCompactWidth(prefs.compactWidth),
+            restoredCompactHeight(prefs.compactWidth, prefs.compactHeight),
+          )
+        : const Size(defaultWindowWidth, defaultWindowHeight),
+    minSize: prefs.isCompactMode
+        ? const Size(minCompactWidth, minCompactHeight)
+        : const Size(minWindowWidth, minWindowHeight),
   );
 
   runApp(const JaLanMessengerApp());
@@ -55,6 +76,7 @@ class JaLanMessengerApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => LanguageProvider()),
         ChangeNotifierProvider(create: (_) => MessengerCoordinator()),
+        ChangeNotifierProvider.value(value: ImeService()),
       ],
       child: const _MessengerAppContent(),
     );
@@ -67,6 +89,10 @@ class _MessengerAppContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<ThemeProvider>();
+    final lang = context.watch<LanguageProvider>();
+    // Đồng bộ ngôn ngữ sang bộ gõ để thích ứng tự động
+    context.read<ImeService>().updateAppLanguage(lang.code);
+
     final effectiveTitle = (!kIsWeb && Platform.isWindows && !theme.isWin11)
         ? ''
         : appName;

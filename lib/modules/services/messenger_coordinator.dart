@@ -25,6 +25,7 @@ import 'known_devices_registry.dart';
 import 'network_preferences.dart';
 import 'chat_history_service.dart';
 import 'clipboard_image.dart';
+import 'ota_update_service.dart';
 
 class ToastData {
   final String key;
@@ -46,6 +47,8 @@ class ToastData {
         return '🔔 ${args.first} ${lang.tr('toastNudge')}';
       case 'toastPastingFiles':
         return '📁 ${lang.tr('pastingFiles')} (${args.first})';
+      case 'updateAvailable':
+        return '🚀 ${lang.tr('updateAvailable')} (v${args.first})';
       default:
         return '$base ${args.join(' ')}'.trim();
     }
@@ -79,6 +82,13 @@ class MessengerCoordinator extends ChangeNotifier {
   final Map<String, List<MessageModel>> _conversations = {};
   PeerModel? _selectedPeer;
   String _searchQuery = '';
+
+  // Chế độ thu nhỏ (Compact Mode) & Ghim trên cùng (Always on Top)
+  bool _isCompactMode = false;
+  bool _isAlwaysOnTop = false;
+
+  bool get isCompactMode => _isCompactMode;
+  bool get isAlwaysOnTop => _isAlwaysOnTop;
 
   // Quản lý trạng thái đang gõ phím (typing)
   final Map<String, DateTime> _typingPeers = {};
@@ -142,7 +152,61 @@ class MessengerCoordinator extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Quản lý cập nhật OTA
+  UpdatePackageInfo? _availableUpdate;
+  UpdatePackageInfo? get availableUpdate => _availableUpdate;
+
+  void dismissAvailableUpdate() {
+    _availableUpdate = null;
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void setAvailableUpdateForTesting(UpdatePackageInfo? update) {
+    _availableUpdate = update;
+    notifyListeners();
+  }
+
+  /// Kiểm tra cập nhật OTA tự động hoặc thủ công
+  Future<UpdateCheckResult> checkOtaUpdates({bool isManual = false}) async {
+    try {
+      final prefs = AppPreferences();
+      if (!isManual) {
+        final should = OtaUpdateService().shouldCheckForUpdates(
+          interval: prefs.otaCheckInterval,
+          lastCheckTime: prefs.otaLastCheckTime,
+        );
+        if (!should) {
+          return UpdateCheckResult(
+            hasUpdate: false,
+            currentVersion: appVersion,
+          );
+        }
+      }
+      final result = await OtaUpdateService().checkForUpdates(isManual: isManual);
+      if (result.hasUpdate && result.packageInfo != null) {
+        _availableUpdate = result.packageInfo;
+        showToast('updateAvailable', [result.packageInfo!.version.toString()]);
+        notifyListeners();
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[OTA] checkOtaUpdates error: $e');
+      return UpdateCheckResult(
+        hasUpdate: false,
+        currentVersion: appVersion,
+        isConnectionSuccess: false,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
   DateTime? lastBuzzTime;
+  int _buzzTriggerCount = 0;
+  Timer? _buzzTopTimer;
+  int _buzzGeneration = 0;
+  bool _buzzShakeActive = false;
+  int get buzzTriggerCount => _buzzTriggerCount;
 
   bool _isInitialized = false;
   bool _disposed = false;
@@ -150,6 +214,8 @@ class MessengerCoordinator extends ChangeNotifier {
 
   MessengerCoordinator() {
     final prefs = AppPreferences();
+    _isCompactMode = prefs.isCompactMode;
+    _isAlwaysOnTop = prefs.isAlwaysOnTop;
     aiService = AiService(serverUrl: prefs.aiServerUrl);
     aiQueueManager = AiQueueManager(aiService: aiService);
     _aiPeer.statusDescription = 'Sẵn sàng • ${prefs.aiSelectedModel}';
@@ -208,6 +274,8 @@ class MessengerCoordinator extends ChangeNotifier {
   void _onPrefsChanged() {
     if (_disposed) return;
     final prefs = AppPreferences();
+    _isCompactMode = prefs.isCompactMode;
+    _isAlwaysOnTop = prefs.isAlwaysOnTop;
     aiService.serverUrl = prefs.aiServerUrl;
     _aiPeer.isPinned = prefs.isPeerPinned('__AI_ASSISTANT__');
     _allUsersPeer.isPinned = prefs.isPeerPinned('__ALL_USERS__');
@@ -233,7 +301,7 @@ class MessengerCoordinator extends ChangeNotifier {
     final Map<String, PeerModel> uniqueMap = {};
     for (final p in _peers.values) {
       if (p.isGroup || p.isAllUsers) continue;
-      final key = p.canonicalIdentity;
+      final key = p.networkSessionIdentity;
 
       final existing = uniqueMap[key];
       if (existing == null) {
@@ -243,7 +311,9 @@ class MessengerCoordinator extends ChangeNotifier {
         if (existing.status == PeerStatus.offline &&
             p.status != PeerStatus.offline) {
           uniqueMap[key] = p;
-        } else if (p.lastSeen.isAfter(existing.lastSeen)) {
+        } else if ((p.status == PeerStatus.offline) ==
+                (existing.status == PeerStatus.offline) &&
+            p.lastSeen.isAfter(existing.lastSeen)) {
           uniqueMap[key] = p;
         }
       }
@@ -419,10 +489,117 @@ class MessengerCoordinator extends ChangeNotifier {
 
   static String _detectDefaultUsername() => detectDefaultUsername();
 
+  /// Chuyển đổi giữa chế độ chuẩn (Standard Mode) và chế độ thu nhỏ (Compact Mode)
+  Future<void> toggleCompactMode() async {
+    final prefs = AppPreferences();
+    final targetMode = !_isCompactMode;
+    _isCompactMode = targetMode;
+    notifyListeners();
+
+    try {
+      if (targetMode) {
+        // Standard -> Compact
+        final currentSize = await windowManager.getSize();
+        final currentPos = await windowManager.getPosition();
+        await prefs.saveNormalGeometry(
+          width: currentSize.width,
+          height: currentSize.height,
+          x: currentPos.dx,
+          y: currentPos.dy,
+        );
+
+        await windowManager.setMinimumSize(
+          const Size(minCompactWidth, minCompactHeight),
+        );
+
+        if (await windowManager.isMaximized()) {
+          await windowManager.unmaximize();
+        }
+        final targetW = restoredCompactWidth(prefs.compactWidth);
+        final targetH = restoredCompactHeight(
+          prefs.compactWidth,
+          prefs.compactHeight,
+        );
+        await windowManager.setSize(Size(targetW, targetH));
+
+        if (prefs.compactPosX != null && prefs.compactPosY != null) {
+          await windowManager.setPosition(
+            Offset(prefs.compactPosX!, prefs.compactPosY!),
+          );
+        }
+        if (_isAlwaysOnTop) {
+          await windowManager.setAlwaysOnTop(true);
+        }
+      } else {
+        // Compact -> Standard
+        final currentSize = await windowManager.getSize();
+        final currentPos = await windowManager.getPosition();
+        await prefs.saveCompactGeometry(
+          width: currentSize.width,
+          height: currentSize.height,
+          x: currentPos.dx,
+          y: currentPos.dy,
+        );
+
+        await windowManager.setMinimumSize(
+          const Size(minWindowWidth, minWindowHeight),
+        );
+
+        final targetW = prefs.normalWidth ?? defaultWindowWidth;
+        final targetH = prefs.normalHeight ?? defaultWindowHeight;
+        await windowManager.setSize(Size(targetW, targetH));
+
+        if (prefs.normalPosX != null && prefs.normalPosY != null) {
+          await windowManager.setPosition(
+            Offset(prefs.normalPosX!, prefs.normalPosY!),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[CompactMode] Window manager resize error: $e');
+    }
+
+    await prefs.setCompactMode(targetMode);
+  }
+
+  /// Cài đặt ghim cửa sổ trên cùng (Always on Top)
+  Future<void> setAlwaysOnTop(bool value) async {
+    _isAlwaysOnTop = value;
+    notifyListeners();
+    try {
+      await windowManager.setAlwaysOnTop(value);
+    } catch (e) {
+      debugPrint('[AlwaysOnTop] Window manager error: $e');
+    }
+    await AppPreferences().setAlwaysOnTop(value);
+  }
+
+  /// Bật/tắt ghim trên cùng
+  Future<void> toggleAlwaysOnTop() async {
+    await setAlwaysOnTop(!_isAlwaysOnTop);
+  }
+
+  @visibleForTesting
+  void setCompactModeForTesting(bool value) {
+    _isCompactMode = value;
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void setAlwaysOnTopForTesting(bool value) {
+    _isAlwaysOnTop = value;
+    notifyListeners();
+  }
+
   /// Khởi tạo toàn bộ dịch vụ mạng
   Future<void> initialize() async {
     if (_isInitialized) return;
     _isInitialized = true;
+    if (_isAlwaysOnTop) {
+      try {
+        await windowManager.setAlwaysOnTop(true);
+      } catch (_) {}
+    }
     try {
       await networkPreferences.load();
     } catch (e) {
@@ -457,13 +634,14 @@ class MessengerCoordinator extends ChangeNotifier {
     _tcpServer.onActivity = (id) {
       _peers[id]?.lastSeen = DateTime.now();
     };
-    _tcpServer.onHandshake = _handlePeerHandshake;
-    _tcpServer.onMessage = _handleIncomingMessage;
+    _tcpServer.onHandshake = handlePeerHandshake;
+    _tcpServer.onMessage = handleIncomingMessage;
     _tcpServer.onAck = _handleMessageAck;
-    _tcpServer.onBuzz = _handleIncomingBuzz;
+    _tcpServer.onBuzz = handleIncomingBuzz;
     _tcpServer.onTyping = _handleIncomingTyping;
     _tcpServer.onRead = _handleIncomingReadReceipt;
     _tcpServer.onRevoke = _handleIncomingRevoke;
+    _tcpServer.onReaction = handleIncomingReaction;
     if (!await _tcpServer.start(port: localTcpPort)) {
       _isInitialized = false;
       throw StateError('Cannot start BeeBEEP listener');
@@ -512,6 +690,9 @@ class MessengerCoordinator extends ChangeNotifier {
       (_) => _checkTypingExpiry(),
     );
 
+    // Tự động kiểm tra cập nhật OTA ngầm nếu đến hạn kỳ
+    unawaited(checkOtaUpdates(isManual: false));
+
     notifyListeners();
   }
 
@@ -555,7 +736,8 @@ class MessengerCoordinator extends ChangeNotifier {
   );
 
   /// Xử lý khi nhận được gói tin BEE-CIAO từ peer
-  void _handlePeerHandshake(
+  @visibleForTesting
+  void handlePeerHandshake(
     String senderIp,
     Map<String, dynamic> data,
     Socket socket,
@@ -629,7 +811,7 @@ class MessengerCoordinator extends ChangeNotifier {
       for (final p in _peers.values) {
         if (p.isGroup || p.isAllUsers) continue;
         // Chỉ gộp khi canonicalIdentity là một khóa máy vật lý cụ thể (không phải fallback endpoint IP:Port)
-        if (p.canonicalIdentity == identityKey && !identityKey.contains(':')) {
+        if (p.networkSessionIdentity == candidate.networkSessionIdentity) {
           existingPeer = p;
           break;
         }
@@ -846,6 +1028,20 @@ class MessengerCoordinator extends ChangeNotifier {
     return null;
   }
 
+  bool _sendToPeer(String endpoint, List<int> packet) {
+    if (_tcpServer.send(endpoint, packet)) return true;
+    final peer = _peers[endpoint];
+    if (peer == null) return false;
+    for (final alias in _peers.entries) {
+      if (alias.key != endpoint &&
+          identical(alias.value, peer) &&
+          _tcpServer.send(alias.key, packet)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Tách thông tin trích dẫn nếu tin nhắn mạng chứa format trích dẫn
   static ({String text, String? replySender, String? replyText}) _parseQuote(
     String raw,
@@ -867,7 +1063,8 @@ class MessengerCoordinator extends ChangeNotifier {
   }
 
   /// Xử lý tin nhắn văn bản nhận được
-  void _handleIncomingMessage(
+  @visibleForTesting
+  void handleIncomingMessage(
     String senderIp,
     String messageId,
     String text,
@@ -982,7 +1179,7 @@ class MessengerCoordinator extends ChangeNotifier {
           senderPeer.unreadCount++;
         } else {
           // Gửi ngay tín hiệu đã xem (Read receipt) về phía gửi
-          _tcpServer.send(
+          _sendToPeer(
             senderPeer.id,
             ProtocolBeebeep.buildReadPacket(messageId),
           );
@@ -1018,11 +1215,127 @@ class MessengerCoordinator extends ChangeNotifier {
     }
   }
 
-  /// Xử lý rung chuông Buzz
-  void _handleIncomingBuzz(String senderIp) {
+  /// Kích hoạt rung cửa sổ native và tự động đưa cửa sổ lên trên cùng (Proposals B & D)
+  Future<void> _triggerNativeBuzzAlert() async {
+    if (_disposed) return;
+    final generation = ++_buzzGeneration;
+    _buzzTopTimer?.cancel();
+    final prefs = AppPreferences();
+
+    // Proposal D: Auto Bring to Front
+    if (prefs.buzzBringToFront) {
+      try {
+        if (await windowManager.isMinimized()) {
+          await windowManager.restore();
+        }
+        if (_isCompactMode) {
+          await toggleCompactMode();
+        }
+        if (!await windowManager.isVisible()) {
+          await windowManager.show();
+        }
+        await windowManager.focus();
+
+        // Tạm thời ghim Always on Top trong 3 giây nếu hiện tại chưa bật
+        if (!_isAlwaysOnTop) {
+          await windowManager.setAlwaysOnTop(true);
+          if (_disposed || generation != _buzzGeneration) return;
+          _buzzTopTimer = Timer(const Duration(seconds: 3), () async {
+            if (!_isAlwaysOnTop &&
+                !_disposed &&
+                generation == _buzzGeneration) {
+              try {
+                await windowManager.setAlwaysOnTop(false);
+              } catch (_) {}
+            }
+          });
+        }
+      } catch (e) {
+        debugPrint('[BuzzAlert] Bring to front error: $e');
+      }
+    }
+
+    // Proposal B: Native Window Shake (Rung vật lý khung cửa sổ hệ điều hành)
+    if (prefs.buzzShakeWindow && !_buzzShakeActive && !_disposed) {
+      _buzzShakeActive = true;
+      Offset? originalPos;
+      try {
+        if (await windowManager.isMaximized() ||
+            await windowManager.isMinimized()) {
+          return;
+        }
+        originalPos = await windowManager.getPosition();
+        const offsets = [
+          Offset(12, -2),
+          Offset(-12, 2),
+          Offset(10, -1),
+          Offset(-10, 1),
+          Offset(6, 0),
+          Offset(-6, 0),
+          Offset(3, 0),
+          Offset.zero,
+        ];
+
+        for (var i = 0; i < offsets.length; i++) {
+          await Future.delayed(const Duration(milliseconds: 40));
+          if (_disposed) break;
+          final offset = offsets[i];
+          await windowManager.setPosition(
+            Offset(originalPos.dx + offset.dx, originalPos.dy + offset.dy),
+          );
+        }
+      } catch (e) {
+        debugPrint('[BuzzAlert] Native window shake error: $e');
+      } finally {
+        if (originalPos != null) {
+          try {
+            await windowManager.setPosition(originalPos);
+          } catch (e) {
+            debugPrint('[BuzzAlert] Restore position error: $e');
+          }
+        }
+        _buzzShakeActive = false;
+      }
+    }
+  }
+
+  /// Kích hoạt cảnh báo Buzz cục bộ (dành cho kiểm thử hoặc xem trước hiệu ứng)
+  void triggerBuzzAlertForTesting() {
     lastBuzzTime = DateTime.now();
+    _buzzTriggerCount++;
+    unawaited(_triggerNativeBuzzAlert());
+    notifyListeners();
+  }
+
+  /// Xử lý rung chuông Buzz
+  @visibleForTesting
+  void handleIncomingBuzz(String senderIp) {
+    lastBuzzTime = DateTime.now();
+    _buzzTriggerCount++;
+    unawaited(_triggerNativeBuzzAlert());
+
     final peer = _findPeerByIpOrId(senderIp);
     final senderName = peer?.displayName ?? senderIp;
+    final conversationId = peer?.id ?? senderIp;
+    final text =
+        '🔔 $senderName ${languageProvider?.tr('toastNudge') ?? 'vừa rung chuông Nudge!'}';
+    final message = MessageModel(
+      id: 'buzz-${DateTime.now().microsecondsSinceEpoch}-$_buzzTriggerCount',
+      senderId: conversationId,
+      senderName: senderName,
+      recipientId: 'me',
+      text: text,
+      isMine: false,
+      status: MessageStatus.delivered,
+    );
+    final messages = _conversations.putIfAbsent(conversationId, () => []);
+    messages.add(message);
+    chatHistory.scheduleSave(conversationId, messages);
+    if (peer != null) {
+      peer.lastMessage = text;
+      peer.lastMessageTime = message.timestamp;
+      peer.unreadCount++;
+    }
     showToast('toastNudge', [senderName]);
     _showDesktopNotification(
       title: '🔔 Nudge - $senderName',
@@ -1070,10 +1383,7 @@ class MessengerCoordinator extends ChangeNotifier {
     } else {
       _lastTypingSentTime = null;
     }
-    _tcpServer.send(
-      peer.id,
-      ProtocolBeebeep.buildTypingPacket(isTyping: isTyping),
-    );
+    _sendToPeer(peer.id, ProtocolBeebeep.buildTypingPacket(isTyping: isTyping));
   }
 
   /// Đánh dấu toàn bộ tin nhắn trong cuộc trò chuyện là đã đọc
@@ -1086,7 +1396,7 @@ class MessengerCoordinator extends ChangeNotifier {
         m.status = MessageStatus.read;
         hadUnread = true;
         if (peerId != '__ALL_USERS__' && !_groups.containsKey(peerId)) {
-          _tcpServer.send(peerId, ProtocolBeebeep.buildReadPacket(m.id));
+          _sendToPeer(peerId, ProtocolBeebeep.buildReadPacket(m.id));
         }
       }
     }
@@ -1195,6 +1505,93 @@ class MessengerCoordinator extends ChangeNotifier {
     if (found) notifyListeners();
   }
 
+  /// Thả hoặc gỡ biểu tượng cảm xúc (Reaction) cho tin nhắn
+  Future<void> toggleMessageReaction(
+    String conversationId,
+    String messageId,
+    String emoji,
+  ) async {
+    final messages = _conversations[conversationId];
+    if (messages == null) return;
+    final index = messages.indexWhere((m) => m.id == messageId);
+    if (index == -1) return;
+
+    final message = messages[index];
+    final added = message.toggleReaction(emoji, localUsername);
+    chatHistory.scheduleSave(conversationId, messages);
+    notifyListeners();
+
+    // Phát sóng gói tin Reaction qua mạng LAN tới đối phương
+    final peer = _peers[conversationId];
+    final packet = ProtocolBeebeep.buildReactionPacket(
+      messageId: messageId,
+      emoji: emoji,
+      action: added ? 'add' : 'remove',
+      senderName: localUsername,
+    );
+
+    if (conversationId == '__ALL_USERS__') {
+      for (final p in _peers.values.toSet().where(
+        (p) => p.status != PeerStatus.offline,
+      )) {
+        _sendToPeer(p.id, packet);
+      }
+    } else if (peer != null) {
+      if (peer.isGroup) {
+        for (final memberId in peer.memberIds) {
+          final p = _peers[memberId];
+          if (p != null && p.status != PeerStatus.offline) {
+            _sendToPeer(p.id, packet);
+          }
+        }
+      } else {
+        _sendToPeer(peer.id, packet);
+      }
+    }
+  }
+
+  /// Tiếp nhận cập nhật cảm xúc tin nhắn từ đồng nghiệp qua mạng LAN
+  @visibleForTesting
+  void handleIncomingReaction(
+    String endpoint,
+    String messageId,
+    String emoji,
+    String action,
+    String senderName,
+  ) {
+    if (_disposed || (action != 'add' && action != 'remove')) return;
+    final sender = _findPeerByIpOrId(endpoint);
+    if (sender == null) return;
+    bool updated = false;
+    for (final entry in _conversations.entries) {
+      final group = _groups[entry.key];
+      if (entry.key != sender.id &&
+          entry.key != '__ALL_USERS__' &&
+          !(group?.memberIds.any(
+                (id) => identical(_findPeerByIpOrId(id), sender),
+              ) ??
+              false)) {
+        continue;
+      }
+      final msgs = entry.value;
+      final idx = msgs.indexWhere((m) => m.id == messageId);
+      if (idx != -1) {
+        final message = msgs[idx];
+        if (action == 'add') {
+          message.addReaction(emoji, senderName);
+        } else {
+          message.removeReaction(emoji, senderName);
+        }
+        chatHistory.scheduleSave(entry.key, msgs);
+        updated = true;
+        break;
+      }
+    }
+    if (updated) {
+      notifyListeners();
+    }
+  }
+
   /// Chủ động thu hồi một tin nhắn của bản thân
   Future<bool> revokeMessage(String messageId) async {
     final peer = _selectedPeer;
@@ -1216,20 +1613,20 @@ class MessengerCoordinator extends ChangeNotifier {
 
     final packet = ProtocolBeebeep.buildRevokePacket(messageId);
     if (peer.isAllUsers) {
-      for (final p in _peers.values.where(
+      for (final p in _peers.values.toSet().where(
         (p) => p.status != PeerStatus.offline,
       )) {
-        _tcpServer.send(p.id, packet);
+        _sendToPeer(p.id, packet);
       }
     } else if (peer.isGroup) {
       for (final memberId in peer.memberIds) {
         final p = _peers[memberId];
         if (p != null && p.status != PeerStatus.offline) {
-          _tcpServer.send(p.id, packet);
+          _sendToPeer(p.id, packet);
         }
       }
     } else {
-      _tcpServer.send(peer.id, packet);
+      _sendToPeer(peer.id, packet);
     }
     return true;
   }
@@ -1240,8 +1637,15 @@ class MessengerCoordinator extends ChangeNotifier {
     required String body,
     PeerModel? peer,
   }) async {
-    if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) return;
     if (peer != null && peer.isMuted) return;
+    if (_disposed) return;
+    final preview = body.replaceAll(RegExp(r'\s+'), ' ').trim();
+    currentToast = ToastData(
+      key: '',
+      rawText: '💬 $title: ${String.fromCharCodes(preview.runes.take(160))}',
+    );
+    notifyListeners();
+    if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) return;
 
     try {
       final isFocused = await windowManager.isFocused();
@@ -1298,15 +1702,57 @@ class MessengerCoordinator extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
+  /// Map lưu trữ ID tin nhắn chưa đọc đầu tiên khi người dùng chọn cuộc trò chuyện
+  final Map<String, String?> _initialUnreadMessageIds = {};
+
+  /// Lấy ID tin nhắn chưa đọc đầu tiên được lưu tại thời điểm chọn cuộc trò chuyện
+  String? getInitialUnreadMessageId(String peerId) =>
+      _initialUnreadMessageIds[peerId];
+
+  /// Xóa bộ nhớ đệm tin nhắn chưa đọc đầu tiên
+  void clearInitialUnreadMessageId(String peerId) {
+    _initialUnreadMessageIds.remove(peerId);
+  }
+
+  /// Trả về ID của tin nhắn chưa đọc đầu tiên trong cuộc trò chuyện (nếu có)
+  String? getFirstUnreadMessageId(String peerId) {
+    final list = _conversations[peerId];
+    if (list == null || list.isEmpty) return null;
+    for (final m in list) {
+      if (!m.isMine && m.status != MessageStatus.read) {
+        return m.id;
+      }
+    }
+    return null;
+  }
+
+  /// Trả về số lượng tin nhắn chưa đọc trong cuộc trò chuyện
+  int countUnreadMessages(String peerId) {
+    final list = _conversations[peerId];
+    if (list == null || list.isEmpty) return 0;
+    var count = 0;
+    for (final m in list) {
+      if (!m.isMine && m.status != MessageStatus.read) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   /// Chọn một cuộc trò chuyện
   void selectPeer(PeerModel? peer) {
     _selectedPeer = peer;
     if (peer != null) {
+      final firstUnread = getFirstUnreadMessageId(peer.id);
+      _initialUnreadMessageIds[peer.id] = firstUnread;
       peer.unreadCount = 0;
       if (peer.isAllUsers) {
         _allUsersPeer.unreadCount = 0;
       }
-      markConversationAsRead(peer.id);
+      // Nếu cuộc trò chuyện không có tin chưa đọc nào, đánh dấu đã đọc an toàn
+      if (firstUnread == null) {
+        markConversationAsRead(peer.id);
+      }
     }
     notifyListeners();
   }
@@ -1369,7 +1815,7 @@ class MessengerCoordinator extends ChangeNotifier {
           )
           .toList();
       for (final peer in onlinePeers) {
-        final ok = _tcpServer.send(
+        final ok = _sendToPeer(
           peer.id,
           ProtocolBeebeep.buildChatPacket(
             messageId: msgId,
@@ -1389,7 +1835,7 @@ class MessengerCoordinator extends ChangeNotifier {
       for (final memberId in _selectedPeer!.memberIds) {
         final peer = _peers[memberId];
         if (peer != null && peer.status != PeerStatus.offline) {
-          final ok = _tcpServer.send(
+          final ok = _sendToPeer(
             peer.id,
             ProtocolBeebeep.buildChatPacket(
               messageId: msgId,
@@ -1404,7 +1850,7 @@ class MessengerCoordinator extends ChangeNotifier {
       return anySuccess;
     } else {
       // Gửi qua TCP tới peer cá nhân
-      final success = _tcpServer.send(
+      final success = _sendToPeer(
         _selectedPeer!.id,
         ProtocolBeebeep.buildChatPacket(messageId: msgId, text: networkPayload),
       );
@@ -1635,17 +2081,25 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
   }
 
   /// Gửi file đính kèm tới peer hoặc kênh đang chọn
-  Future<void> sendFile(File file) async {
-    final selected = _selectedPeer;
+  Future<void> sendFile(
+    File file, {
+    String? caption,
+    PeerModel? recipient,
+  }) async {
+    final selected = recipient ?? _selectedPeer;
     if (selected == null) return;
+
+    final hasCaption = caption != null && caption.trim().isNotEmpty;
 
     if (selected.isAiAssistant) {
       final isImg = isImageFile(file.path);
       final fileName = file.path.split(Platform.pathSeparator).last;
       final msgId = '';
-      final plainText = isImg
-          ? 'Phân tích hình ảnh này giúp tôi.'
-          : 'Xem tệp này: $fileName';
+      final plainText = hasCaption
+          ? caption.trim()
+          : (isImg
+                ? 'Phân tích hình ảnh này giúp tôi.'
+                : 'Xem tệp này: $fileName');
       final fileSize = await file.length();
       final msg = MessageModel(
         id: msgId,
@@ -1664,7 +2118,9 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
       );
       final list = _conversations.putIfAbsent(_aiPeer.id, () => []);
       list.add(msg);
-      _aiPeer.lastMessage = isImg ? '📷 [Ảnh] $fileName' : '📁 [Tệp] $fileName';
+      _aiPeer.lastMessage = hasCaption
+          ? caption.trim()
+          : (isImg ? '📷 [Ảnh] $fileName' : '📁 [Tệp] $fileName');
       _aiPeer.lastMessageTime = msg.timestamp;
       notifyListeners();
 
@@ -1704,12 +2160,15 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
         file: file,
       );
       if (_disposed) return;
+      final msgText = hasCaption
+          ? caption.trim()
+          : '📁 ${task.fileName} → ${peer.displayName}';
       final msg = MessageModel(
         id: 'file_${task.id}',
         senderId: 'me',
         senderName: localUsername,
         recipientId: selected.id,
-        text: '📁 ${task.fileName} → ${peer.displayName}',
+        text: msgText,
         isMine: true,
         status: task.status == TransferStatus.failed
             ? MessageStatus.failed
@@ -1722,8 +2181,9 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
       );
       _conversations.putIfAbsent(selected.id, () => []).add(msg);
       chatHistory.scheduleSave(selected.id, _conversations[selected.id]!);
-      selected.lastMessage =
-          '📁 [${languageProvider?.tr('openFile') ?? 'Tệp'}] ${task.fileName}';
+      selected.lastMessage = hasCaption
+          ? caption.trim()
+          : '📁 [${languageProvider?.tr('openFile') ?? 'Tệp'}] ${task.fileName}';
       selected.lastMessageTime = DateTime.now();
       notifyListeners();
       if (task.status == TransferStatus.failed) {
@@ -1732,38 +2192,130 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
     }
   }
 
-  /// Dán hình ảnh hoặc tệp tin trực tiếp từ Clipboard
-  Future<bool> pasteFromClipboard() async {
-    if (_selectedPeer == null) return false;
+  /// Gửi nhiều tệp cùng lúc kèm nội dung văn bản / chú thích
+  Future<void> sendFiles(
+    List<File> files, {
+    String? text,
+    MessageModel? replyTo,
+  }) async {
+    final selected = _selectedPeer;
+    if (selected == null) return;
 
+    final trimmedText = text?.trim();
+    final hasText = trimmedText != null && trimmedText.isNotEmpty;
+
+    if (files.isEmpty) {
+      if (hasText) {
+        await sendMessage(trimmedText, replyTo: replyTo);
+      }
+      return;
+    }
+
+    if (selected.isAiAssistant) {
+      final base64Images = <String>[];
+      for (final f in files) {
+        if (isImageFile(f.path) && await f.exists()) {
+          try {
+            final bytes = await f.readAsBytes();
+            base64Images.add(base64Encode(bytes));
+          } catch (_) {}
+        }
+      }
+      final plainText = hasText
+          ? trimmedText
+          : (base64Images.isNotEmpty
+                ? 'Phân tích ${base64Images.length} hình ảnh này giúp tôi.'
+                : 'Xem các tệp này.');
+
+      for (int i = 0; i < files.length; i++) {
+        final f = files[i];
+        final fileName = f.path.split(Platform.pathSeparator).last;
+        final fileSize = await f.length();
+        final msg = MessageModel(
+          id: 'ai_file_${DateTime.now().microsecondsSinceEpoch}_$i',
+          senderId: 'me',
+          senderName: localUsername,
+          recipientId: _aiPeer.id,
+          text: i == 0 ? plainText : '📁 $fileName',
+          isMine: true,
+          status: MessageStatus.sent,
+          fileAttachment: FileAttachmentInfo(
+            fileName: fileName,
+            fileSize: fileSize,
+            localPath: f.path,
+            isTransferComplete: true,
+          ),
+        );
+        _conversations.putIfAbsent(_aiPeer.id, () => []).add(msg);
+      }
+      _aiPeer.lastMessage = plainText;
+      _aiPeer.lastMessageTime = DateTime.now();
+      notifyListeners();
+      _dispatchAiResponse(
+        plainText,
+        images: base64Images.isNotEmpty ? base64Images : null,
+      );
+      return;
+    }
+
+    if (hasText && replyTo != null) {
+      await sendMessage(trimmedText, replyTo: replyTo);
+      for (final file in files) {
+        await sendFile(file, recipient: selected);
+      }
+    } else if (hasText) {
+      await sendFile(files.first, caption: trimmedText, recipient: selected);
+      for (int i = 1; i < files.length; i++) {
+        await sendFile(files[i], recipient: selected);
+      }
+    } else {
+      for (final file in files) {
+        await sendFile(file, recipient: selected);
+      }
+    }
+  }
+
+  /// Trích xuất danh sách tệp hoặc ảnh chụp màn hình từ Clipboard mà không gửi ngay
+  Future<List<File>> getClipboardAttachments() async {
+    final result = <File>[];
     try {
       // 1. Kiểm tra ảnh trong Clipboard (chụp màn hình Snipping Tool, Win+Shift+S, PrtScn)
       final imageBytes = await Pasteboard.image;
       if (imageBytes != null && imageBytes.isNotEmpty) {
-        showToast('toastPastingImage');
-
         final tempDir = Directory.systemTemp;
         final timestamp = DateTime.now().millisecondsSinceEpoch;
         final imageFile = File('${tempDir.path}\\screenshot_$timestamp.png');
         await imageFile.writeAsBytes(await clipboardImageToPng(imageBytes));
-
-        await sendFile(imageFile);
-        showToast('toastImageSent');
-        return true;
+        if (await imageFile.exists()) {
+          result.add(imageFile);
+          return result;
+        }
       }
 
       // 2. Kiểm tra danh sách tệp trong Clipboard (copy từ Windows Explorer)
       final files = await Pasteboard.files();
       if (files.isNotEmpty) {
-        showToast('toastPastingFiles', ['${files.length}']);
-
         for (final path in files) {
           final file = File(path);
           if (await file.exists()) {
-            await sendFile(file);
+            result.add(file);
           }
         }
-        showToast('toastFilesSent');
+      }
+    } catch (e) {
+      debugPrint('[Coordinator] Get clipboard attachments error: $e');
+    }
+    return result;
+  }
+
+  /// Dán hình ảnh hoặc tệp tin trực tiếp từ Clipboard (hỗ trợ gửi ngay khi cần)
+  Future<bool> pasteFromClipboard() async {
+    if (_selectedPeer == null) return false;
+
+    try {
+      final files = await getClipboardAttachments();
+      if (files.isNotEmpty) {
+        await sendFiles(files);
         return true;
       }
     } catch (e) {
@@ -1776,11 +2328,15 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
   /// Gửi rung chuông Buzz
   Future<void> sendBuzz() async {
     if (_selectedPeer == null) return;
-    if (_selectedPeer!.isAllUsers) {
-      for (final p in _peers.values.where(
+    final targetPeer = _selectedPeer!;
+    final conversationId = targetPeer.id;
+    final targetName = targetPeer.displayName;
+
+    if (targetPeer.isAllUsers) {
+      for (final p in _peers.values.toSet().where(
         (p) => p.status != PeerStatus.offline,
       )) {
-        _tcpServer.send(
+        _sendToPeer(
           p.id,
           ProtocolBeebeep.packet(
             ProtocolBeebeep.headerBuzz,
@@ -1790,13 +2346,11 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
           ),
         );
       }
-      return;
-    }
-    if (_selectedPeer!.isGroup) {
-      for (final memberId in _selectedPeer!.memberIds) {
+    } else if (targetPeer.isGroup) {
+      for (final memberId in targetPeer.memberIds) {
         final p = _peers[memberId];
         if (p != null && p.status != PeerStatus.offline) {
-          _tcpServer.send(
+          _sendToPeer(
             p.id,
             ProtocolBeebeep.packet(
               ProtocolBeebeep.headerBuzz,
@@ -1807,17 +2361,36 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
           );
         }
       }
-      return;
+    } else {
+      _sendToPeer(
+        targetPeer.id,
+        ProtocolBeebeep.packet(
+          ProtocolBeebeep.headerBuzz,
+          '22',
+          text: '*',
+          flags: 1,
+        ),
+      );
     }
-    _tcpServer.send(
-      _selectedPeer!.id,
-      ProtocolBeebeep.packet(
-        ProtocolBeebeep.headerBuzz,
-        '22',
-        text: '*',
-        flags: 1,
-      ),
+
+    // Ghi nhận tin nhắn rung chuông vào cuộc hội thoại của chính người gửi
+    final sentText =
+        '🔔 ${languageProvider?.tr('buzzSent', [targetName]) ?? 'Bạn đã gửi rung chuông tới $targetName'}';
+    final message = MessageModel(
+      id: 'buzz-sent-${DateTime.now().microsecondsSinceEpoch}',
+      senderId: 'me',
+      senderName: localUsername,
+      recipientId: conversationId,
+      text: sentText,
+      isMine: true,
+      status: MessageStatus.delivered,
     );
+    final messages = _conversations.putIfAbsent(conversationId, () => []);
+    messages.add(message);
+    chatHistory.scheduleSave(conversationId, messages);
+    targetPeer.lastMessage = sentText;
+    targetPeer.lastMessageTime = message.timestamp;
+    notifyListeners();
   }
 
   /// Quét lại toàn bộ mạng LAN
@@ -2074,9 +2647,14 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
 
   @override
   void dispose() {
+    _buzzTopTimer?.cancel();
+    if (_buzzTopTimer != null && !_isAlwaysOnTop) {
+      unawaited(windowManager.setAlwaysOnTop(false).catchError((Object _) {}));
+    }
     _disposed = true;
     _livenessTimer?.cancel();
     _typingCleanupTimer?.cancel();
+    chatHistory.cancelAll();
     _discovery.stop();
     _tcpServer.stop();
     _fileEngine.stop();
