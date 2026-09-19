@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:ja_lan_messenger/modules/theme/theme_provider.dart';
@@ -441,6 +441,135 @@ void main() {
       // Chat C opens anchored at its first unread with badge 20
       expect(find.text(lang.tr('unreadMessagesBanner')), findsOneWidget);
       expect(find.text(lang.tr('newMessagesCount').replaceFirst('%d', '20')), findsOneWidget);
+    });
+
+    testWidgets('Typing bubble auto-scrolls into view when peer starts typing and user is near bottom', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final theme = ThemeProvider();
+      final lang = LanguageProvider();
+      final coordinator = MessengerCoordinator();
+      addTearDown(() => coordinator.dispose());
+
+      final peer = PeerModel(
+        id: 'peer_typing_test',
+        name: 'Remote Peer',
+        ip: '192.168.1.100',
+      );
+      coordinator.selectPeer(peer);
+
+      // 40 messages to ensure the list is tall and scrollable
+      final testMessages = List.generate(
+        40,
+        (i) => MessageModel(
+          id: 'msg_typing_$i',
+          senderId: peer.id,
+          senderName: peer.name,
+          recipientId: 'me',
+          text: 'Message $i: Testing scroll position before typing bubble appears.',
+          timestamp: DateTime.now().add(Duration(seconds: i)),
+          isMine: false,
+          status: MessageStatus.read,
+        ),
+      );
+      coordinator.conversationsMap[peer.id] = testMessages;
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: theme),
+            ChangeNotifierProvider.value(value: lang),
+            ChangeNotifierProvider.value(value: coordinator),
+          ],
+          child: const MaterialApp(home: Scaffold(body: ChatViewPanel())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Initially, no typing bubble should exist in the messages list
+      expect(find.textContaining(lang.tr('typing')), findsNothing);
+
+      // Now peer starts typing
+      coordinator.setPeerTypingForTesting(peer.id, true);
+      await tester.pump(); // Build frame with typing bubble added
+      await tester.pump(const Duration(milliseconds: 350)); // Advance animation frames for scroll & entry
+
+      // Typing bubble must now be present and fully visible
+      expect(find.textContaining(lang.tr('typing')), findsWidgets);
+
+      // Peer stops typing
+      coordinator.setPeerTypingForTesting(peer.id, false);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.textContaining(lang.tr('typing')), findsNothing);
+    });
+
+    testWidgets('Typing bubble does NOT auto-scroll if user is scrolled far up reading old messages', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final theme = ThemeProvider();
+      final lang = LanguageProvider();
+      final coordinator = MessengerCoordinator();
+      addTearDown(() => coordinator.dispose());
+
+      final peer = PeerModel(
+        id: 'peer_typing_scroll_up_test',
+        name: 'Remote Peer 2',
+        ip: '192.168.1.101',
+      );
+      coordinator.selectPeer(peer);
+
+      final testMessages = List.generate(
+        60,
+        (i) => MessageModel(
+          id: 'msg_old_$i',
+          senderId: peer.id,
+          senderName: peer.name,
+          recipientId: 'me',
+          text: 'History message $i to create a long chat buffer.',
+          timestamp: DateTime.now().add(Duration(seconds: i)),
+          isMine: false,
+          status: MessageStatus.read,
+        ),
+      );
+      coordinator.conversationsMap[peer.id] = testMessages;
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: theme),
+            ChangeNotifierProvider.value(value: lang),
+            ChangeNotifierProvider.value(value: coordinator),
+          ],
+          child: const MaterialApp(home: Scaffold(body: ChatViewPanel())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Scroll up to top of history
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_up_rounded));
+      await tester.pumpAndSettle();
+
+      final scrollableState =
+          tester.state<ScrollableState>(find.byType(Scrollable).first);
+      final topOffset = scrollableState.position.pixels;
+      expect(topOffset, lessThanOrEqualTo(50.0));
+
+      // Peer starts typing
+      coordinator.setPeerTypingForTesting(peer.id, true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // Position should remain at top (not auto-scrolled down)
+      expect(scrollableState.position.pixels, lessThanOrEqualTo(50.0));
     });
   });
 }

@@ -53,6 +53,7 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
   Timer? _highlightTimer;
   int _currentPinnedIndex = 0;
   int _prevMessageCount = 0;
+  bool _prevPeerTyping = false;
   String? _lastPeerId;
 
   // Scroll tracking state
@@ -355,6 +356,9 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
     }
 
     final messages = coordinator.currentMessages;
+    final isPeerTyping =
+        !peer.isAllUsers && !peer.isGroup && coordinator.isPeerTyping(peer.id);
+    final totalItems = messages.length + (isPeerTyping ? 1 : 0);
 
     // Reset replying state & determine scroll target if active peer changed
     final isPeerChanged = _lastPeerId != peer.id;
@@ -364,6 +368,7 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
       _replyingToMessage = null;
       _currentPinnedIndex = 0;
       _prevMessageCount = messages.length;
+      _prevPeerTyping = isPeerTyping;
 
       // Telegram-style: Check if there are unread messages in this conversation
       final firstUnreadId =
@@ -433,31 +438,35 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
       });
     }
 
-    final isPeerTyping =
-        !peer.isAllUsers && !peer.isGroup && coordinator.isPeerTyping(peer.id);
-    final totalItems = messages.length + (isPeerTyping ? 1 : 0);
-
     // Auto-scroll logic: instant jump during AI stream (prevents 200ms animation conflicts),
-    // and smooth scroll only when a new message arrives and user is already near bottom.
+    // and smooth scroll when a new message arrives or peer starts typing while user is near bottom.
     final isStreaming = messages.isNotEmpty && messages.last.isStreaming;
     if (isStreaming) {
       _scrollToBottom(force: false, smooth: false);
-    } else if (!isPeerChanged && messages.length != _prevMessageCount) {
-      final delta = messages.length - _prevMessageCount;
-      _prevMessageCount = messages.length;
-      if (delta > 0) {
-        if (_isNearBottom) {
-          _unreadBelowCount = 0;
-          _scrollToBottom(force: true, smooth: true);
+    } else if (!isPeerChanged) {
+      if (messages.length != _prevMessageCount) {
+        final delta = messages.length - _prevMessageCount;
+        _prevMessageCount = messages.length;
+        if (delta > 0) {
+          if (_isNearBottom) {
+            _unreadBelowCount = 0;
+            _scrollToBottom(force: true, smooth: true);
+          } else {
+            _unreadBelowCount += delta;
+            _updateScrollState();
+          }
         } else {
-          _unreadBelowCount += delta;
+          _unreadBelowCount = 0;
           _updateScrollState();
         }
-      } else {
-        _unreadBelowCount = 0;
-        _updateScrollState();
+      } else if (isPeerTyping != _prevPeerTyping) {
+        final startedTyping = isPeerTyping && !_prevPeerTyping;
+        if (startedTyping && _isNearBottom) {
+          _scrollToBottom(force: true, smooth: true);
+        }
       }
     }
+    _prevPeerTyping = isPeerTyping;
 
     final pinnedMessages = coordinator.getPinnedMessages(peer.id);
 
@@ -1580,65 +1589,79 @@ class _TypingIndicatorBubbleState extends State<_TypingIndicatorBubble>
 
     return Align(
       alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: (theme.isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.white),
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(14),
-            topRight: Radius.circular(14),
-            bottomLeft: Radius.circular(2),
-            bottomRight: Radius.circular(14),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0.0, end: 1.0),
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        builder: (context, animValue, child) {
+          return Opacity(
+            opacity: animValue.clamp(0.0, 1.0),
+            child: Transform.translate(
+              offset: Offset(0, (1.0 - animValue) * 8.0),
+              child: child,
             ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '${widget.peer.effectiveDisplayName(lang)} ${lang.tr('typing')}',
-              style: TextStyle(
-                fontSize: 12,
-                fontStyle: FontStyle.italic,
-                color: theme.colors.accentBlue,
-                fontWeight: FontWeight.w500,
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: (theme.isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.white),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(14),
+              topRight: Radius.circular(14),
+              bottomLeft: Radius.circular(2),
+              bottomRight: Radius.circular(14),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
               ),
-            ),
-            const SizedBox(width: 8),
-            AnimatedBuilder(
-              animation: _animController,
-              builder: (context, child) {
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: List.generate(3, (index) {
-                    final phase = (_animController.value + index * 0.25) % 1.0;
-                    final scale =
-                        0.5 + 0.5 * (phase < 0.5 ? phase * 2 : (1 - phase) * 2);
-                    return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                      width: 5 * scale,
-                      height: 5 * scale,
-                      decoration: BoxDecoration(
-                        color: theme.colors.accentBlue.withValues(
-                          alpha: 0.4 + 0.6 * scale,
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${widget.peer.effectiveDisplayName(lang)} ${lang.tr('typing')}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                  color: theme.colors.accentBlue,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 8),
+              AnimatedBuilder(
+                animation: _animController,
+                builder: (context, child) {
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(3, (index) {
+                      final phase = (_animController.value + index * 0.25) % 1.0;
+                      final scale =
+                          0.5 + 0.5 * (phase < 0.5 ? phase * 2 : (1 - phase) * 2);
+                      return Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                        width: 5 * scale,
+                        height: 5 * scale,
+                        decoration: BoxDecoration(
+                          color: theme.colors.accentBlue.withValues(
+                            alpha: 0.4 + 0.6 * scale,
+                          ),
+                          shape: BoxShape.circle,
                         ),
-                        shape: BoxShape.circle,
-                      ),
-                    );
-                  }),
-                );
-              },
-            ),
-          ],
+                      );
+                    }),
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );

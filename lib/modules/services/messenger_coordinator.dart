@@ -1369,6 +1369,16 @@ class MessengerCoordinator extends ChangeNotifier {
     return DateTime.now().difference(time).inSeconds < 4;
   }
 
+  @visibleForTesting
+  void setPeerTypingForTesting(String peerId, bool isTyping) {
+    if (isTyping) {
+      _typingPeers[peerId] = DateTime.now();
+    } else {
+      _typingPeers.remove(peerId);
+    }
+    notifyListeners();
+  }
+
   /// Gửi tín hiệu đang soạn tin hoặc ngừng soạn tin tới peer đang chat
   void sendTypingStatus(bool isTyping) {
     final peer = _selectedPeer;
