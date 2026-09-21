@@ -2,6 +2,15 @@
 
 All notable changes to the **JA LAN Messenger** project will be documented in this file.
 
+## [1.2.2] - 2026-09-21
+
+### 🐛 Sửa lỗi & Tối ưu hóa
+- **Định dạng tham số thông báo cập nhật OTA (Toast & Badge Tooltip)**: Khắc phục triệt để lỗi hiển thị chuỗi `%s` chưa được thay thế trong thông báo Toast và Tooltip huy hiệu OTA trên thanh tiêu đề khi có bản cập nhật mới (`updateAvailable`). Đồng thời chuẩn hóa tiền tố phiên bản `v`, hiển thị đồng nhất và chính xác trên cả 3 ngôn ngữ (Tiếng Việt, English, 简体中文).
+- **Kiểm thử đa ngôn ngữ & Bàn giao kỹ thuật**: Mở rộng test suite `group_and_locale_test.dart` xác minh toàn diện chuỗi nội suy `%s` và cập nhật biên bản kỹ thuật nghiệm thu `docs/AI_HANDOFF.md`.
+
+### 📦 Phát hành
+- Đồng bộ version `1.2.2+5` trong `pubspec.yaml`, `constants.dart`, `Runner.rc`, `ABOUT.txt`, `install.bat`, `installer.iss`, `README.md`, `USERGUIDE.md`, `RELEASE_NOTES.md`.
+
 ## [1.2.1] - 2026-09-21
 
 ### 🚀 Nâng cấp & Tính năng mới

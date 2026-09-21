@@ -1976,7 +1976,9 @@ class _SettingsDialogState extends State<SettingsDialog>
                           Expanded(
                             child: Text(
                               lang.tr('updateAvailable', [
-                                _manualUpdateCheckResult!.packageInfo?.version
+                                _manualUpdateCheckResult!
+                                        .packageInfo
+                                        ?.version
                                         .displayVersion ??
                                     '',
                               ]),
