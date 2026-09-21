@@ -197,7 +197,7 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                                 const SizedBox(height: 2),
                                 Text(
                                   lang.tr('updateAvailable', [
-                                    widget.packageInfo.version.toString(),
+                                    widget.packageInfo.version.displayVersion,
                                   ]),
                                   style: TextStyle(
                                     fontSize: 11.5,

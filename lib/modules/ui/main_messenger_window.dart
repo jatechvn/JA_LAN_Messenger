@@ -649,8 +649,9 @@ class _CustomTitleBar extends StatelessWidget {
           // Nút huy hiệu cập nhật OTA nếu có bản mới
           if (coordinator.availableUpdate != null) ...[
             Tooltip(
-              message:
-                  '${lang.tr('updateAvailable')}: v${coordinator.availableUpdate!.version}',
+              message: lang.tr('updateAvailable', [
+                coordinator.availableUpdate!.version.displayVersion,
+              ]),
               child: InkWell(
                 key: const ValueKey('ota-update-badge-button'),
                 onTap: () {

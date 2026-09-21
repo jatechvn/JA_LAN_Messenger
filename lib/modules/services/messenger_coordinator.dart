@@ -48,8 +48,13 @@ class ToastData {
       case 'toastPastingFiles':
         return '📁 ${lang.tr('pastingFiles')} (${args.first})';
       case 'updateAvailable':
-        return '🚀 ${lang.tr('updateAvailable')} (v${args.first})';
+        final rawVer = args.first.trim();
+        final ver = rawVer.startsWith('v') ? rawVer : 'v$rawVer';
+        return '🚀 ${lang.tr('updateAvailable', [ver])}';
       default:
+        if (base.contains('%s') || base.contains('%d')) {
+          return lang.tr(key, args);
+        }
         return '$base ${args.join(' ')}'.trim();
     }
   }

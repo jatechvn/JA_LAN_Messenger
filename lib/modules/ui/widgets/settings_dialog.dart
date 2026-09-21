@@ -1977,7 +1977,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                             child: Text(
                               lang.tr('updateAvailable', [
                                 _manualUpdateCheckResult!.packageInfo?.version
-                                        .toString() ??
+                                        .displayVersion ??
                                     '',
                               ]),
                               style: TextStyle(

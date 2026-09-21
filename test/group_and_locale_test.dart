@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ja_lan_messenger/modules/localization/app_locale.dart';
 import 'package:ja_lan_messenger/modules/models/group_model.dart';
 import 'package:ja_lan_messenger/modules/models/peer_model.dart';
+import 'package:ja_lan_messenger/modules/services/messenger_coordinator.dart';
 
 void main() {
   group('LanguageProvider Tests', () {
@@ -115,6 +116,54 @@ void main() {
         LanguageProvider.customFileForTesting = null;
         if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
       }
+    });
+
+    test('tr() placeholder substitution replaces %s correctly in all languages', () {
+      final provider = LanguageProvider();
+
+      // VI
+      provider.setLanguage(AppLanguage.vi);
+      expect(
+        provider.tr('updateAvailable', ['v1.2.1']),
+        equals('Đã có bản cập nhật mới: v1.2.1'),
+      );
+      expect(provider.tr('updateAvailable', ['v1.2.1']).contains('%s'), isFalse);
+
+      // EN
+      provider.setLanguage(AppLanguage.en);
+      expect(
+        provider.tr('updateAvailable', ['v1.2.1']),
+        equals('New version available: v1.2.1'),
+      );
+      expect(provider.tr('updateAvailable', ['v1.2.1']).contains('%s'), isFalse);
+
+      // ZH
+      provider.setLanguage(AppLanguage.zh);
+      expect(
+        provider.tr('updateAvailable', ['v1.2.1']),
+        equals('发现新版本: v1.2.1'),
+      );
+      expect(provider.tr('updateAvailable', ['v1.2.1']).contains('%s'), isFalse);
+    });
+
+    test('ToastData format for updateAvailable formats without %s', () {
+      final provider = LanguageProvider();
+
+      const toast = ToastData(key: 'updateAvailable', args: ['1.2.1']);
+
+      provider.setLanguage(AppLanguage.vi);
+      final viMsg = toast.format(provider);
+      expect(viMsg, equals('🚀 Đã có bản cập nhật mới: v1.2.1'));
+      expect(viMsg.contains('%s'), isFalse);
+
+      provider.setLanguage(AppLanguage.en);
+      final enMsg = toast.format(provider);
+      expect(enMsg, equals('🚀 New version available: v1.2.1'));
+      expect(enMsg.contains('%s'), isFalse);
+
+      // Even if version already has 'v' prefix
+      const toastWithV = ToastData(key: 'updateAvailable', args: ['v1.2.1']);
+      expect(toastWithV.format(provider), equals('🚀 New version available: v1.2.1'));
     });
   });
 
