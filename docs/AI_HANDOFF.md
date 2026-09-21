@@ -51,3 +51,9 @@
 - Focused performance suite: 14 tests pass, including disk reload and cleared tuning regressions. Dart analyzer clean. Tests use isolated AppData and temporary preference files.
 - No new build/deployment in this verification. Actual N100 frame timing and VNC behavior remain untested.
 - Scope limits: score is a heuristic, not an FPS benchmark; GPU query uses registry adapter 0000, which need not be the renderer adapter on multi-GPU PCs. Synchronous registry calls have no proven <15ms bound. Several auxiliary overlays still use explicit blur constants, so Lite is not globally zero-blur and zero-lag is not a verified guarantee.
+
+## OTA update text verification (2026-09-21)
+- Reviewed commit 674eec6, which formats the update version through LanguageProvider.tr at toast, badge tooltip, update dialog and manual-check result.
+- Confirmed all updateAvailable call sites pass a version argument. Toast normalizes both `1.2.1` and `v1.2.1` to one `v` prefix.
+- Focused locale and OTA suites pass 31 tests; `dart analyze lib test` is clean.
+- No source change, build, package, remote update check, or deployment was performed in this verification. Windows visual and live SMB-update testing remain manual checks.
