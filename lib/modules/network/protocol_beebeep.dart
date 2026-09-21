@@ -160,16 +160,17 @@ class ProtocolBeebeep {
     required String emoji,
     required String action,
     required String senderName,
-  }) =>
-      packet(
-        headerReaction,
-        '40',
-        text: '$messageId$dataFieldSeparator$emoji$dataFieldSeparator$action',
-        data: senderName,
-        flags: 1,
-      );
+  }) => packet(
+    headerReaction,
+    '40',
+    text: '$messageId$dataFieldSeparator$emoji$dataFieldSeparator$action',
+    data: senderName,
+    flags: 1,
+  );
 
-  static Map<String, String>? parseReactionPacket(Map<String, dynamic> message) {
+  static Map<String, String>? parseReactionPacket(
+    Map<String, dynamic> message,
+  ) {
     if (message['header'] != headerReaction) return null;
     final text = message['text'] as String? ?? '';
     final parts = text.split(dataFieldSeparator);

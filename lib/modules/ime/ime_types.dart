@@ -16,11 +16,7 @@ enum ImeMode {
   }
 }
 
-enum ImeEngineState {
-  active,
-  bypassedExternal,
-  disabledManual,
-}
+enum ImeEngineState { active, bypassedExternal, disabledManual }
 
 class PinyinCandidate {
   final String text;

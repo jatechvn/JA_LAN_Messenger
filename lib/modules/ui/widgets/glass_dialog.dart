@@ -47,7 +47,10 @@ class GlassDialog extends StatelessWidget {
       builder: (context, constraints) {
         final screenWidth = constraints.maxWidth;
         final horizontalMargin = screenWidth < 420 ? 12.0 : 24.0;
-        final maxDialogWidth = math.max(260.0, screenWidth - (horizontalMargin * 2));
+        final maxDialogWidth = math.max(
+          260.0,
+          screenWidth - (horizontalMargin * 2),
+        );
         final effectiveWidth = math.min(width, maxDialogWidth);
 
         return Center(
@@ -61,121 +64,121 @@ class GlassDialog extends StatelessWidget {
                 vertical: 24,
               ),
               decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: borderColor, width: 1),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.15),
-                blurRadius: 36,
-                offset: const Offset(0, 16),
+                color: bg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: borderColor, width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.15),
+                    blurRadius: 36,
+                    offset: const Offset(0, 16),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Column(
-              mainAxisSize: height == null
-                  ? MainAxisSize.min
-                  : MainAxisSize.max,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Header
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 14, 14, 12),
-                  child: Row(
-                    children: [
-                      if (icon != null) ...[
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: theme.colors.accentBlue.withValues(
-                              alpha: 0.12,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Column(
+                  mainAxisSize: height == null
+                      ? MainAxisSize.min
+                      : MainAxisSize.max,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Header
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 14, 14, 12),
+                      child: Row(
+                        children: [
+                          if (icon != null) ...[
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: theme.colors.accentBlue.withValues(
+                                  alpha: 0.12,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                icon,
+                                size: 18,
+                                color: theme.colors.accentBlue,
+                              ),
                             ),
-                            borderRadius: BorderRadius.circular(8),
+                            const SizedBox(width: 10),
+                          ],
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                          child: Icon(
-                            icon,
-                            size: 18,
-                            color: theme.colors.accentBlue,
+                          if (headerTrailing != null) ...[
+                            headerTrailing!,
+                            const SizedBox(width: 8),
+                          ],
+                          InkWell(
+                            onTap: () => Navigator.of(context).pop(),
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              width: 28,
+                              height: 28,
+                              decoration: BoxDecoration(
+                                color: (isDark ? Colors.white : Colors.black)
+                                    .withValues(alpha: 0.06),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: 16,
+                                color: isDark ? Colors.white70 : Colors.black54,
+                              ),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                      ],
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : Colors.black87,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        ],
                       ),
-                      if (headerTrailing != null) ...[
-                        headerTrailing!,
-                        const SizedBox(width: 8),
-                      ],
-                      InkWell(
-                        onTap: () => Navigator.of(context).pop(),
-                        borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: (isDark ? Colors.white : Colors.black)
-                                .withValues(alpha: 0.06),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.close_rounded,
-                            size: 16,
-                            color: isDark ? Colors.white70 : Colors.black54,
+                    ),
+                    Divider(color: borderColor, height: 1),
+
+                    // Content
+                    if (height != null)
+                      Expanded(
+                        child: Padding(padding: contentPadding, child: child),
+                      )
+                    else
+                      Padding(padding: contentPadding, child: child),
+
+                    // Actions
+                    if (actions != null && actions!.isNotEmpty) ...[
+                      Divider(color: borderColor, height: 1),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Wrap(
+                            alignment: WrapAlignment.end,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: actions!,
                           ),
                         ),
                       ),
                     ],
-                  ),
+                  ],
                 ),
-                Divider(color: borderColor, height: 1),
-
-                // Content
-                if (height != null)
-                  Expanded(
-                    child: Padding(padding: contentPadding, child: child),
-                  )
-                else
-                  Padding(padding: contentPadding, child: child),
-
-                // Actions
-                if (actions != null && actions!.isNotEmpty) ...[
-                  Divider(color: borderColor, height: 1),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Wrap(
-                        alignment: WrapAlignment.end,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: actions!,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
-  },
-);
 
     if (effectiveBlur > 0) {
       dialogBody = BackdropFilter(

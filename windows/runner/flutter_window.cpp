@@ -25,6 +25,9 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  if (!keyboard_guard_.Install(flutter_controller_->view()->GetNativeWindow())) {
+    return false;
+  }
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {

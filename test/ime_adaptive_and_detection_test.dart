@@ -82,26 +82,29 @@ void main() {
   });
 
   group('SmartImeInputFormatter Real-time Typing Tests', () {
-    test('Transforms typed characters into accented Vietnamese via Formatter', () {
-      final ime = ImeService();
-      ime.setAutoBypassExternal(false);
-      ime.setMode(ImeMode.telex);
-      final formatter = ime.inputFormatter;
+    test(
+      'Transforms typed characters into accented Vietnamese via Formatter',
+      () {
+        final ime = ImeService();
+        ime.setAutoBypassExternal(false);
+        ime.setMode(ImeMode.telex);
+        final formatter = ime.inputFormatter;
 
-      // Mô phỏng gõ: 'tiêng' + 's' -> 'tiếng'
-      const oldVal = TextEditingValue(
-        text: 'tiêng',
-        selection: TextSelection.collapsed(offset: 5),
-      );
-      const newVal = TextEditingValue(
-        text: 'tiêngs',
-        selection: TextSelection.collapsed(offset: 6),
-      );
+        // Mô phỏng gõ: 'tiêng' + 's' -> 'tiếng'
+        const oldVal = TextEditingValue(
+          text: 'tiêng',
+          selection: TextSelection.collapsed(offset: 5),
+        );
+        const newVal = TextEditingValue(
+          text: 'tiêngs',
+          selection: TextSelection.collapsed(offset: 6),
+        );
 
-      final result = formatter.formatEditUpdate(oldVal, newVal);
-      expect(result.text, equals('tiếng'));
-      expect(result.selection.baseOffset, equals(5));
-    });
+        final result = formatter.formatEditUpdate(oldVal, newVal);
+        expect(result.text, equals('tiếng'));
+        expect(result.selection.baseOffset, equals(5));
+      },
+    );
 
     test('Passes raw characters when IME is off', () {
       final ime = ImeService();
@@ -145,10 +148,7 @@ void main() {
       expect(prefs.imeMode, equals('auto'));
       expect(prefs.imeAutoBypassExternal, isTrue);
 
-      await prefs.setImeSettings(
-        mode: 'pinyin',
-        autoBypassExternal: false,
-      );
+      await prefs.setImeSettings(mode: 'pinyin', autoBypassExternal: false);
 
       final prefs2 = AppPreferences();
       prefs2.setCustomFileForTesting(prefFile);
@@ -174,11 +174,7 @@ void main() {
       addTearDown(() => coordinator.dispose());
 
       coordinator.selectPeer(
-        PeerModel(
-          id: 'test-peer-1',
-          name: 'Bob',
-          ip: '192.168.1.100',
-        ),
+        PeerModel(id: 'test-peer-1', name: 'Bob', ip: '192.168.1.100'),
       );
 
       await tester.pumpWidget(
@@ -189,11 +185,7 @@ void main() {
             ChangeNotifierProvider.value(value: coordinator),
             ChangeNotifierProvider.value(value: ime),
           ],
-          child: const MaterialApp(
-            home: Scaffold(
-              body: ChatViewPanel(),
-            ),
-          ),
+          child: const MaterialApp(home: Scaffold(body: ChatViewPanel())),
         ),
       );
       await tester.pumpAndSettle();

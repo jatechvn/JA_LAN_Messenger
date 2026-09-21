@@ -2,7 +2,7 @@
 ; Tự động hóa đóng gói bộ cài đặt độc lập (.exe) cho Windows 64-bit
 
 #define MyAppName "JA LAN Messenger"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "1.2.1"
 #define MyAppPublisher "JA Tech"
 #define MyAppURL "https://github.com/jatechvn/JA_LAN_Messenger"
 #define MyAppExeName "ja_lan_messenger.exe"

@@ -142,9 +142,7 @@ void main() {
               ChangeNotifierProvider.value(value: coordinator),
             ],
             child: const MaterialApp(
-              home: Scaffold(
-                body: ChatViewPanel(isCompact: true),
-              ),
+              home: Scaffold(body: ChatViewPanel(isCompact: true)),
             ),
           ),
         );

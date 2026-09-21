@@ -99,7 +99,8 @@ class ImeService extends ChangeNotifier {
       return ImeEngineState.disabledManual;
     }
     if (_autoBypassExternal && _detectedExternalIme.isDetected) {
-      final isRelevantType = (_mode == ImeMode.telex &&
+      final isRelevantType =
+          (_mode == ImeMode.telex &&
               (_detectedExternalIme.imeType == 'vietnamese' ||
                   _detectedExternalIme.imeType == 'detected')) ||
           (_mode == ImeMode.pinyin &&
@@ -308,7 +309,10 @@ class ImeService extends ChangeNotifier {
   }
 
   /// Chèn văn bản đã chọn vào vị trí con trỏ của controller
-  void _insertTextIntoController(TextEditingController controller, String text) {
+  void _insertTextIntoController(
+    TextEditingController controller,
+    String text,
+  ) {
     final val = controller.value;
     final start = val.selection.start.clamp(0, val.text.length);
     final end = val.selection.end.clamp(0, val.text.length);
@@ -322,11 +326,21 @@ class ImeService extends ChangeNotifier {
   }
 
   int? _getDigitFromKey(LogicalKeyboardKey key) {
-    if (key == LogicalKeyboardKey.digit1 || key == LogicalKeyboardKey.numpad1) return 1;
-    if (key == LogicalKeyboardKey.digit2 || key == LogicalKeyboardKey.numpad2) return 2;
-    if (key == LogicalKeyboardKey.digit3 || key == LogicalKeyboardKey.numpad3) return 3;
-    if (key == LogicalKeyboardKey.digit4 || key == LogicalKeyboardKey.numpad4) return 4;
-    if (key == LogicalKeyboardKey.digit5 || key == LogicalKeyboardKey.numpad5) return 5;
+    if (key == LogicalKeyboardKey.digit1 || key == LogicalKeyboardKey.numpad1) {
+      return 1;
+    }
+    if (key == LogicalKeyboardKey.digit2 || key == LogicalKeyboardKey.numpad2) {
+      return 2;
+    }
+    if (key == LogicalKeyboardKey.digit3 || key == LogicalKeyboardKey.numpad3) {
+      return 3;
+    }
+    if (key == LogicalKeyboardKey.digit4 || key == LogicalKeyboardKey.numpad4) {
+      return 4;
+    }
+    if (key == LogicalKeyboardKey.digit5 || key == LogicalKeyboardKey.numpad5) {
+      return 5;
+    }
     return null;
   }
 

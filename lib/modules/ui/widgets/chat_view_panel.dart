@@ -1642,9 +1642,11 @@ class _TypingIndicatorBubbleState extends State<_TypingIndicatorBubble>
                   return Row(
                     mainAxisSize: MainAxisSize.min,
                     children: List.generate(3, (index) {
-                      final phase = (_animController.value + index * 0.25) % 1.0;
+                      final phase =
+                          (_animController.value + index * 0.25) % 1.0;
                       final scale =
-                          0.5 + 0.5 * (phase < 0.5 ? phase * 2 : (1 - phase) * 2);
+                          0.5 +
+                          0.5 * (phase < 0.5 ? phase * 2 : (1 - phase) * 2);
                       return Container(
                         margin: const EdgeInsets.symmetric(horizontal: 1.5),
                         width: 5 * scale,
@@ -3224,7 +3226,6 @@ class _AiThinkingBoxState extends State<_AiThinkingBox> {
   }
 }
 
-
 void _openAttachmentFolder(String path) {
   if (Platform.isWindows) {
     Process.run('explorer.exe', ['/select,', path]);
@@ -3354,7 +3355,9 @@ class _AttachmentPreview extends StatelessWidget {
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('${lang.tr('sharedFiles')}: ${lang.tr('fileNotFound')}'),
+              content: Text(
+                '${lang.tr('sharedFiles')}: ${lang.tr('fileNotFound')}',
+              ),
               duration: const Duration(seconds: 2),
             ),
           );
@@ -4309,8 +4312,9 @@ class StagedAttachmentsBar extends StatelessWidget {
                         height: 72,
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: (isDark ? const Color(0xFF1E293B) : Colors.white)
-                              .withValues(alpha: isDark ? 0.75 : 0.85),
+                          color:
+                              (isDark ? const Color(0xFF1E293B) : Colors.white)
+                                  .withValues(alpha: isDark ? 0.75 : 0.85),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
                             color: (isDark ? Colors.white : Colors.black)
@@ -4333,53 +4337,53 @@ class StagedAttachmentsBar extends StatelessWidget {
                               width: 38,
                               height: 38,
                               decoration: BoxDecoration(
-                              color: theme.colors.accentBlue.withValues(
-                                alpha: 0.12,
+                                color: theme.colors.accentBlue.withValues(
+                                  alpha: 0.12,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              borderRadius: BorderRadius.circular(8),
+                              child: Icon(
+                                _getFileIcon(file.path),
+                                size: 20,
+                                color: theme.colors.accentBlue,
+                              ),
                             ),
-                            child: Icon(
-                              _getFileIcon(file.path),
-                              size: 20,
-                              color: theme.colors.accentBlue,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  fileName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark
-                                        ? Colors.white
-                                        : Colors.black87,
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    fileName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  sizeStr,
-                                  style: TextStyle(
-                                    fontSize: 9.5,
-                                    color: isDark
-                                        ? Colors.white60
-                                        : Colors.black54,
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    sizeStr,
+                                    style: TextStyle(
+                                      fontSize: 9.5,
+                                      color: isDark
+                                          ? Colors.white60
+                                          : Colors.black54,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  Positioned(
+                    Positioned(
                       top: -5,
                       right: -5,
                       child: InkWell(

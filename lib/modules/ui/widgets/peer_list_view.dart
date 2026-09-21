@@ -1305,7 +1305,8 @@ class _ScanStatusBanner extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       BounceMarqueeText(
-                        text: '$subnetText • $adapterCount ${lang.tr('cardAdapters')}',
+                        text:
+                            '$subnetText • $adapterCount ${lang.tr('cardAdapters')}',
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
@@ -1433,19 +1434,23 @@ class _ScanActionButtonState extends State<_ScanActionButton>
                 color: widget.isScanning
                     ? theme.colors.accentBlue.withValues(alpha: 0.16)
                     : (_isHovered
-                        ? (isDark ? Colors.white : Colors.black)
-                            .withValues(alpha: 0.08)
-                        : (isDark ? Colors.white : Colors.black)
-                            .withValues(alpha: 0.03)),
+                          ? (isDark ? Colors.white : Colors.black).withValues(
+                              alpha: 0.08,
+                            )
+                          : (isDark ? Colors.white : Colors.black).withValues(
+                              alpha: 0.03,
+                            )),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: widget.isScanning
                       ? theme.colors.accentBlue.withValues(alpha: 0.35)
                       : (_isHovered
-                          ? (isDark ? Colors.white : Colors.black)
-                              .withValues(alpha: 0.15)
-                          : (isDark ? Colors.white : Colors.black)
-                              .withValues(alpha: 0.07)),
+                            ? (isDark ? Colors.white : Colors.black).withValues(
+                                alpha: 0.15,
+                              )
+                            : (isDark ? Colors.white : Colors.black).withValues(
+                                alpha: 0.07,
+                              )),
                   width: 1,
                 ),
               ),
@@ -1458,8 +1463,8 @@ class _ScanActionButtonState extends State<_ScanActionButton>
                     color: widget.isScanning
                         ? theme.colors.accentBlue
                         : (_isHovered
-                            ? (isDark ? Colors.white : Colors.black87)
-                            : (isDark ? Colors.white70 : Colors.black54)),
+                              ? (isDark ? Colors.white : Colors.black87)
+                              : (isDark ? Colors.white70 : Colors.black54)),
                   ),
                 ),
               ),

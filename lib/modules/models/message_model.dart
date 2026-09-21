@@ -94,8 +94,8 @@ class MessageModel {
     this.replyToText,
     this.isPinned = false,
     Map<String, List<String>>? reactions,
-  })  : timestamp = timestamp ?? DateTime.now(),
-        reactions = reactions ?? {};
+  }) : timestamp = timestamp ?? DateTime.now(),
+       reactions = reactions ?? {};
 
   bool get hasAttachment => fileAttachment != null && !isRevoked;
   bool get isReply => replyToText != null && replyToText!.isNotEmpty;
@@ -181,8 +181,7 @@ class MessageModel {
     if (json['reactions'] is Map) {
       (json['reactions'] as Map).forEach((key, val) {
         if (val is List) {
-          reactionsMap[key.toString()] =
-              val.map((e) => e.toString()).toList();
+          reactionsMap[key.toString()] = val.map((e) => e.toString()).toList();
         }
       });
     }

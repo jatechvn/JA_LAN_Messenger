@@ -30,7 +30,10 @@ class CompactMessengerView extends StatelessWidget {
             ? const Offset(0.2, 0.0)
             : const Offset(-0.2, 0.0);
         return SlideTransition(
-          position: Tween<Offset>(begin: inOffset, end: Offset.zero).animate(animation),
+          position: Tween<Offset>(
+            begin: inOffset,
+            end: Offset.zero,
+          ).animate(animation),
           child: FadeTransition(opacity: animation, child: child),
         );
       },
@@ -107,7 +110,9 @@ class _CompactConversationListState extends State<_CompactConversationList> {
     }
 
     final totalUnread = allItems.fold<int>(0, (sum, p) => sum + p.unreadCount);
-    final onlineCount = allPeers.where((p) => p.status != PeerStatus.offline).length;
+    final onlineCount = allPeers
+        .where((p) => p.status != PeerStatus.offline)
+        .length;
 
     return Column(
       children: [
@@ -128,8 +133,9 @@ class _CompactConversationListState extends State<_CompactConversationList> {
                   .withValues(alpha: theme.isDark ? 0.65 : 0.05),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: (theme.isDark ? Colors.white : Colors.black)
-                    .withValues(alpha: theme.isDark ? 0.12 : 0.08),
+                color: (theme.isDark ? Colors.white : Colors.black).withValues(
+                  alpha: theme.isDark ? 0.12 : 0.08,
+                ),
                 width: 1,
               ),
             ),
@@ -186,7 +192,8 @@ class _CompactConversationListState extends State<_CompactConversationList> {
                   label: lang.tr('allFilter'),
                   isSelected: _activeFilter == _CompactFilter.all,
                   count: allItems.length,
-                  onTap: () => setState(() => _activeFilter = _CompactFilter.all),
+                  onTap: () =>
+                      setState(() => _activeFilter = _CompactFilter.all),
                 ),
                 const SizedBox(width: 6),
                 _buildFilterPill(
@@ -228,7 +235,10 @@ class _CompactConversationListState extends State<_CompactConversationList> {
                   ),
                 )
               : ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   itemCount: filtered.length,
                   itemBuilder: (context, index) {
                     final item = filtered[index];
@@ -289,15 +299,18 @@ class _CompactConversationListState extends State<_CompactConversationList> {
             if (count > 0) ...[
               const SizedBox(width: 4),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 4,
+                  vertical: 0.5,
+                ),
                 decoration: BoxDecoration(
                   color: isRoseCount && count > 0
                       ? theme.colors.accentRose
                       : (isSelected
-                          ? theme.colors.accentBlue.withValues(alpha: 0.3)
-                          : (theme.isDark
-                              ? Colors.white12
-                              : Colors.black.withValues(alpha: 0.06))),
+                            ? theme.colors.accentBlue.withValues(alpha: 0.3)
+                            : (theme.isDark
+                                  ? Colors.white12
+                                  : Colors.black.withValues(alpha: 0.06))),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -308,8 +321,10 @@ class _CompactConversationListState extends State<_CompactConversationList> {
                     color: isRoseCount && count > 0
                         ? Colors.white
                         : (isSelected
-                            ? theme.colors.accentBlue
-                            : (theme.isDark ? Colors.white60 : Colors.black54)),
+                              ? theme.colors.accentBlue
+                              : (theme.isDark
+                                    ? Colors.white60
+                                    : Colors.black54)),
                   ),
                 ),
               ),
@@ -360,7 +375,10 @@ class _CompactTopBar extends StatelessWidget {
                   height: 22,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [theme.colors.accentBlue, theme.colors.accentCyan],
+                      colors: [
+                        theme.colors.accentBlue,
+                        theme.colors.accentCyan,
+                      ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
@@ -395,7 +413,10 @@ class _CompactTopBar extends StatelessWidget {
                 Tooltip(
                   message: '$onlineCount ${lang.tr('onlineFilter')}',
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1,
+                    ),
                     decoration: BoxDecoration(
                       color: theme.colors.accentEmerald.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
@@ -478,10 +499,7 @@ class _CompactPeerItemTile extends StatefulWidget {
   final PeerModel peer;
   final VoidCallback onTap;
 
-  const _CompactPeerItemTile({
-    required this.peer,
-    required this.onTap,
-  });
+  const _CompactPeerItemTile({required this.peer, required this.onTap});
 
   @override
   State<_CompactPeerItemTile> createState() => _CompactPeerItemTileState();
@@ -642,16 +660,18 @@ class _CompactPeerItemTileState extends State<_CompactPeerItemTile> {
                         lastMessageSnippet,
                         style: TextStyle(
                           fontSize: 11,
-                          fontWeight: isTyping ? FontWeight.w600 : FontWeight.normal,
+                          fontWeight: isTyping
+                              ? FontWeight.w600
+                              : FontWeight.normal,
                           color: isTyping
                               ? theme.colors.accentBlue
                               : (peer.unreadCount > 0
-                                  ? (theme.isDark
-                                      ? Colors.white70
-                                      : Colors.black87)
-                                  : (theme.isDark
-                                      ? Colors.white38
-                                      : Colors.black45)),
+                                    ? (theme.isDark
+                                          ? Colors.white70
+                                          : Colors.black87)
+                                    : (theme.isDark
+                                          ? Colors.white38
+                                          : Colors.black45)),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

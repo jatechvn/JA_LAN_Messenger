@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.2.0
+# Hướng dẫn sử dụng JA LAN Messenger v1.2.1
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.2.0_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.2.1_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -71,6 +71,12 @@
 ### 2.9. Bộ gõ tiếng Việt / tiếng Trung tích hợp (Built-in IME)
 - **Hỗ trợ gõ trực tiếp:** Tích hợp bộ gõ **Telex (Tiếng Việt)** và **Pinyin (Tiếng Trung)** ngay trong ứng dụng mà không cần cài đặt phần mềm ngoài.
 - **Tự động thích ứng:** Nút chuyển đổi nhanh ở góc phải khung chat, tự động tránh xung đột khi phát hiện bộ gõ hệ thống (Unikey, EVKey, Microsoft IME).
+
+### 2.10. Tối ưu hóa hiệu năng & Chế độ Lite (Mini PC / Máy cấu hình thấp)
+- **Tự động nhận diện cấu hình:** Ứng dụng tự động đọc thông số CPU/GPU máy tính để thiết lập mức đồ họa phù hợp nhất (`Ultra`, `Medium`, `Lite`).
+- **Chế độ Lite siêu mượt:** Dành riêng cho các máy tính văn phòng, Mini PC (như Intel N100, Celeron): tắt hoàn toàn các bộ lọc blur tốn tài nguyên GPU, mang lại tốc độ phản hồi tức thì và cuộn mượt mà.
+- **Tùy chỉnh thủ công:** Trong **Cài đặt > Tab Cài đặt nâng cao > Mục Hiệu năng & Đồ họa**, người dùng có thể xem thẻ cấu hình máy và tự do lựa chọn giữa các mức hiệu năng.
+- **Menu trạng thái Showcase:** Menu chuyển đổi trạng thái người dùng (Online / Away / Busy) được nâng cấp kính mờ đục cao cấp chống xuyên thấu, hiển thị rõ ràng và đẹp mắt.
 
 ---
 

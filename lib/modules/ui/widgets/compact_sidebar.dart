@@ -6,6 +6,7 @@ import '../../localization/app_locale.dart';
 import '../../services/messenger_coordinator.dart';
 import '../../models/peer_model.dart';
 import 'glass_components.dart';
+import 'glass_dropdown.dart';
 import 'settings_dialog.dart';
 
 enum MainViewTab { chats, transfers }
@@ -245,116 +246,69 @@ class _SidebarTabItem extends StatelessWidget {
 class _UserStatusAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final theme = ThemeProvider.of(context);
     final coordinator = context.watch<MessengerCoordinator>();
 
-    return Theme(
-      data: Theme.of(context).copyWith(
-        popupMenuTheme: PopupMenuThemeData(
-          color: theme.cardBg,
-          surfaceTintColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-              color: (theme.isDark ? Colors.white : Colors.black).withValues(
-                alpha: 0.1,
-              ),
-              width: 1,
-            ),
-          ),
-        ),
+    final statusItems = [
+      GlassDropdownItem<PeerStatus>(
+        value: PeerStatus.online,
+        label: PeerStatus.online.label,
+        icon: Icons.check_circle_rounded,
+        accentColor: PeerStatus.online.color,
       ),
-      child: PopupMenuButton<PeerStatus>(
-        tooltip:
-            '${coordinator.localUsername} (${coordinator.localStatus.label})',
-        offset: const Offset(48, -120),
-        onSelected: (status) {
-          coordinator.updateProfile(status: status);
-        },
-        itemBuilder: (ctx) => [
-          _buildPopupItem(
-            ctx,
-            PeerStatus.online,
-            Icons.check_circle_rounded,
-            coordinator.localStatus == PeerStatus.online,
-          ),
-          _buildPopupItem(
-            ctx,
-            PeerStatus.away,
-            Icons.schedule_rounded,
-            coordinator.localStatus == PeerStatus.away,
-          ),
-          _buildPopupItem(
-            ctx,
-            PeerStatus.busy,
-            Icons.do_not_disturb_on_rounded,
-            coordinator.localStatus == PeerStatus.busy,
-          ),
-        ],
-        child: Stack(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: coordinator.localColor.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: coordinator.localColor.withValues(alpha: 0.6),
-                  width: 1.5,
-                ),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                coordinator.localUsername.isNotEmpty
-                    ? coordinator.localUsername[0].toUpperCase()
-                    : 'U',
-                style: TextStyle(
-                  color: coordinator.localColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-            Positioned(
-              right: 0,
-              bottom: 0,
-              child: StatusBadge(status: coordinator.localStatus),
-            ),
-          ],
-        ),
+      GlassDropdownItem<PeerStatus>(
+        value: PeerStatus.away,
+        label: PeerStatus.away.label,
+        icon: Icons.schedule_rounded,
+        accentColor: PeerStatus.away.color,
       ),
-    );
-  }
+      GlassDropdownItem<PeerStatus>(
+        value: PeerStatus.busy,
+        label: PeerStatus.busy.label,
+        icon: Icons.do_not_disturb_on_rounded,
+        accentColor: PeerStatus.busy.color,
+      ),
+    ];
 
-  PopupMenuItem<PeerStatus> _buildPopupItem(
-    BuildContext context,
-    PeerStatus status,
-    IconData icon,
-    bool isSelected,
-  ) {
-    final theme = ThemeProvider.of(context);
-    return PopupMenuItem<PeerStatus>(
-      value: status,
-      height: 38,
-      child: Row(
+    return GlassDropdown<PeerStatus>(
+      items: statusItems,
+      value: coordinator.localStatus,
+      onChanged: (status) {
+        coordinator.updateProfile(status: status);
+      },
+      tooltip:
+          '${coordinator.localUsername} (${coordinator.localStatus.label})',
+      menuOffset: const Offset(46, -132),
+      menuWidth: 160,
+      customTrigger: Stack(
         children: [
-          Icon(icon, size: 16, color: status.color),
-          const SizedBox(width: 8),
-          Text(
-            status.label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-              color: isSelected
-                  ? theme.colors.accentBlue
-                  : (theme.isDark ? Colors.white : Colors.black87),
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: coordinator.localColor.withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: coordinator.localColor.withValues(alpha: 0.6),
+                width: 1.5,
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              coordinator.localUsername.isNotEmpty
+                  ? coordinator.localUsername[0].toUpperCase()
+                  : 'U',
+              style: TextStyle(
+                color: coordinator.localColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
             ),
           ),
-          if (isSelected) ...[
-            const Spacer(),
-            Icon(Icons.check_rounded, size: 16, color: theme.colors.accentBlue),
-          ],
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: StatusBadge(status: coordinator.localStatus),
+          ),
         ],
       ),
     );

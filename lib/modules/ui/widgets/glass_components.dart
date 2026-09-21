@@ -36,26 +36,42 @@ class GlassSurface extends StatelessWidget {
         : rawOpacity;
     final rawBlur = blur ?? theme.cardBlur;
 
-    // Sàn an toàn legibility floor: nếu trong suốt (opacity < 1.0) thì blur tối thiểu phải là 8.0
-    final effectiveBlur = effectiveOpacity < 1.0 ? math.max(rawBlur, 8.0) : 0.0;
+    final isLite = theme.effectiveTier == HardwareTier.lite;
+    final effectiveBlur = (isLite || rawBlur <= 0)
+        ? 0.0
+        : (effectiveOpacity < 1.0 ? math.max(rawBlur, 4.0) : 0.0);
 
     final br = borderRadius ?? BorderRadius.circular(12);
     final bgColor = (baseColor ?? (theme.isDark ? Colors.black : Colors.white))
         .withValues(alpha: effectiveOpacity);
 
+    final borderDecoration =
+        border ??
+        Border.all(
+          color: (theme.isDark ? Colors.white : Colors.black).withValues(
+            alpha: theme.isDark ? 0.08 : 0.06,
+          ),
+          width: 1,
+        );
+
+    // Zero-lag fast path: bypass BackdropFilter entirely on Lite mode or when blur is 0
+    if (effectiveBlur <= 0) {
+      return Container(
+        margin: margin,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: br,
+          border: borderDecoration,
+        ),
+        padding: padding,
+        child: child,
+      );
+    }
+
     return Container(
       margin: margin,
-      decoration: BoxDecoration(
-        borderRadius: br,
-        border:
-            border ??
-            Border.all(
-              color: (theme.isDark ? Colors.white : Colors.black).withValues(
-                alpha: theme.isDark ? 0.08 : 0.06,
-              ),
-              width: 1,
-            ),
-      ),
+      decoration: BoxDecoration(borderRadius: br, border: borderDecoration),
       child: ClipRRect(
         borderRadius: br,
         child: BackdropFilter(

@@ -110,7 +110,7 @@ echo [5/5] Registering application in Windows Control Panel...
 set "REG_KEY=HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\JA_LAN_Messenger"
 
 reg add "%REG_KEY%" /v "DisplayName" /t REG_SZ /d "JA LAN Messenger" /f >nul
-reg add "%REG_KEY%" /v "DisplayVersion" /t REG_SZ /d "1.2.0" /f >nul
+reg add "%REG_KEY%" /v "DisplayVersion" /t REG_SZ /d "1.2.1" /f >nul
 reg add "%REG_KEY%" /v "Publisher" /t REG_SZ /d "JA Tech" /f >nul
 reg add "%REG_KEY%" /v "DisplayIcon" /t REG_SZ /d "%TARGET_DIR%\ja_lan_messenger.exe,0" /f >nul
 reg add "%REG_KEY%" /v "InstallLocation" /t REG_SZ /d "%TARGET_DIR%" /f >nul

@@ -58,12 +58,14 @@ class _SettingsDialogState extends State<SettingsDialog>
   late double _localCardOpacity;
   late double _localDialogBlur;
   late double _localDialogOpacity;
+  late PerfTierMode _localPerfMode;
 
   // Glass tuning initial values for reverting on cancel
   late double _initialCardBlur;
   late double _initialCardOpacity;
   late double _initialDialogBlur;
   late double _initialDialogOpacity;
+  late PerfTierMode _initialPerfMode;
   bool _saved = false;
   ThemeProvider? _themeProvider;
 
@@ -131,11 +133,13 @@ class _SettingsDialogState extends State<SettingsDialog>
     _initialCardOpacity = theme.cardOpacity;
     _initialDialogBlur = theme.dialogBlur;
     _initialDialogOpacity = theme.dialogOpacity;
+    _initialPerfMode = theme.perfMode;
 
     _localCardBlur = _initialCardBlur;
     _localCardOpacity = _initialCardOpacity;
     _localDialogBlur = _initialDialogBlur;
     _localDialogOpacity = _initialDialogOpacity;
+    _localPerfMode = _initialPerfMode;
 
     final coordinator = context.read<MessengerCoordinator>();
     _nicknameController = TextEditingController(
@@ -192,8 +196,10 @@ class _SettingsDialogState extends State<SettingsDialog>
       final cardOpacity = _initialCardOpacity;
       final dialogBlur = _initialDialogBlur;
       final dialogOpacity = _initialDialogOpacity;
+      final perfMode = _initialPerfMode;
       final theme = _themeProvider;
       scheduleMicrotask(() {
+        theme?.setPerfTierMode(perfMode);
         theme?.setLiveGlassmorphism(
           cardBlur: cardBlur,
           cardOpacity: cardOpacity,
@@ -217,6 +223,7 @@ class _SettingsDialogState extends State<SettingsDialog>
 
   void _resetToDefaults() {
     setState(() {
+      _localPerfMode = PerfTierMode.auto;
       _localCardBlur = 24.0;
       _localCardOpacity = 0.28;
       _localDialogBlur = 20.0;
@@ -249,6 +256,7 @@ class _SettingsDialogState extends State<SettingsDialog>
       _serverConnectionSuccess = null;
       _manualUpdateCheckResult = null;
     });
+    _themeProvider?.setPerfTierMode(PerfTierMode.auto);
     _themeProvider?.setLiveGlassmorphism(
       cardBlur: 24.0,
       cardOpacity: 0.28,
@@ -343,6 +351,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     final coordinator = context.read<MessengerCoordinator>();
     final ime = context.read<ImeService>();
 
+    theme.setPerfTierMode(_localPerfMode);
     await theme.saveGlassTuning(
       cardBlur: _localCardBlur,
       cardOpacity: _localCardOpacity,
@@ -378,14 +387,16 @@ class _SettingsDialogState extends State<SettingsDialog>
       username: _otaUsernameController.text.trim(),
       password: _otaPasswordController.text.trim(),
     );
-    unawaited(OtaUpdateService().saveExternalConfigFile(
-      OtaUpdateConfig(
-        serverPath: _otaServerPathController.text.trim(),
-        username: _otaUsernameController.text.trim(),
-        password: _otaPasswordController.text.trim(),
-        checkInterval: _localOtaCheckInterval,
+    unawaited(
+      OtaUpdateService().saveExternalConfigFile(
+        OtaUpdateConfig(
+          serverPath: _otaServerPathController.text.trim(),
+          username: _otaUsernameController.text.trim(),
+          password: _otaPasswordController.text.trim(),
+          checkInterval: _localOtaCheckInterval,
+        ),
       ),
-    ));
+    );
 
     coordinator.security.isEncryptionEnabled = _encryptionEnabled;
     coordinator.security.setPassword(_passwordController.text.trim());
@@ -401,6 +412,100 @@ class _SettingsDialogState extends State<SettingsDialog>
 
     if (!mounted) return;
     Navigator.pop(context);
+  }
+
+  Widget _buildPerfTierChip({
+    required PerfTierMode mode,
+    required String label,
+    String? desc,
+    required IconData icon,
+    required ThemeProvider theme,
+  }) {
+    final isSelected = _localPerfMode == mode;
+    final color = isSelected
+        ? theme.colors.accentBlue
+        : (theme.isDark ? Colors.white70 : Colors.black87);
+
+    return Tooltip(
+      message: desc ?? label,
+      waitDuration: const Duration(milliseconds: 400),
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _localPerfMode = mode;
+          });
+          // Update live tuning values to match the selected tier
+          final targetTier = mode == PerfTierMode.auto
+              ? theme.detectedTier
+              : (mode == PerfTierMode.ultra
+                    ? HardwareTier.ultra
+                    : (mode == PerfTierMode.balanced
+                          ? HardwareTier.balanced
+                          : HardwareTier.lite));
+          switch (targetTier) {
+            case HardwareTier.ultra:
+              _localCardBlur = 24.0;
+              _localCardOpacity = 0.28;
+              _localDialogBlur = 20.0;
+              _localDialogOpacity = 0.88;
+              break;
+            case HardwareTier.balanced:
+              _localCardBlur = 12.0;
+              _localCardOpacity = 0.40;
+              _localDialogBlur = 12.0;
+              _localDialogOpacity = 0.90;
+              break;
+            case HardwareTier.lite:
+              _localCardBlur = 0.0;
+              _localCardOpacity = 0.88;
+              _localDialogBlur = 0.0;
+              _localDialogOpacity = 0.96;
+              break;
+          }
+          _themeProvider?.setLiveGlassmorphism(
+            cardBlur: _localCardBlur,
+            cardOpacity: _localCardOpacity,
+            dialogBlur: _localDialogBlur,
+            dialogOpacity: _localDialogOpacity,
+          );
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? theme.colors.accentBlue.withValues(alpha: 0.15)
+                : (theme.isDark ? Colors.white : Colors.black).withValues(
+                    alpha: 0.04,
+                  ),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected
+                  ? theme.colors.accentBlue
+                  : (theme.isDark ? Colors.white : Colors.black).withValues(
+                      alpha: 0.1,
+                    ),
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildGlassSlider({
@@ -472,7 +577,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     final theme = ThemeProvider.of(context);
     final lang = context.watch<LanguageProvider>();
 
-    final effectiveBlur = _localDialogBlur;
+    final effectiveBlur = theme.effectiveTier == HardwareTier.lite
+        ? 0.0
+        : _localDialogBlur;
 
     Widget dialogContent = Center(
       child: Container(
@@ -682,7 +789,116 @@ class _SettingsDialogState extends State<SettingsDialog>
           ),
           const SizedBox(height: 16),
 
-          // 2. Glassmorphism Tuning (Accordion)
+          // 2. Performance & Hardware Tier Tuning
+          Text(
+            lang.tr('perfTierTitle'),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: theme.colors.accentBlue,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            lang.tr('perfTierSubtitle'),
+            style: TextStyle(
+              fontSize: 11,
+              color: theme.isDark ? Colors.white60 : Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Hardware Profile Info Card
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: (theme.isDark ? Colors.white : Colors.black).withValues(
+                alpha: theme.isDark ? 0.04 : 0.03,
+              ),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: (theme.isDark ? Colors.white : Colors.black).withValues(
+                  alpha: 0.08,
+                ),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      theme.detectedTier.icon,
+                      size: 16,
+                      color: theme.detectedTier.color,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${lang.tr('hardwareScoreLabel')}: ${theme.hardwareScore}/100 • ${theme.detectedTier.label} (${theme.detectedTier.desc})',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: theme.detectedTier.color,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${lang.tr('detectedHardwareLabel')}: ${theme.cpuModel ?? '${theme.cpuCores} Cores'} | ${theme.gpuModel ?? 'Default Display'}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: theme.isDark ? Colors.white70 : Colors.black87,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Tier Selection Chips
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildPerfTierChip(
+                mode: PerfTierMode.auto,
+                label:
+                    '${lang.tr('perfTierAuto')} (${theme.detectedTier.label})',
+                desc: null,
+                icon: Icons.auto_awesome_rounded,
+                theme: theme,
+              ),
+              _buildPerfTierChip(
+                mode: PerfTierMode.ultra,
+                label: lang.tr('perfTierUltra'),
+                desc: lang.tr('perfTierUltraDesc'),
+                icon: Icons.bolt_rounded,
+                theme: theme,
+              ),
+              _buildPerfTierChip(
+                mode: PerfTierMode.balanced,
+                label: lang.tr('perfTierBalanced'),
+                desc: lang.tr('perfTierBalancedDesc'),
+                icon: Icons.balance_rounded,
+                theme: theme,
+              ),
+              _buildPerfTierChip(
+                mode: PerfTierMode.lite,
+                label: lang.tr('perfTierLite'),
+                desc: lang.tr('perfTierLiteDesc'),
+                icon: Icons.eco_rounded,
+                theme: theme,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // 3. Glassmorphism Tuning (Accordion)
           Theme(
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
@@ -977,14 +1193,19 @@ class _SettingsDialogState extends State<SettingsDialog>
               const SizedBox(width: 8),
               TextButton.icon(
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   minimumSize: const Size(60, 26),
                   visualDensity: VisualDensity.compact,
                 ),
                 icon: const Icon(Icons.play_arrow_rounded, size: 14),
                 label: const Text('Test Buzz', style: TextStyle(fontSize: 11)),
                 onPressed: () {
-                  context.read<MessengerCoordinator>().triggerBuzzAlertForTesting();
+                  context
+                      .read<MessengerCoordinator>()
+                      .triggerBuzzAlertForTesting();
                 },
               ),
             ],
@@ -1560,8 +1781,9 @@ class _SettingsDialogState extends State<SettingsDialog>
         setState(() {
           _isTestingServerConnection = false;
           _serverConnectionSuccess = false;
-          _serverConnectionResult =
-              lang.tr('serverConnectionFailed', [e.toString()]);
+          _serverConnectionResult = lang.tr('serverConnectionFailed', [
+            e.toString(),
+          ]);
         });
       }
     }
@@ -1691,16 +1913,18 @@ class _SettingsDialogState extends State<SettingsDialog>
                     ),
                     FilledButton.icon(
                       key: const ValueKey('ota-check-button'),
-                      onPressed:
-                          _isCheckingForUpdates ? null : _checkForUpdatesManually,
+                      onPressed: _isCheckingForUpdates
+                          ? null
+                          : _checkForUpdatesManually,
                       icon: _isCheckingForUpdates
                           ? const SizedBox(
                               width: 14,
                               height: 14,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
                               ),
                             )
                           : const Icon(Icons.refresh_rounded, size: 15),
@@ -1731,12 +1955,14 @@ class _SettingsDialogState extends State<SettingsDialog>
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: theme.colors.accentEmerald
-                            .withValues(alpha: 0.12),
+                        color: theme.colors.accentEmerald.withValues(
+                          alpha: 0.12,
+                        ),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: theme.colors.accentEmerald
-                              .withValues(alpha: 0.35),
+                          color: theme.colors.accentEmerald.withValues(
+                            alpha: 0.35,
+                          ),
                         ),
                       ),
                       child: Row(
@@ -1777,14 +2003,17 @@ class _SettingsDialogState extends State<SettingsDialog>
                         ],
                       ),
                     ),
-                  ] else if (_manualUpdateCheckResult!.errorMessage != null) ...[
+                  ] else if (_manualUpdateCheckResult!.errorMessage !=
+                      null) ...[
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         color: theme.colors.accentRose.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: theme.colors.accentRose.withValues(alpha: 0.35),
+                          color: theme.colors.accentRose.withValues(
+                            alpha: 0.35,
+                          ),
                         ),
                       ),
                       child: Row(
@@ -1814,7 +2043,9 @@ class _SettingsDialogState extends State<SettingsDialog>
                         color: theme.colors.accentBlue.withValues(alpha: 0.10),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: theme.colors.accentBlue.withValues(alpha: 0.25),
+                          color: theme.colors.accentBlue.withValues(
+                            alpha: 0.25,
+                          ),
                         ),
                       ),
                       child: Row(
@@ -1873,8 +2104,9 @@ class _SettingsDialogState extends State<SettingsDialog>
               ),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: (isDark ? Colors.white : Colors.black)
-                    .withValues(alpha: 0.08),
+                color: (isDark ? Colors.white : Colors.black).withValues(
+                  alpha: 0.08,
+                ),
               ),
             ),
             child: DropdownButtonHideUnderline(
@@ -1959,12 +2191,15 @@ class _SettingsDialogState extends State<SettingsDialog>
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(
-                  color: (isDark ? Colors.white : Colors.black)
-                      .withValues(alpha: 0.12),
+                  color: (isDark ? Colors.white : Colors.black).withValues(
+                    alpha: 0.12,
+                  ),
                 ),
               ),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
             ),
           ),
 
@@ -1991,10 +2226,8 @@ class _SettingsDialogState extends State<SettingsDialog>
                       decoration: InputDecoration(
                         isDense: true,
                         filled: true,
-                        fillColor:
-                            (isDark ? Colors.white : Colors.black).withValues(
-                          alpha: isDark ? 0.05 : 0.04,
-                        ),
+                        fillColor: (isDark ? Colors.white : Colors.black)
+                            .withValues(alpha: isDark ? 0.05 : 0.04),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                           borderSide: BorderSide(
@@ -2031,10 +2264,8 @@ class _SettingsDialogState extends State<SettingsDialog>
                       decoration: InputDecoration(
                         isDense: true,
                         filled: true,
-                        fillColor:
-                            (isDark ? Colors.white : Colors.black).withValues(
-                          alpha: isDark ? 0.05 : 0.04,
-                        ),
+                        fillColor: (isDark ? Colors.white : Colors.black)
+                            .withValues(alpha: isDark ? 0.05 : 0.04),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                           borderSide: BorderSide(
@@ -2086,8 +2317,10 @@ class _SettingsDialogState extends State<SettingsDialog>
                 label: Text(lang.tr('testServerConnection')),
                 style: OutlinedButton.styleFrom(
                   visualDensity: VisualDensity.compact,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   textStyle: const TextStyle(fontSize: 11),
                 ),
               ),
@@ -2098,8 +2331,10 @@ class _SettingsDialogState extends State<SettingsDialog>
                 label: Text(lang.tr('openConfigFolder')),
                 style: OutlinedButton.styleFrom(
                   visualDensity: VisualDensity.compact,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   textStyle: const TextStyle(fontSize: 11),
                 ),
               ),
@@ -2111,16 +2346,18 @@ class _SettingsDialogState extends State<SettingsDialog>
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: (_serverConnectionSuccess == true
-                        ? theme.colors.accentEmerald
-                        : theme.colors.accentRose)
-                    .withValues(alpha: 0.12),
+                color:
+                    (_serverConnectionSuccess == true
+                            ? theme.colors.accentEmerald
+                            : theme.colors.accentRose)
+                        .withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(
-                  color: (_serverConnectionSuccess == true
-                          ? theme.colors.accentEmerald
-                          : theme.colors.accentRose)
-                      .withValues(alpha: 0.35),
+                  color:
+                      (_serverConnectionSuccess == true
+                              ? theme.colors.accentEmerald
+                              : theme.colors.accentRose)
+                          .withValues(alpha: 0.35),
                 ),
               ),
               child: Row(

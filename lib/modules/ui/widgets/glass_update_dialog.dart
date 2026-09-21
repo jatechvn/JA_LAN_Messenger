@@ -23,16 +23,16 @@ Future<void> showGlassUpdateDialog({
         ? Colors.black.withValues(alpha: 0.65)
         : Colors.black.withValues(alpha: 0.40),
     transitionDuration: const Duration(milliseconds: 220),
-    pageBuilder: (ctx, anim1, anim2) => GlassUpdateDialog(
-      packageInfo: packageInfo,
-    ),
+    pageBuilder: (ctx, anim1, anim2) =>
+        GlassUpdateDialog(packageInfo: packageInfo),
     transitionBuilder: (ctx, anim1, anim2, child) {
       return FadeTransition(
         opacity: CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
         child: ScaleTransition(
-          scale: Tween<double>(begin: 0.94, end: 1.0).animate(
-            CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
-          ),
+          scale: Tween<double>(
+            begin: 0.94,
+            end: 1.0,
+          ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
           child: child,
         ),
       );
@@ -44,10 +44,7 @@ Future<void> showGlassUpdateDialog({
 class GlassUpdateDialog extends StatefulWidget {
   final UpdatePackageInfo packageInfo;
 
-  const GlassUpdateDialog({
-    super.key,
-    required this.packageInfo,
-  });
+  const GlassUpdateDialog({super.key, required this.packageInfo});
 
   @override
   State<GlassUpdateDialog> createState() => _GlassUpdateDialogState();
@@ -168,7 +165,9 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                               borderRadius: BorderRadius.circular(10),
                               boxShadow: [
                                 BoxShadow(
-                                  color: theme.colors.accentBlue.withValues(alpha: 0.35),
+                                  color: theme.colors.accentBlue.withValues(
+                                    alpha: 0.35,
+                                  ),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -190,7 +189,9 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
-                                    color: isDark ? Colors.white : Colors.black87,
+                                    color: isDark
+                                        ? Colors.white
+                                        : Colors.black87,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
@@ -236,22 +237,29 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                                     vertical: 10,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: (isDark ? Colors.white : Colors.black)
-                                        .withValues(alpha: isDark ? 0.05 : 0.04),
+                                    color:
+                                        (isDark ? Colors.white : Colors.black)
+                                            .withValues(
+                                              alpha: isDark ? 0.05 : 0.04,
+                                            ),
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
-                                      color: (isDark ? Colors.white : Colors.black)
-                                          .withValues(alpha: 0.08),
+                                      color:
+                                          (isDark ? Colors.white : Colors.black)
+                                              .withValues(alpha: 0.08),
                                     ),
                                   ),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         lang.tr('currentVersion'),
                                         style: TextStyle(
                                           fontSize: 10.5,
-                                          color: isDark ? Colors.white54 : Colors.black45,
+                                          color: isDark
+                                              ? Colors.white54
+                                              : Colors.black45,
                                         ),
                                       ),
                                       const SizedBox(height: 3),
@@ -260,7 +268,9 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                                         style: TextStyle(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w600,
-                                          color: isDark ? Colors.white70 : Colors.black87,
+                                          color: isDark
+                                              ? Colors.white70
+                                              : Colors.black87,
                                         ),
                                       ),
                                     ],
@@ -282,14 +292,17 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                                     vertical: 10,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: theme.colors.accentEmerald.withValues(alpha: 0.12),
+                                    color: theme.colors.accentEmerald
+                                        .withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
-                                      color: theme.colors.accentEmerald.withValues(alpha: 0.35),
+                                      color: theme.colors.accentEmerald
+                                          .withValues(alpha: 0.35),
                                     ),
                                   ),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         lang.tr('latestVersion'),
@@ -303,7 +316,10 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                                       Row(
                                         children: [
                                           Text(
-                                            widget.packageInfo.version.displayVersion,
+                                            widget
+                                                .packageInfo
+                                                .version
+                                                .displayVersion,
                                             style: TextStyle(
                                               fontSize: 13,
                                               fontWeight: FontWeight.bold,
@@ -315,7 +331,9 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                                             widget.packageInfo.formattedSize,
                                             style: TextStyle(
                                               fontSize: 10.5,
-                                              color: isDark ? Colors.white54 : Colors.black54,
+                                              color: isDark
+                                                  ? Colors.white54
+                                                  : Colors.black54,
                                             ),
                                           ),
                                         ],
@@ -353,8 +371,9 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                             constraints: const BoxConstraints(maxHeight: 140),
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: (isDark ? Colors.black : Colors.grey.shade100)
-                                  .withValues(alpha: isDark ? 0.35 : 0.6),
+                              color:
+                                  (isDark ? Colors.black : Colors.grey.shade100)
+                                      .withValues(alpha: isDark ? 0.35 : 0.6),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
                                 color: (isDark ? Colors.white : Colors.black)
@@ -363,13 +382,18 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                             ),
                             child: SingleChildScrollView(
                               child: Text(
-                                widget.packageInfo.releaseNotes?.trim().isNotEmpty == true
+                                widget.packageInfo.releaseNotes
+                                            ?.trim()
+                                            .isNotEmpty ==
+                                        true
                                     ? widget.packageInfo.releaseNotes!
                                     : 'Bản phát hành bao gồm các cải tiến hiệu năng, tính năng mới và các bản vá lỗi bảo mật.',
                                 style: TextStyle(
                                   fontSize: 11.5,
                                   height: 1.45,
-                                  color: isDark ? Colors.white70 : Colors.black87,
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.black87,
                                 ),
                               ),
                             ),
@@ -382,8 +406,9 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                               borderRadius: BorderRadius.circular(4),
                               child: LinearProgressIndicator(
                                 value: _progress,
-                                backgroundColor: (isDark ? Colors.white : Colors.black)
-                                    .withValues(alpha: 0.08),
+                                backgroundColor:
+                                    (isDark ? Colors.white : Colors.black)
+                                        .withValues(alpha: 0.08),
                                 valueColor: AlwaysStoppedAnimation<Color>(
                                   theme.colors.accentBlue,
                                 ),
@@ -398,7 +423,9 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                                   _statusText,
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: isDark ? Colors.white70 : Colors.black87,
+                                    color: isDark
+                                        ? Colors.white70
+                                        : Colors.black87,
                                   ),
                                 ),
                                 Text(
@@ -419,10 +446,14 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: theme.colors.accentRose.withValues(alpha: 0.12),
+                                color: theme.colors.accentRose.withValues(
+                                  alpha: 0.12,
+                                ),
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: theme.colors.accentRose.withValues(alpha: 0.35),
+                                  color: theme.colors.accentRose.withValues(
+                                    alpha: 0.35,
+                                  ),
                                 ),
                               ),
                               child: Row(
@@ -477,8 +508,9 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                                   horizontal: 16,
                                   vertical: 8,
                                 ),
-                                foregroundColor:
-                                    isDark ? Colors.white70 : Colors.black87,
+                                foregroundColor: isDark
+                                    ? Colors.white70
+                                    : Colors.black87,
                                 side: BorderSide(
                                   color: (isDark ? Colors.white : Colors.black)
                                       .withValues(alpha: 0.16),
@@ -496,8 +528,9 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                                     height: 14,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      valueColor:
-                                          AlwaysStoppedAnimation<Color>(Colors.white),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ),
                                     ),
                                   )
                                 : const Icon(Icons.download_rounded, size: 16),

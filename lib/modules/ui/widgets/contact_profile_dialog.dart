@@ -130,11 +130,7 @@ class ContactProfileDialog extends StatelessWidget {
   final PeerModel peer;
   final VoidCallback? onBuzz;
 
-  const ContactProfileDialog({
-    super.key,
-    required this.peer,
-    this.onBuzz,
-  });
+  const ContactProfileDialog({super.key, required this.peer, this.onBuzz});
 
   static Future<void> show(
     BuildContext context, {
@@ -176,9 +172,7 @@ class ContactProfileDialog extends StatelessWidget {
             ),
           TextButton.icon(
             icon: Icon(
-              peer.isPinned
-                  ? Icons.push_pin_rounded
-                  : Icons.push_pin_outlined,
+              peer.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
               size: 16,
             ),
             label: Text(
@@ -263,7 +257,9 @@ class ContactProfileDialog extends StatelessWidget {
                               ),
                             ),
                     ),
-                    if (!peer.isAllUsers && !peer.isGroup && !peer.isAiAssistant)
+                    if (!peer.isAllUsers &&
+                        !peer.isGroup &&
+                        !peer.isAiAssistant)
                       Positioned(
                         right: 0,
                         bottom: 0,
@@ -302,14 +298,18 @@ class ContactProfileDialog extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: isDark ? const Color(0xFFF8FAFC) : Colors.black87,
+                          color: isDark
+                              ? const Color(0xFFF8FAFC)
+                              : Colors.black87,
                         ),
                         textAlign: TextAlign.center,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (!peer.isAllUsers && !peer.isGroup && !peer.isAiAssistant) ...[
+                    if (!peer.isAllUsers &&
+                        !peer.isGroup &&
+                        !peer.isAiAssistant) ...[
                       const SizedBox(width: 6),
                       Tooltip(
                         message: lang.tr('editNickname'),
@@ -337,7 +337,9 @@ class ContactProfileDialog extends StatelessWidget {
                     ],
                   ],
                 ),
-                if (!peer.isAllUsers && !peer.isGroup && !peer.isAiAssistant) ...[
+                if (!peer.isAllUsers &&
+                    !peer.isGroup &&
+                    !peer.isAiAssistant) ...[
                   const SizedBox(height: 6),
                   StatusBadge(status: peer.status, showLabel: true),
                 ],

@@ -46,6 +46,13 @@ class ThemeProvider extends ChangeNotifier {
   late HardwareTier _detectedTier;
   int _cpuCores = 4;
   int _hardwareScore = 50;
+  String? _cpuModel;
+  String? _gpuModel;
+
+  /// Hook for unit testing registry-based hardware detection
+  @visibleForTesting
+  static String? Function(String keyPath, String valueName)?
+  registryQueryOverride;
 
   // Glassmorphism live tuning parameters
   double _cardBlur = 24.0;
@@ -75,9 +82,22 @@ class ThemeProvider extends ChangeNotifier {
 
   ThemeProvider({String initialMode = 'system'}) {
     _themeMode = initialMode;
+    _loadSavedPerfMode();
     _detectWindowsVersion();
     _profileHardware();
     _loadCustomGlassTuning();
+  }
+
+  void _loadSavedPerfMode() {
+    try {
+      final savedModeId = AppPreferences().perfTierMode;
+      _perfMode = PerfTierMode.values.firstWhere(
+        (e) => e.id == savedModeId,
+        orElse: () => PerfTierMode.auto,
+      );
+    } catch (_) {
+      _perfMode = PerfTierMode.auto;
+    }
   }
 
   void _loadCustomGlassTuning() {
@@ -125,6 +145,137 @@ class ThemeProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Fast registry query for Windows hardware specifications (< 15ms)
+  static String? queryWindowsRegistryValue(String keyPath, String valueName) {
+    if (registryQueryOverride != null) {
+      return registryQueryOverride!(keyPath, valueName);
+    }
+    if (!Platform.isWindows) return null;
+    try {
+      final res = Process.runSync('reg', [
+        'query',
+        keyPath,
+        '/v',
+        valueName,
+      ], runInShell: false);
+      if (res.exitCode == 0) {
+        final out = res.stdout.toString();
+        final lines = out.split('\n');
+        for (final line in lines) {
+          final trimmed = line.trim();
+          if (trimmed.startsWith(valueName)) {
+            final regMatch = RegExp(r'REG_\w+\s+(.*)$').firstMatch(trimmed);
+            if (regMatch != null) {
+              return regMatch.group(1)?.trim();
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Computes hardware performance score (10 - 100) based on CPU, GPU, and Cores.
+  static int calculateHardwareScore({
+    String? cpu,
+    String? gpu,
+    required int cores,
+    required bool isWin11,
+  }) {
+    int score = 50;
+
+    // 1. Core count scoring
+    if (cores >= 16) {
+      score += 25;
+    } else if (cores >= 12) {
+      score += 20;
+    } else if (cores >= 8) {
+      score += 15;
+    } else if (cores >= 6) {
+      score += 5;
+    } else if (cores == 4) {
+      score += 0;
+    } else {
+      score -= 20;
+    }
+
+    // 2. CPU architecture / low-power SoC evaluation
+    final cpuLower = (cpu ?? '').toLowerCase();
+    if (cpuLower.contains('n100') ||
+        cpuLower.contains('n95') ||
+        cpuLower.contains('n97') ||
+        cpuLower.contains('n5105') ||
+        cpuLower.contains('n5095') ||
+        cpuLower.contains('j4125') ||
+        cpuLower.contains('j4105') ||
+        cpuLower.contains('celeron') ||
+        cpuLower.contains('pentium') ||
+        cpuLower.contains('atom')) {
+      score -= 35;
+    } else if (cpuLower.contains('i9') ||
+        cpuLower.contains('ryzen 9') ||
+        cpuLower.contains('threadripper') ||
+        cpuLower.contains('ultra 9') ||
+        cpuLower.contains('xeon')) {
+      score += 25;
+    } else if (cpuLower.contains('i7') ||
+        cpuLower.contains('ryzen 7') ||
+        cpuLower.contains('ultra 7')) {
+      score += 15;
+    } else if (cpuLower.contains('i5') ||
+        cpuLower.contains('ryzen 5') ||
+        cpuLower.contains('ultra 5')) {
+      score += 8;
+    }
+
+    // 3. GPU architecture / performance evaluation
+    final gpuLower = (gpu ?? '').toLowerCase();
+    if (gpuLower.contains('nvidia') ||
+        gpuLower.contains('geforce') ||
+        gpuLower.contains('rtx') ||
+        gpuLower.contains('gtx') ||
+        gpuLower.contains('radeon rx') ||
+        gpuLower.contains('arc a7') ||
+        gpuLower.contains('arc a5') ||
+        gpuLower.contains('arc b5') ||
+        gpuLower.contains('quadro')) {
+      score += 25;
+    } else if (gpuLower.contains('radeon 780m') ||
+        gpuLower.contains('radeon 890m') ||
+        gpuLower.contains('radeon 680m') ||
+        gpuLower.contains('iris xe') ||
+        gpuLower.contains('iris(r) xe') ||
+        gpuLower.contains('arc graphics') ||
+        gpuLower.contains('uhd graphics 770') ||
+        gpuLower.contains('uhd graphics 750')) {
+      score += 10;
+    } else if (gpuLower.contains('basic display') ||
+        gpuLower.contains('vga') ||
+        gpuLower.contains('virtualbox') ||
+        gpuLower.contains('vmware') ||
+        gpuLower.contains('remote display')) {
+      score -= 30;
+    } else if (gpuLower.contains('uhd graphics')) {
+      score -= 15;
+    }
+
+    // 4. Windows 11 DWM composition optimization
+    if (isWin11) score += 5;
+
+    return score.clamp(10, 100);
+  }
+
+  /// Maps a hardware score (10 - 100) to an appropriate HardwareTier.
+  static HardwareTier calculateTierFromScore(int score) {
+    if (score < 45) {
+      return HardwareTier.lite;
+    } else if (score < 75) {
+      return HardwareTier.balanced;
+    } else {
+      return HardwareTier.ultra;
+    }
+  }
+
   void _profileHardware() {
     try {
       _cpuCores = Platform.numberOfProcessors;
@@ -132,26 +283,28 @@ class ThemeProvider extends ChangeNotifier {
       _cpuCores = 4;
     }
 
-    int score = 50;
-    if (_cpuCores >= 8) {
-      score += 30;
-    } else if (_cpuCores >= 4) {
-      score += 10;
-    } else {
-      score -= 25;
+    if (Platform.isWindows || registryQueryOverride != null) {
+      _cpuModel = queryWindowsRegistryValue(
+        r'HKLM\HARDWARE\DESCRIPTION\System\CentralProcessor\0',
+        'ProcessorNameString',
+      );
+      _gpuModel = queryWindowsRegistryValue(
+        r'HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000',
+        'DriverDesc',
+      );
     }
 
-    if (_isWin11) score += 10;
+    _hardwareScore = calculateHardwareScore(
+      cpu: _cpuModel,
+      gpu: _gpuModel,
+      cores: _cpuCores,
+      isWin11: _isWin11,
+    );
 
-    _hardwareScore = score.clamp(10, 100);
-    if (_hardwareScore < 40) {
-      _detectedTier = HardwareTier.lite;
-    } else if (_hardwareScore < 70) {
-      _detectedTier = HardwareTier.balanced;
-    } else {
-      _detectedTier = HardwareTier.ultra;
-    }
+    _detectedTier = calculateTierFromScore(_hardwareScore);
 
+    // Always initialize every tier parameter, including unsaved dropdown values.
+    // Custom card/dialog tuning is restored separately by the constructor.
     _applyTierParameters(effectiveTier, notify: false);
   }
 
@@ -179,6 +332,8 @@ class ThemeProvider extends ChangeNotifier {
 
   int get cpuCores => _cpuCores;
   int get hardwareScore => _hardwareScore;
+  String? get cpuModel => _cpuModel;
+  String? get gpuModel => _gpuModel;
 
   /// Cycles through: auto -> ultra -> balanced -> lite -> auto
   void cyclePerfTier() {
@@ -196,13 +351,19 @@ class ThemeProvider extends ChangeNotifier {
         _perfMode = PerfTierMode.auto;
         break;
     }
+    try {
+      AppPreferences().setPerfTierMode(_perfMode.id);
+    } catch (_) {}
     _applyTierParameters(effectiveTier, notify: true);
   }
 
-  void setPerfTierMode(PerfTierMode mode) {
+  Future<void> setPerfTierMode(PerfTierMode mode) async {
     if (_perfMode != mode) {
       _perfMode = mode;
       _applyTierParameters(effectiveTier, notify: true);
+      try {
+        await AppPreferences().setPerfTierMode(mode.id);
+      } catch (_) {}
     }
   }
 
@@ -217,18 +378,18 @@ class ThemeProvider extends ChangeNotifier {
         _dropdownOpacity = 0.88;
         break;
       case HardwareTier.balanced:
-        _cardBlur = 16.0;
-        _cardOpacity = 0.38;
-        _dialogBlur = 16.0;
-        _dialogOpacity = 0.92;
-        _dropdownBlur = 16.0;
-        _dropdownOpacity = 0.96;
+        _cardBlur = 12.0;
+        _cardOpacity = 0.40;
+        _dialogBlur = 12.0;
+        _dialogOpacity = 0.90;
+        _dropdownBlur = 12.0;
+        _dropdownOpacity = 0.94;
         break;
       case HardwareTier.lite:
         _cardBlur = 0.0;
-        _cardOpacity = 0.75;
-        _dialogBlur = 8.0;
-        _dialogOpacity = 0.95;
+        _cardOpacity = 0.88;
+        _dialogBlur = 0.0;
+        _dialogOpacity = 0.96;
         _dropdownBlur = 0.0;
         _dropdownOpacity = 0.98;
         break;
@@ -248,7 +409,7 @@ class ThemeProvider extends ChangeNotifier {
 
   bool get isWin11 => _isWin11;
 
-  double get cardBlur => _cardBlur;
+  double get cardBlur => effectiveTier == HardwareTier.lite ? 0 : _cardBlur;
   double get cardOpacity {
     if (!isDark && _cardOpacity < 0.28) {
       return 0.28;
@@ -256,9 +417,10 @@ class ThemeProvider extends ChangeNotifier {
     return _cardOpacity;
   }
 
-  double get dialogBlur => _dialogBlur;
+  double get dialogBlur => effectiveTier == HardwareTier.lite ? 0 : _dialogBlur;
   double get dialogOpacity => _dialogOpacity;
-  double get dropdownBlur => _dropdownBlur;
+  double get dropdownBlur =>
+      effectiveTier == HardwareTier.lite ? 0 : _dropdownBlur;
   double get dropdownOpacity => _dropdownOpacity;
 
   AppColors get colors {
@@ -334,21 +496,12 @@ class ThemeProvider extends ChangeNotifier {
 
   void resetToDefaults() {
     _perfMode = PerfTierMode.auto;
-    _cardBlur = 20.0;
-    _cardOpacity = 0.25;
-    _dialogBlur = 20.0;
-    _dialogOpacity = 0.85;
-    _dropdownBlur = 20.0;
-    _dropdownOpacity = 0.86;
     _profileHardware();
     try {
-      AppPreferences().setGlassTuning(
-        cardBlur: null,
-        cardOpacity: null,
-        dialogBlur: null,
-        dialogOpacity: null,
-      );
+      AppPreferences().setPerfTierMode('auto');
+      AppPreferences().clearGlassTuning();
     } catch (_) {}
+    _applyTierParameters(effectiveTier, notify: false);
     notifyListeners();
   }
 }

@@ -1,6 +1,6 @@
 # JA LAN Messenger
 
-[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](CHANGELOG.md)
 [![Flutter Version](https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter)](https://flutter.dev)
 [![Dart Version](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com/windows)
@@ -14,6 +14,9 @@ A modern, ultra-lightweight, high-performance **Peer-to-Peer (P2P) Office LAN Me
 ## ⚡ Key Highlights
 
 - **Serverless Decentralized P2P**: Zero central server setup required. Instant plug-and-play communication in local networks.
+- **Hardware Tiering & Mini PC Optimization**: Auto-detects system CPU/GPU via Windows Registry and categorizes performance into Ultra, Medium, or Lite. Lite mode eliminates heavy backdrop blur for ultra-smooth operation on budget Mini PCs (e.g. Intel N100).
+- **Showcase GlassDropdown**: Solid frosted glass popup menu for user status with zero background bleeding.
+- **Auto-Scrolling Typing Indicator**: Chat automatically scrolls into view when a peer is typing.
 - **Over-The-Air (OTA) LAN Updates**: Automated in-network update checker with configurable intervals (daily, weekly, monthly, off), SMB/UNC share sync, and 1-click self-updating handoff script.
 - **One-Click Windows Installer & Uninstaller**: Full Control Panel / Windows Settings integration with Desktop/Start Menu shortcuts and clean self-cleaning uninstallation.
 - **Staged Multi-File Attachments & Lightbox Preview**: Stage multiple files/images in the input composer before sending, complete with image zoom/lightbox and document preview dialogs.
@@ -70,6 +73,8 @@ build\windows\x64\runner\Release\
 ```
 
 ### Installation & Uninstallation
+
+`build.bat` packages Release into `dist` only after checking the EXE version, runtime files and ZIP hashes. Packaging failures stop the build script. Previous output is retained in `dist.previous-*`; temporary staging is retained in `.package-stage-*` for inspection. Release configuration and logs are not deleted or distributed. These retained directories use additional disk space and can be reviewed before manual cleanup.
 
 - **One-Click Installation (`install.bat`)**:
   - Installs to `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` without requiring administrator / UAC elevation.

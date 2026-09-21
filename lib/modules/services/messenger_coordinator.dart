@@ -60,7 +60,8 @@ class MessengerCoordinator extends ChangeNotifier {
   LanguageProvider? languageProvider;
 
   // Thông tin người dùng cục bộ
-  String localUsername = _detectDefaultUsername();
+  String localUsername =
+      AppPreferences().localNickname ?? _detectDefaultUsername();
   PeerStatus localStatus = PeerStatus.online;
   String localStatusDescription = 'Sẵn sàng';
   Color localColor = const Color(0xFF3B82F6);
@@ -183,7 +184,9 @@ class MessengerCoordinator extends ChangeNotifier {
           );
         }
       }
-      final result = await OtaUpdateService().checkForUpdates(isManual: isManual);
+      final result = await OtaUpdateService().checkForUpdates(
+        isManual: isManual,
+      );
       if (result.hasUpdate && result.packageInfo != null) {
         _availableUpdate = result.packageInfo;
         showToast('updateAvailable', [result.packageInfo!.version.toString()]);
@@ -2409,15 +2412,18 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
   }
 
   /// Cập nhật trạng thái hiển thị của bản thân
-  void updateProfile({
+  Future<void> updateProfile({
     String? username,
     PeerStatus? status,
     String? statusDesc,
     Color? color,
     String? workgroup,
-  }) {
+  }) async {
     if (username != null && username.trim().isNotEmpty) {
       localUsername = username.trim();
+      notifyListeners();
+      await AppPreferences().setLocalNickname(localUsername);
+      if (_disposed) return;
     }
     if (status != null) localStatus = status;
     if (statusDesc != null) localStatusDescription = statusDesc;

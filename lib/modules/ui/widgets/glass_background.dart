@@ -111,13 +111,33 @@ class MeshBackground extends StatelessWidget {
     super.key,
     required this.colors,
     this.enableAnimation = true,
+    this.isLite = false,
   });
 
   final AppColors colors;
   final bool enableAnimation;
+  final bool isLite;
 
   @override
   Widget build(BuildContext context) {
+    if (isLite) {
+      // Sleek zero-blur, zero-animation gradient for Lite performance tier
+      return Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              colors.orb1.withValues(alpha: colors.orbOpacity * 0.4),
+              colors.bgPrimary,
+              colors.orb2.withValues(alpha: colors.orbOpacity * 0.3),
+            ],
+            stops: const [0.0, 0.5, 1.0],
+          ),
+        ),
+      );
+    }
+
     return Stack(
       children: [
         // Top-left Royal Blue orb

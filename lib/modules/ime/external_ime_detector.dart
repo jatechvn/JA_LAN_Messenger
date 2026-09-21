@@ -5,11 +5,7 @@ class DetectedImeInfo {
   final String? imeName;
   final String? imeType; // 'vietnamese' hoặc 'chinese'
 
-  const DetectedImeInfo({
-    required this.isDetected,
-    this.imeName,
-    this.imeType,
-  });
+  const DetectedImeInfo({required this.isDetected, this.imeName, this.imeType});
 
   static const DetectedImeInfo none = DetectedImeInfo(isDetected: false);
 }
@@ -66,11 +62,11 @@ class ExternalImeDetector {
     }
 
     try {
-      final result = await Process.run(
-        'tasklist',
-        ['/NH', '/FO', 'CSV'],
-        runInShell: true,
-      ).timeout(const Duration(seconds: 2));
+      final result = await Process.run('tasklist', [
+        '/NH',
+        '/FO',
+        'CSV',
+      ], runInShell: true).timeout(const Duration(seconds: 2));
 
       if (result.exitCode == 0) {
         final stdoutLower = (result.stdout as String).toLowerCase();

@@ -234,6 +234,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
                           colors: theme.colors,
                           enableAnimation:
                               theme.effectiveTier != HardwareTier.lite,
+                          isLite: theme.effectiveTier == HardwareTier.lite,
                         ),
                       ),
                     ),
@@ -262,13 +263,16 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
                             curve: Curves.easeInOutCubic,
                           ),
                           child: ScaleTransition(
-                            scale: Tween<double>(
-                              begin: isCompact ? 0.94 : 1.03,
-                              end: 1.0,
-                            ).animate(CurvedAnimation(
-                              parent: animation,
-                              curve: Curves.easeOutCubic,
-                            )),
+                            scale:
+                                Tween<double>(
+                                  begin: isCompact ? 0.94 : 1.03,
+                                  end: 1.0,
+                                ).animate(
+                                  CurvedAnimation(
+                                    parent: animation,
+                                    curve: Curves.easeOutCubic,
+                                  ),
+                                ),
                             child: child,
                           ),
                         );
@@ -280,7 +284,8 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
                           : LayoutBuilder(
                               key: const ValueKey('standard_mode_view'),
                               builder: (context, constraints) {
-                                final effectiveWidth = constraints.maxWidth < 680
+                                final effectiveWidth =
+                                    constraints.maxWidth < 680
                                     ? 680.0
                                     : constraints.maxWidth;
                                 return ClipRect(
@@ -314,8 +319,10 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
                                                     CompactSidebar(
                                                       activeTab: _activeTab,
                                                       onTabChanged: (tab) =>
-                                                          setState(() =>
-                                                              _activeTab = tab),
+                                                          setState(
+                                                            () => _activeTab =
+                                                                tab,
+                                                          ),
                                                     ),
 
                                                     // Column 2, 3 & 4: Views based on active tab
@@ -642,7 +649,8 @@ class _CustomTitleBar extends StatelessWidget {
           // Nút huy hiệu cập nhật OTA nếu có bản mới
           if (coordinator.availableUpdate != null) ...[
             Tooltip(
-              message: '${lang.tr('updateAvailable')}: v${coordinator.availableUpdate!.version}',
+              message:
+                  '${lang.tr('updateAvailable')}: v${coordinator.availableUpdate!.version}',
               child: InkWell(
                 key: const ValueKey('ota-update-badge-button'),
                 onTap: () {

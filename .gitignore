@@ -39,4 +39,6 @@ reference_sources/
 # Release & Distribution
 dist/
 dist_pack/
+dist.previous-*/
+.package-stage-*/
 backup/

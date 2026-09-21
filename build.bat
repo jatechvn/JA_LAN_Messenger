@@ -64,8 +64,16 @@ if exist "%~dp0LICENSE" copy /y "%~dp0LICENSE" "%TARGET_DIR%\" >nul
 
 :: 4. Dong bo toan bo Release sang dist va tao goi zip chuan dart-build-pro
 echo [4/6] Dong bo sang dist va dong goi zip chuan phat hanh...
-if exist "%~dp0windows\packaging\package_dist.ps1" (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0windows\packaging\package_dist.ps1"
+if not exist "%~dp0windows\packaging\package_dist.ps1" (
+    echo [ERROR] Packaging script is missing.
+    pause
+    exit /b 1
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0windows\packaging\package_dist.ps1"
+if errorlevel 1 (
+    echo [ERROR] Packaging failed. Previous dist has been preserved.
+    pause
+    exit /b 1
 )
 
 :: 5. Tao Shortcut den thu muc Release ngay tai goc du an

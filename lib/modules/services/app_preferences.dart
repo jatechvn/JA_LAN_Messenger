@@ -12,6 +12,16 @@ class AppPreferences extends ChangeNotifier {
   }
 
   File? _customFile;
+  String? _localNickname;
+  String? get localNickname => _localNickname;
+
+  Future<void> setLocalNickname(String value) async {
+    final nickname = value.trim();
+    if (nickname.isEmpty) return;
+    _localNickname = nickname;
+    await _save();
+  }
+
   String _closeBehavior = 'ask'; // 'ask', 'minimize', 'exit'
   bool _rememberCloseBehavior = false;
 
@@ -57,6 +67,9 @@ class AppPreferences extends ChangeNotifier {
   DateTime? _otaLastCheckTime;
   String? _otaCachedUpdateVersion;
 
+  // Cấu hình hiệu năng phần cứng (Hardware Graphic Tier)
+  String _perfTierMode = 'auto'; // 'auto', 'ultra', 'balanced', 'lite'
+
   String get closeBehavior => _closeBehavior;
   bool get rememberCloseBehavior => _rememberCloseBehavior;
 
@@ -98,12 +111,14 @@ class AppPreferences extends ChangeNotifier {
   String get otaPassword => _otaPassword;
   DateTime? get otaLastCheckTime => _otaLastCheckTime;
   String? get otaCachedUpdateVersion => _otaCachedUpdateVersion;
+  String get perfTierMode => _perfTierMode;
 
   bool isPeerPinned(String key) => _pinnedKeys.contains(key);
 
   int _loadGeneration = 0;
 
   void resetToDefaults() {
+    _localNickname = null;
     _loadGeneration++;
     _closeBehavior = 'ask';
     _rememberCloseBehavior = false;
@@ -116,6 +131,7 @@ class AppPreferences extends ChangeNotifier {
     _cachedDiscoveredModels = [];
     AiModelInfo.resetDiscoveredModels();
     _cardBlur = null;
+    _perfTierMode = 'auto';
     _cardOpacity = null;
     _dialogBlur = null;
     _dialogOpacity = null;
@@ -173,6 +189,10 @@ class AppPreferences extends ChangeNotifier {
         if (currentGen != _loadGeneration) return;
         if (content.trim().isNotEmpty) {
           final data = jsonDecode(content) as Map<String, dynamic>;
+          final nickname = data['localNickname'];
+          _localNickname = nickname is String && nickname.trim().isNotEmpty
+              ? nickname.trim()
+              : null;
           if (currentGen != _loadGeneration) return;
           if (data.containsKey('closeBehavior')) {
             _closeBehavior = data['closeBehavior'] as String? ?? 'ask';
@@ -283,7 +303,8 @@ class AppPreferences extends ChangeNotifier {
             _otaCheckInterval = data['otaCheckInterval'] as String? ?? 'daily';
           }
           if (data.containsKey('otaServerPath')) {
-            _otaServerPath = data['otaServerPath'] as String? ??
+            _otaServerPath =
+                data['otaServerPath'] as String? ??
                 r'\\10.81.141.226\temp\FBT\JA_PROJECT\JA_Update\JA_LAN_Messenger';
           }
           if (data.containsKey('otaUsername')) {
@@ -297,8 +318,10 @@ class AppPreferences extends ChangeNotifier {
             if (str != null) _otaLastCheckTime = DateTime.tryParse(str);
           }
           if (data.containsKey('otaCachedUpdateVersion')) {
-            _otaCachedUpdateVersion =
-                data['otaCachedUpdateVersion'] as String?;
+            _otaCachedUpdateVersion = data['otaCachedUpdateVersion'] as String?;
+          }
+          if (data.containsKey('perfTierMode')) {
+            _perfTierMode = data['perfTierMode'] as String? ?? 'auto';
           }
           notifyListeners();
         }
@@ -385,6 +408,15 @@ class AppPreferences extends ChangeNotifier {
     await _save();
   }
 
+  Future<void> clearGlassTuning() async {
+    _cardBlur = null;
+    _cardOpacity = null;
+    _dialogBlur = null;
+    _dialogOpacity = null;
+    notifyListeners();
+    await _save();
+  }
+
   Future<void> setGlassTuning({
     double? cardBlur,
     double? cardOpacity,
@@ -418,10 +450,7 @@ class AppPreferences extends ChangeNotifier {
     await _save();
   }
 
-  Future<void> setImeSettings({
-    String? mode,
-    bool? autoBypassExternal,
-  }) async {
+  Future<void> setImeSettings({String? mode, bool? autoBypassExternal}) async {
     if (mode != null) _imeMode = mode;
     if (autoBypassExternal != null) {
       _imeAutoBypassExternal = autoBypassExternal;
@@ -444,9 +473,16 @@ class AppPreferences extends ChangeNotifier {
     if (password != null) _otaPassword = password;
     if (lastCheckTime != null) _otaLastCheckTime = lastCheckTime;
     if (cachedUpdateVersion != null) {
-      _otaCachedUpdateVersion =
-          cachedUpdateVersion.isEmpty ? null : cachedUpdateVersion;
+      _otaCachedUpdateVersion = cachedUpdateVersion.isEmpty
+          ? null
+          : cachedUpdateVersion;
     }
+    notifyListeners();
+    await _save();
+  }
+
+  Future<void> setPerfTierMode(String mode) async {
+    _perfTierMode = mode;
     notifyListeners();
     await _save();
   }
@@ -465,6 +501,7 @@ class AppPreferences extends ChangeNotifier {
         } catch (_) {}
       }
       data['closeBehavior'] = _closeBehavior;
+      if (_localNickname != null) data['localNickname'] = _localNickname;
       data['rememberCloseBehavior'] = _rememberCloseBehavior;
       data['aiEnabled'] = _aiEnabled;
       data['aiServerUrl'] = _aiServerUrl;
@@ -477,6 +514,11 @@ class AppPreferences extends ChangeNotifier {
           _cachedDiscoveredModels,
         ).map((m) => m.toJson()).toList();
       }
+      // Remove persisted overrides when restoring the hardware defaults.
+      data.remove('cardBlur');
+      data.remove('cardOpacity');
+      data.remove('dialogBlur');
+      data.remove('dialogOpacity');
       if (_cardBlur != null) data['cardBlur'] = _cardBlur;
       if (_cardOpacity != null) data['cardOpacity'] = _cardOpacity;
       if (_dialogBlur != null) data['dialogBlur'] = _dialogBlur;
@@ -502,6 +544,7 @@ class AppPreferences extends ChangeNotifier {
       data['otaPassword'] = _otaPassword;
       data['otaLastCheckTime'] = _otaLastCheckTime?.toIso8601String();
       data['otaCachedUpdateVersion'] = _otaCachedUpdateVersion;
+      data['perfTierMode'] = _perfTierMode;
       await file.writeAsString(jsonEncode(data), flush: true);
     } catch (e) {
       debugPrint('[AppPreferences] Save error: $e');

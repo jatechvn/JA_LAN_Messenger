@@ -104,6 +104,19 @@ class _MessengerAppContent extends StatelessWidget {
         useMaterial3: true,
         brightness: theme.isDark ? Brightness.dark : Brightness.light,
         scaffoldBackgroundColor: Colors.transparent,
+        popupMenuTheme: PopupMenuThemeData(
+          color: theme.isDark ? const Color(0xFF1E293B) : Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(
+              color: (theme.isDark ? Colors.white : Colors.black).withValues(
+                alpha: 0.1,
+              ),
+              width: 1,
+            ),
+          ),
+        ),
       ),
       home: const MainMessengerWindow(),
     );

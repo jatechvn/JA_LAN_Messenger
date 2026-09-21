@@ -2,6 +2,20 @@
 
 All notable changes to the **JA LAN Messenger** project will be documented in this file.
 
+## [1.2.1] - 2026-09-21
+
+### 🚀 Nâng cấp & Tính năng mới
+- **Tối ưu hóa phần cứng & Chế độ Lite cho máy cấu hình thấp (Mini PC / Intel N100)**: Tự động phát hiện thông số CPU/GPU qua Windows Registry, phân loại hồ sơ hiệu năng thông minh (`Ultra`, `Medium`, `Lite`). Trong chế độ `Lite`, ứng dụng tự động loại bỏ các hiệu ứng đồ họa tốn GPU (bỏ hoàn toàn `BackdropFilter` và `ClipRRect` trong `GlassSurface`, thay thế hiệu ứng 3x 85px blur orbs của `MeshBackground` bằng dải gradient tĩnh không mờ), giúp ứng dụng chạy siêu mượt trên các thiết bị Mini PC hoặc máy tính văn phòng cấu hình khiêm tốn. Bổ sung mục "Hiệu năng & Đồ họa" trong Cài đặt với thẻ thông số phần cứng và menu tùy chọn hồ sơ thủ công.
+- **Menu trạng thái người dùng phong cách Showcase (GlassDropdown)**: Thiết kế lại toàn diện menu chọn trạng thái (Online / Away / Busy) theo phong cách `JA_Mini_Showcase`, sử dụng kính mờ cao cấp với độ đục cao (88%-98%), viền sáng highlight, hiệu ứng hover mượt mà và dấu tick trạng thái trực quan, khắc phục triệt để lỗi menu dropdown bị trong suốt xuyên thấu gây khó nhìn.
+
+### 🐛 Sửa lỗi & Tối ưu hóa
+- **Tự động cuộn & Đẩy vị trí bong bóng gõ tin nhắn (Typing Indicator)**: Khắc phục lỗi bong bóng typing bị khuất bên dưới màn hình khi đối phương đang soạn thảo. Giao diện trò chuyện tự động đẩy nội dung và cuộn mượt xuống dưới để người dùng tức thì nhìn thấy chỉ báo đang nhập mà không phải cuộn tay.
+- **Khởi động chuẩn xác theo ngôn ngữ hệ điều hành Windows**: Khắc phục lỗi ứng dụng tự chọn tiếng Trung khi khởi động trên các máy cài đặt Windows tiếng Anh hoặc tiếng Việt; tích hợp lớp bảo vệ reentrancy cho bàn phím native C++ Win32 (`keyboard_reentrancy_guard.h`).
+- **Đóng gói phát hành tin cậy (Dist Packaging)**: Nâng cấp script `windows/packaging/package_dist.ps1` và `build.bat`, tự động dọn dẹp thư mục staging tạm (`.package-stage-*`, `dist.previous-*`), đảm bảo thư mục `dist/` luôn chứa trọn vẹn bản thực thi portable và file zip phát hành mới nhất kèm mã SHA256 chính xác.
+
+### 📦 Phát hành
+- Đồng bộ version `1.2.1+4` trong `pubspec.yaml`, `constants.dart`, `Runner.rc`, `ABOUT.txt`, `installer.iss`, `README.md`, `USERGUIDE.md`, `RELEASE_NOTES.md`.
+
 ## [1.2.0] - 2026-09-19
 
 ### 🚀 Nâng cấp & Tính năng mới

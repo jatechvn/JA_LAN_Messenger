@@ -56,7 +56,10 @@ void main() {
       engine.backspace();
       expect(engine.buffer, equals('ni'));
       expect(engine.hasCandidates, isTrue);
-      expect(engine.getCurrentPageCandidates().any((c) => c.text == '你'), isTrue);
+      expect(
+        engine.getCurrentPageCandidates().any((c) => c.text == '你'),
+        isTrue,
+      );
     });
 
     test('Pagination Next and Prev Page', () {

@@ -184,7 +184,9 @@ void main() {
 
         // Top bar contains app title and always on top button
         expect(find.text(appName), findsOneWidget);
-        final titleRender = tester.renderObject<RenderParagraph>(find.text(appName));
+        final titleRender = tester.renderObject<RenderParagraph>(
+          find.text(appName),
+        );
         // Verify that appName receives full available width (> 140px in 340px window)
         // instead of being cut in half by a competing Spacer widget
         expect(
