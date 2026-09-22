@@ -10,6 +10,10 @@ import '../../models/peer_model.dart';
 import 'glass_components.dart';
 import 'glass_dialog.dart';
 import 'glass_image_lightbox.dart';
+import 'app_avatar.dart';
+import 'avatar_picker_dialog.dart';
+import 'group_members_dialog.dart';
+import 'create_group_dialog.dart';
 
 class ConversationDetailsPanel extends StatelessWidget {
   final VoidCallback onClose;
@@ -117,6 +121,76 @@ class ConversationDetailsPanel extends StatelessWidget {
     );
   }
 
+  void _showDisbandGroupConfirm(
+    BuildContext context,
+    MessengerCoordinator coordinator,
+    PeerModel peer,
+  ) {
+    final lang = context.read<LanguageProvider>();
+    showGlassDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => GlassDialog(
+        title: lang.tr('deleteGroup'),
+        icon: Icons.warning_amber_rounded,
+        width: 380,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(lang.tr('cancel')),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () {
+              coordinator.deleteGroup(peer.id, notifyPeers: true);
+              Navigator.of(ctx).pop();
+            },
+            child: Text(lang.tr('confirm')),
+          ),
+        ],
+        child: Text(
+          lang.tr('disbandGroupConfirm'),
+          style: const TextStyle(fontSize: 13),
+        ),
+      ),
+    );
+  }
+
+  void _showLeaveGroupConfirm(
+    BuildContext context,
+    MessengerCoordinator coordinator,
+    PeerModel peer,
+  ) {
+    final lang = context.read<LanguageProvider>();
+    showGlassDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => GlassDialog(
+        title: lang.tr('leaveGroup'),
+        icon: Icons.logout_rounded,
+        width: 380,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(lang.tr('cancel')),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () {
+              coordinator.leaveGroup(peer.id);
+              Navigator.of(ctx).pop();
+            },
+            child: Text(lang.tr('confirm')),
+          ),
+        ],
+        child: Text(
+          lang.tr('leaveGroupConfirm'),
+          style: const TextStyle(fontSize: 13),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = ThemeProvider.of(context);
@@ -197,57 +271,54 @@ class ConversationDetailsPanel extends StatelessWidget {
                     children: [
                       Stack(
                         children: [
-                          Container(
-                            width: 68,
-                            height: 68,
-                            decoration: BoxDecoration(
-                              color: peer.avatarColor.withValues(alpha: 0.2),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: peer.avatarColor.withValues(alpha: 0.6),
-                                width: 2,
-                              ),
-                            ),
-                            alignment: Alignment.center,
-                            child: peer.avatarAsset != null
-                                ? ClipOval(
-                                    child: Image.asset(
-                                      peer.avatarAsset!,
-                                      width: 68,
-                                      height: 68,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, _, _) => Text(
-                                        peer.initials,
-                                        style: TextStyle(
-                                          color: peer.avatarColor,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 24,
-                                        ),
-                                      ),
-                                    ),
+                          AppAvatar(
+                            peer: peer,
+                            size: 68,
+                            showStatus: !peer.isGroup && !peer.isAllUsers,
+                            onTap: peer.isGroup
+                                ? () => AvatarPickerDialog.show(
+                                    context,
+                                    targetGroupId: peer.id,
+                                    groupName: peer.name,
+                                    initialColor: peer.avatarColor,
+                                    initialPreset: peer.avatarPreset,
+                                    initialCustomPath: peer.customAvatarPath,
+                                    initialCustomBase64:
+                                        peer.customAvatarBase64,
                                   )
-                                : Text(
-                                    peer.initials,
-                                    style: TextStyle(
-                                      color: peer.avatarColor,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 24,
+                                : null,
+                          ),
+                          if (peer.isGroup)
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: InkWell(
+                                onTap: () => AvatarPickerDialog.show(
+                                  context,
+                                  targetGroupId: peer.id,
+                                  groupName: peer.name,
+                                  initialColor: peer.avatarColor,
+                                  initialPreset: peer.avatarPreset,
+                                  initialCustomPath: peer.customAvatarPath,
+                                  initialCustomBase64: peer.customAvatarBase64,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: theme.colors.accentBlue,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: theme.isDark
+                                          ? const Color(0xFF1E293B)
+                                          : Colors.white,
+                                      width: 2,
                                     ),
                                   ),
-                          ),
-                          if (!peer.isGroup && !peer.isAllUsers)
-                            Positioned(
-                              right: 2,
-                              bottom: 2,
-                              child: Container(
-                                width: 14,
-                                height: 14,
-                                decoration: BoxDecoration(
-                                  color: peer.status.color,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: theme.cardBg,
-                                    width: 2.5,
+                                  child: const Icon(
+                                    Icons.camera_alt_rounded,
+                                    size: 12,
+                                    color: Colors.white,
                                   ),
                                 ),
                               ),
@@ -338,7 +409,14 @@ class ConversationDetailsPanel extends StatelessWidget {
                             : lang.tr('createGroup'),
                         isActive: false,
                         onTap: () {
-                          // Action handled
+                          if (peer.isGroup) {
+                            GroupMembersDialog.show(context, peer);
+                          } else {
+                            CreateGroupDialog.show(
+                              context,
+                              initialSelectedPeer: peer,
+                            );
+                          }
                         },
                       ),
                   ],
@@ -346,6 +424,46 @@ class ConversationDetailsPanel extends StatelessWidget {
                 const SizedBox(height: 16),
                 const Divider(height: 1),
                 const SizedBox(height: 14),
+
+                // Group Members Section
+                if (peer.isGroup && !peer.isAllUsers) ...[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _SectionHeader(
+                        title:
+                            '${lang.tr('groupMembers')} (${coordinator.groupMembers(peer.id).length})',
+                      ),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () => GroupMembersDialog.show(context, peer),
+                        icon: const Icon(Icons.people_alt_rounded, size: 14),
+                        label: Text(
+                          lang.tr('viewAll'),
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _buildGroupMembersList(
+                    context,
+                    coordinator,
+                    peer,
+                    theme,
+                    lang,
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 14),
+                ],
 
                 // LAN Network Details
                 if (!peer.isGroup && !peer.isAllUsers) ...[
@@ -597,10 +715,52 @@ class ConversationDetailsPanel extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (peer.isGroup) ...[
+                if (peer.isGroup && !peer.isAllUsers) ...[
                   const SizedBox(height: 8),
+                  // Leave group button
                   InkWell(
-                    onTap: () => coordinator.deleteGroup(peer.id),
+                    onTap: () =>
+                        _showLeaveGroupConfirm(context, coordinator, peer),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.orangeAccent.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.orangeAccent.withValues(alpha: 0.25),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.logout_rounded,
+                            size: 16,
+                            color: Colors.orangeAccent,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            lang.tr('leaveGroup'),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.orangeAccent,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Disband group button
+                  InkWell(
+                    onTap: () =>
+                        _showDisbandGroupConfirm(context, coordinator, peer),
                     borderRadius: BorderRadius.circular(8),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
@@ -657,6 +817,108 @@ class ConversationDetailsPanel extends StatelessWidget {
     }
 
     return RepaintBoundary(child: content);
+  }
+
+  Widget _buildGroupMembersList(
+    BuildContext context,
+    MessengerCoordinator coordinator,
+    PeerModel groupPeer,
+    ThemeProvider theme,
+    LanguageProvider lang,
+  ) {
+    final members = coordinator.groupMembers(groupPeer.id);
+
+    if (members.isEmpty) {
+      return Text(
+        lang.tr('noAvailableMembers'),
+        style: TextStyle(
+          fontSize: 11.5,
+          color: theme.isDark ? Colors.white38 : Colors.black38,
+          fontStyle: FontStyle.italic,
+        ),
+      );
+    }
+
+    final displayMembers = members.take(6).toList();
+
+    return Column(
+      children: [
+        for (final m in displayMembers)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: InkWell(
+              onTap: () => GroupMembersDialog.show(context, groupPeer),
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Row(
+                  children: [
+                    AppAvatar(
+                      peer: m,
+                      isLocal: m.id == 'me',
+                      size: 28,
+                      showStatus: true,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            m.name,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: theme.isDark
+                                  ? Colors.white
+                                  : Colors.black87,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            m.ip,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: theme.isDark
+                                  ? Colors.white54
+                                  : Colors.black54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (m.id != 'me')
+                      IconButton(
+                        icon: Icon(
+                          Icons.remove_circle_outline_rounded,
+                          size: 16,
+                          color: Colors.red.withValues(alpha: 0.6),
+                        ),
+                        tooltip: lang.tr('removeMember'),
+                        onPressed: () {
+                          coordinator.removeGroupMember(groupPeer.id, m.id);
+                        },
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        padding: EdgeInsets.zero,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        if (members.length > 6)
+          TextButton(
+            onPressed: () => GroupMembersDialog.show(context, groupPeer),
+            child: Text(
+              '${lang.tr('viewAll')} (+${members.length - 6})',
+              style: TextStyle(fontSize: 11, color: theme.colors.accentBlue),
+            ),
+          ),
+      ],
+    );
   }
 }
 

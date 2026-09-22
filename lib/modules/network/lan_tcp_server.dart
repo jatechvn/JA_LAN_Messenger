@@ -21,7 +21,8 @@ typedef OnMessageCallback =
     );
 typedef OnAckCallback = void Function(String senderId, String messageId);
 typedef OnBuzzCallback = void Function(String senderId);
-typedef OnTypingCallback = void Function(String senderId, bool isTyping);
+typedef OnTypingCallback =
+    void Function(String senderId, bool isTyping, [String? groupId]);
 typedef OnReadCallback = void Function(String senderId, String messageId);
 typedef OnRevokeCallback = void Function(String senderId, String messageId);
 typedef OnReactionCallback =
@@ -43,8 +44,11 @@ class LanTcpServer {
   List<int> Function(String publicKey)? helloBuilder;
   String Function()? passwordProvider;
   void Function(String endpoint, Map<String, dynamic> message)? onUserStatus;
+  void Function(String endpoint, String avatarPayload)? onAvatarUpdate;
   OnHandshakeCallback? onHandshake;
   OnMessageCallback? onMessage;
+  void Function(String endpoint, Map<String, dynamic> message)? onGroup;
+  void Function(String endpoint, Map<String, dynamic> message)? onGroupMessage;
   OnAckCallback? onAck;
   void Function(String endpoint, Map<String, dynamic> message)? onFile;
   OnBuzzCallback? onBuzz;
@@ -114,7 +118,11 @@ class LanTcpServer {
         switch (header) {
           case ProtocolBeebeep.headerChat:
             if ((message['flags'] as int) & (1 << 8) != 0) {
-              return; // Group chats are separate conversations.
+              onGroupMessage?.call(endpoint!, message);
+              session.send(
+                ProtocolBeebeep.buildReceivedAckPacket(message['id'] as String),
+              );
+              return;
             }
             onMessage?.call(
               endpoint!,
@@ -127,6 +135,8 @@ class LanTcpServer {
             );
           case ProtocolBeebeep.headerFile:
             onFile?.call(endpoint!, message);
+          case ProtocolBeebeep.headerGroup:
+            onGroup?.call(endpoint!, message);
           case ProtocolBeebeep.headerRecv:
             onAck?.call(endpoint!, text);
           case ProtocolBeebeep.headerRead:
@@ -148,9 +158,17 @@ class LanTcpServer {
             final flags = (message['flags'] as int?) ?? 0;
             if (flags & 2 != 0) {
               // Message::UserWriting flag
-              onTyping?.call(endpoint!, text == '*');
+              final gId = (message['data'] as String? ?? '').trim();
+              onTyping?.call(endpoint!, text == '*', gId.isEmpty ? null : gId);
             } else if (flags & 4 != 0) {
               onUserStatus?.call(endpoint!, message);
+            } else if (flags & ProtocolBeebeep.flagUserVCard != 0 ||
+                message['id'] == '15' ||
+                (message['data'] as String? ?? '').startsWith('avatar:')) {
+              final payload = ProtocolBeebeep.normalizeAvatarPayload(message);
+              if (payload != null && payload.isNotEmpty) {
+                onAvatarUpdate?.call(endpoint!, payload);
+              }
             }
           case ProtocolBeebeep.headerBuzz:
             onBuzz?.call(endpoint!);
@@ -231,6 +249,14 @@ class LanTcpServer {
 
   bool send(String endpoint, List<int> packet) =>
       _sessions[endpoint]?.send(packet) ?? false;
+  void sendToAll(List<int> packet) {
+    for (final session in _allSessions) {
+      if (session.isReady) {
+        session.send(packet);
+      }
+    }
+  }
+
   bool isConnected(String endpoint) => _sessions[endpoint]?.isReady ?? false;
   void invalidatePendingConnections() {
     _generation++;

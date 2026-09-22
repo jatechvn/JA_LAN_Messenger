@@ -83,7 +83,20 @@ class FileTransferEngine {
       'token': fields[3],
       'name': message['text'],
       'fields': fields,
+      'groupId': groupIdFromFields(fields),
     };
+  }
+
+  /// Trường thứ 14, sau 13 trường BeeBEEP. Client cũ bỏ qua phần thêm này.
+  static final RegExp groupIdPattern = RegExp(
+    r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$',
+  );
+
+  static String? groupIdFromFields(List<String> fields) {
+    if (fields.length <= 13) return null;
+    final raw = fields[13].trim();
+    if (!groupIdPattern.hasMatch(raw)) return null;
+    return raw;
   }
 
   static List<int> _packet(Map<String, dynamic> offer) =>
@@ -154,6 +167,7 @@ class FileTransferEngine {
     int peerPort = defaultFileTransferPort,
     required String peerName,
     required File file,
+    String? groupId,
   }) async {
     final id = '${DateTime.now().microsecondsSinceEpoch}';
     final stat = await file.stat();
@@ -166,6 +180,9 @@ class FileTransferEngine {
       peerId: peerId,
       peerName: peerName,
       peerIp: peerIp,
+      groupId: groupId != null && groupIdPattern.hasMatch(groupId)
+          ? groupId
+          : null,
     );
     final random = Random.secure();
     final token = List.generate(
@@ -190,6 +207,7 @@ class FileTransferEngine {
         '0',
         '0',
         '-1',
+        if (task.groupId != null) task.groupId!,
       ],
     };
     _tasks[id] = task;
@@ -356,6 +374,7 @@ class FileTransferEngine {
       peerId: peerId,
       peerName: peerName,
       peerIp: peerIp,
+      groupId: offer['groupId'] as String?,
     );
     _tasks[id] = task;
     _update(task);

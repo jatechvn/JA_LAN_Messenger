@@ -18,6 +18,8 @@ import '../../ime/ime_types.dart';
 import '../../services/ota_update_service.dart';
 import 'glass_dialog.dart';
 import 'glass_update_dialog.dart';
+import 'app_avatar.dart';
+import 'avatar_picker_dialog.dart';
 
 void showSettingsDialog(BuildContext context) {
   showGeneralDialog(
@@ -106,6 +108,10 @@ class _SettingsDialogState extends State<SettingsDialog>
   late bool _localImeAutoBypassExternal;
 
   // OTA Update mirrors
+  late String _localOtaSource;
+  late TextEditingController _otaGithubRepoController;
+  late TextEditingController _otaGithubTokenController;
+  bool _obscureOtaGithubToken = true;
   late String _localOtaCheckInterval;
   late TextEditingController _otaServerPathController;
   late TextEditingController _otaUsernameController;
@@ -174,6 +180,11 @@ class _SettingsDialogState extends State<SettingsDialog>
     _localImeMode = prefs.imeMode;
     _localImeAutoBypassExternal = prefs.imeAutoBypassExternal;
 
+    _localOtaSource = prefs.otaSource;
+    _otaGithubRepoController = TextEditingController(text: prefs.otaGithubRepo);
+    _otaGithubTokenController = TextEditingController(
+      text: prefs.otaGithubToken,
+    );
     _localOtaCheckInterval = prefs.otaCheckInterval;
     _otaServerPathController = TextEditingController(text: prefs.otaServerPath);
     _otaUsernameController = TextEditingController(text: prefs.otaUsername);
@@ -215,6 +226,8 @@ class _SettingsDialogState extends State<SettingsDialog>
     _filePortController.dispose();
     _passwordController.dispose();
     _aiServerUrlController.dispose();
+    _otaGithubRepoController.dispose();
+    _otaGithubTokenController.dispose();
     _otaServerPathController.dispose();
     _otaUsernameController.dispose();
     _otaPasswordController.dispose();
@@ -247,6 +260,9 @@ class _SettingsDialogState extends State<SettingsDialog>
       _localImeAutoBypassExternal = true;
       _aiConnectionTestResult = null;
       _aiConnectionTestSuccess = null;
+      _localOtaSource = 'auto';
+      _otaGithubRepoController.text = 'jatechvn/JA_LAN_Messenger';
+      _otaGithubTokenController.text = '';
       _localOtaCheckInterval = 'daily';
       _otaServerPathController.text =
           r'\\10.81.141.226\temp\FBT\JA_PROJECT\JA_Update\JA_LAN_Messenger';
@@ -382,6 +398,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     ime.setAutoBypassExternal(_localImeAutoBypassExternal);
 
     await prefs.setOtaSettings(
+      source: _localOtaSource,
+      githubRepo: _otaGithubRepoController.text.trim(),
+      githubToken: _otaGithubTokenController.text.trim(),
       checkInterval: _localOtaCheckInterval,
       serverPath: _otaServerPathController.text.trim(),
       username: _otaUsernameController.text.trim(),
@@ -390,6 +409,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     unawaited(
       OtaUpdateService().saveExternalConfigFile(
         OtaUpdateConfig(
+          source: _localOtaSource,
+          githubRepo: _otaGithubRepoController.text.trim(),
+          githubToken: _otaGithubTokenController.text.trim(),
           serverPath: _otaServerPathController.text.trim(),
           username: _otaUsernameController.text.trim(),
           password: _otaPasswordController.text.trim(),
@@ -761,7 +783,40 @@ class _SettingsDialogState extends State<SettingsDialog>
           ),
           const SizedBox(height: 8),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              Tooltip(
+                message: lang.tr('changeAvatar'),
+                child: InkWell(
+                  onTap: () async {
+                    await AvatarPickerDialog.show(context);
+                    if (mounted) setState(() {});
+                  },
+                  borderRadius: BorderRadius.circular(24),
+                  child: Stack(
+                    children: [
+                      AppAvatar.local(size: 46),
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF3B82F6),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.edit_rounded,
+                            size: 11,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
               Expanded(
                 child: TextField(
                   controller: _nicknameController,
@@ -1755,35 +1810,77 @@ class _SettingsDialogState extends State<SettingsDialog>
       _serverConnectionSuccess = null;
     });
 
-    final path = _otaServerPathController.text.trim();
-    final user = _otaUsernameController.text.trim();
-    final pass = _otaPasswordController.text.trim();
+    final lang = context.read<LanguageProvider>();
 
     try {
-      final success = await OtaUpdateService().connectSmbShare(
-        path: path,
-        username: user,
-        password: pass,
-      );
-      if (mounted) {
-        final lang = context.read<LanguageProvider>();
-        setState(() {
-          _isTestingServerConnection = false;
-          _serverConnectionSuccess = success;
-          _serverConnectionResult = success
-              ? lang.tr('serverConnectionSuccess')
-              : lang.tr('serverConnectionFailed', ['Không thể truy cập']);
-        });
+      if (_localOtaSource == 'github') {
+        final ghRes = await OtaUpdateService().testGitHubConnection(
+          repo: _otaGithubRepoController.text.trim(),
+          token: _otaGithubTokenController.text.trim(),
+        );
+        if (mounted) {
+          final success = ghRes['success'] as bool? ?? false;
+          setState(() {
+            _isTestingServerConnection = false;
+            _serverConnectionSuccess = success;
+            _serverConnectionResult = ghRes['message'] as String? ?? '';
+          });
+        }
+      } else if (_localOtaSource == 'lan') {
+        final path = _otaServerPathController.text.trim();
+        final user = _otaUsernameController.text.trim();
+        final pass = _otaPasswordController.text.trim();
+        final success = await OtaUpdateService().connectSmbShare(
+          path: path,
+          username: user,
+          password: pass,
+        );
+        if (mounted) {
+          setState(() {
+            _isTestingServerConnection = false;
+            _serverConnectionSuccess = success;
+            _serverConnectionResult = success
+                ? lang.tr('serverConnectionSuccess')
+                : lang.tr('serverConnectionFailed', [
+                    'Không thể truy cập thư mục',
+                  ]);
+          });
+        }
+      } else {
+        // 'auto' mode: kiểm tra cả LAN và GitHub
+        final path = _otaServerPathController.text.trim();
+        final user = _otaUsernameController.text.trim();
+        final pass = _otaPasswordController.text.trim();
+        final lanSuccess = await OtaUpdateService().connectSmbShare(
+          path: path,
+          username: user,
+          password: pass,
+        );
+        final ghRes = await OtaUpdateService().testGitHubConnection(
+          repo: _otaGithubRepoController.text.trim(),
+          token: _otaGithubTokenController.text.trim(),
+        );
+        final ghSuccess = ghRes['success'] as bool? ?? false;
+
+        if (mounted) {
+          final isOk = lanSuccess || ghSuccess;
+          final lanMsg = lanSuccess ? 'LAN: OK' : 'LAN: Fail';
+          final ghMsg = ghSuccess
+              ? 'GitHub: OK (${ghRes['latestTag'] ?? ''})'
+              : 'GitHub: Fail (${ghRes['message'] ?? ''})';
+          setState(() {
+            _isTestingServerConnection = false;
+            _serverConnectionSuccess = isOk;
+            _serverConnectionResult = '$lanMsg | $ghMsg';
+          });
+        }
       }
     } catch (e) {
       if (mounted) {
-        final lang = context.read<LanguageProvider>();
         setState(() {
           _isTestingServerConnection = false;
           _serverConnectionSuccess = false;
-          _serverConnectionResult = lang.tr('serverConnectionFailed', [
-            e.toString(),
-          ]);
+          _serverConnectionResult = e.toString();
         });
       }
     }
@@ -1796,10 +1893,15 @@ class _SettingsDialogState extends State<SettingsDialog>
     });
 
     final path = _otaServerPathController.text.trim();
+    final repo = _otaGithubRepoController.text.trim();
+    final token = _otaGithubTokenController.text.trim();
 
     try {
       final result = await OtaUpdateService().checkForUpdates(
         overrideServerPath: path,
+        overrideSource: _localOtaSource,
+        overrideRepo: repo,
+        overrideToken: token,
         isManual: true,
       );
       if (mounted) {
@@ -2078,7 +2180,335 @@ class _SettingsDialogState extends State<SettingsDialog>
 
           const SizedBox(height: 18),
 
-          // 2. Check Interval Setting
+          // 2. OTA Source / Channel Selector
+          Row(
+            children: [
+              Icon(
+                Icons.alt_route_rounded,
+                size: 16,
+                color: theme.colors.accentBlue,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                lang.tr('otaSource'),
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.bold,
+                  color: theme.colors.accentBlue,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: (isDark ? Colors.white : Colors.black).withValues(
+                alpha: isDark ? 0.05 : 0.04,
+              ),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: (isDark ? Colors.white : Colors.black).withValues(
+                  alpha: 0.08,
+                ),
+              ),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                key: const ValueKey('ota-source-dropdown'),
+                value: _localOtaSource,
+                isExpanded: true,
+                dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                items: [
+                  DropdownMenuItem(
+                    value: 'auto',
+                    child: Text(
+                      lang.tr('otaSourceAuto'),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'github',
+                    child: Text(
+                      lang.tr('otaSourceGithub'),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'lan',
+                    child: Text(
+                      lang.tr('otaSourceLan'),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+                onChanged: (val) {
+                  if (val != null) setState(() => _localOtaSource = val);
+                },
+              ),
+            ),
+          ),
+
+          // 3. GitHub Releases Configuration (Hiển thị nếu source là 'github' hoặc 'auto')
+          if (_localOtaSource == 'github' || _localOtaSource == 'auto') ...[
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(
+                  Icons.hub_rounded,
+                  size: 16,
+                  color: theme.colors.accentBlue,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  lang.tr('githubRepo'),
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colors.accentBlue,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              key: const ValueKey('ota-github-repo-input'),
+              controller: _otaGithubRepoController,
+              style: const TextStyle(
+                fontSize: 12,
+                fontFamily: 'Consolas, monospace',
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: lang.tr('githubRepoHint'),
+                hintStyle: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? Colors.white30 : Colors.black26,
+                ),
+                filled: true,
+                fillColor: (isDark ? Colors.white : Colors.black).withValues(
+                  alpha: isDark ? 0.05 : 0.04,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: (isDark ? Colors.white : Colors.black).withValues(
+                      alpha: 0.12,
+                    ),
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              lang.tr('githubToken'),
+              style: TextStyle(
+                fontSize: 10.5,
+                color: isDark ? Colors.white60 : Colors.black54,
+              ),
+            ),
+            const SizedBox(height: 4),
+            TextField(
+              key: const ValueKey('ota-github-token-input'),
+              controller: _otaGithubTokenController,
+              obscureText: _obscureOtaGithubToken,
+              style: const TextStyle(
+                fontSize: 12,
+                fontFamily: 'Consolas, monospace',
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: lang.tr('githubTokenHint'),
+                hintStyle: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? Colors.white30 : Colors.black26,
+                ),
+                filled: true,
+                fillColor: (isDark ? Colors.white : Colors.black).withValues(
+                  alpha: isDark ? 0.05 : 0.04,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: (isDark ? Colors.white : Colors.black).withValues(
+                      alpha: 0.12,
+                    ),
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureOtaGithubToken
+                        ? Icons.visibility_off
+                        : Icons.visibility,
+                    size: 16,
+                  ),
+                  splashRadius: 14,
+                  onPressed: () => setState(
+                    () => _obscureOtaGithubToken = !_obscureOtaGithubToken,
+                  ),
+                ),
+              ),
+            ),
+          ],
+
+          // 4. LAN SMB Configuration (Hiển thị nếu source là 'lan' hoặc 'auto')
+          if (_localOtaSource == 'lan' || _localOtaSource == 'auto') ...[
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(
+                  Icons.dns_rounded,
+                  size: 16,
+                  color: theme.colors.accentBlue,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  lang.tr('otaServerPath'),
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colors.accentBlue,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              key: const ValueKey('ota-server-path-input'),
+              controller: _otaServerPathController,
+              style: const TextStyle(
+                fontSize: 12,
+                fontFamily: 'Consolas, monospace',
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: lang.tr('otaServerPathHint'),
+                hintStyle: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? Colors.white30 : Colors.black26,
+                ),
+                filled: true,
+                fillColor: (isDark ? Colors.white : Colors.black).withValues(
+                  alpha: isDark ? 0.05 : 0.04,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: (isDark ? Colors.white : Colors.black).withValues(
+                      alpha: 0.12,
+                    ),
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        lang.tr('otaUsername'),
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: isDark ? Colors.white60 : Colors.black54,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: _otaUsernameController,
+                        style: const TextStyle(fontSize: 12),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          filled: true,
+                          fillColor: (isDark ? Colors.white : Colors.black)
+                              .withValues(alpha: isDark ? 0.05 : 0.04),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: (isDark ? Colors.white : Colors.black)
+                                  .withValues(alpha: 0.12),
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        lang.tr('otaPassword'),
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: isDark ? Colors.white60 : Colors.black54,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: _otaPasswordController,
+                        obscureText: _obscureOtaPassword,
+                        style: const TextStyle(fontSize: 12),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          filled: true,
+                          fillColor: (isDark ? Colors.white : Colors.black)
+                              .withValues(alpha: isDark ? 0.05 : 0.04),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: (isDark ? Colors.white : Colors.black)
+                                  .withValues(alpha: 0.12),
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscureOtaPassword
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              size: 16,
+                            ),
+                            splashRadius: 14,
+                            onPressed: () => setState(
+                              () => _obscureOtaPassword = !_obscureOtaPassword,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: 18),
+
+          // 5. Check Interval Setting
           Row(
             children: [
               Icon(
@@ -2152,151 +2582,6 @@ class _SettingsDialogState extends State<SettingsDialog>
                 },
               ),
             ),
-          ),
-
-          const SizedBox(height: 18),
-
-          // 3. Server Configuration
-          Row(
-            children: [
-              Icon(Icons.dns_rounded, size: 16, color: theme.colors.accentBlue),
-              const SizedBox(width: 6),
-              Text(
-                lang.tr('otaServerPath'),
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.bold,
-                  color: theme.colors.accentBlue,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            key: const ValueKey('ota-server-path-input'),
-            controller: _otaServerPathController,
-            style: const TextStyle(
-              fontSize: 12,
-              fontFamily: 'Consolas, monospace',
-            ),
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: lang.tr('otaServerPathHint'),
-              hintStyle: TextStyle(
-                fontSize: 11,
-                color: isDark ? Colors.white30 : Colors.black26,
-              ),
-              filled: true,
-              fillColor: (isDark ? Colors.white : Colors.black).withValues(
-                alpha: isDark ? 0.05 : 0.04,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(
-                  color: (isDark ? Colors.white : Colors.black).withValues(
-                    alpha: 0.12,
-                  ),
-                ),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // Username & Password row
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      lang.tr('otaUsername'),
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        color: isDark ? Colors.white60 : Colors.black54,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    TextField(
-                      controller: _otaUsernameController,
-                      style: const TextStyle(fontSize: 12),
-                      decoration: InputDecoration(
-                        isDense: true,
-                        filled: true,
-                        fillColor: (isDark ? Colors.white : Colors.black)
-                            .withValues(alpha: isDark ? 0.05 : 0.04),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: (isDark ? Colors.white : Colors.black)
-                                .withValues(alpha: 0.12),
-                          ),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      lang.tr('otaPassword'),
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        color: isDark ? Colors.white60 : Colors.black54,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    TextField(
-                      controller: _otaPasswordController,
-                      obscureText: _obscureOtaPassword,
-                      style: const TextStyle(fontSize: 12),
-                      decoration: InputDecoration(
-                        isDense: true,
-                        filled: true,
-                        fillColor: (isDark ? Colors.white : Colors.black)
-                            .withValues(alpha: isDark ? 0.05 : 0.04),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: (isDark ? Colors.white : Colors.black)
-                                .withValues(alpha: 0.12),
-                          ),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscureOtaPassword
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                            size: 16,
-                          ),
-                          splashRadius: 14,
-                          onPressed: () => setState(
-                            () => _obscureOtaPassword = !_obscureOtaPassword,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ),
 
           const SizedBox(height: 12),

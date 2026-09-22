@@ -8,8 +8,10 @@ import 'package:window_manager/window_manager.dart';
 import 'package:tray_manager/tray_manager.dart';
 import '../theme/theme_provider.dart';
 import '../localization/app_locale.dart';
+import '../models/peer_model.dart';
 import '../services/messenger_coordinator.dart';
 import '../services/app_preferences.dart';
+import '../services/tray_badge_service.dart';
 import '../constants.dart';
 import '../build_info.dart';
 import 'widgets/compact_sidebar.dart';
@@ -48,37 +50,133 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
       _initSystemTray();
     }
 
-    // Khởi tạo dịch vụ mạng P2P
+    // Khởi tạo dịch vụ mạng P2P và lắng nghe cập nhật khay hệ thống
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<MessengerCoordinator>().initialize();
+      if (!mounted) return;
+      final coordinator = context.read<MessengerCoordinator>();
+      coordinator.initialize();
     });
+  }
+
+  MessengerCoordinator? _observedCoordinator;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final coordinator = context.read<MessengerCoordinator>();
+    if (_observedCoordinator != coordinator) {
+      _observedCoordinator?.removeListener(_onCoordinatorChangedForTray);
+      _observedCoordinator = coordinator;
+      _observedCoordinator?.addListener(_onCoordinatorChangedForTray);
+    }
   }
 
   @override
   void dispose() {
+    _observedCoordinator?.removeListener(_onCoordinatorChangedForTray);
     windowManager.removeListener(this);
     trayManager.removeListener(this);
     super.dispose();
   }
 
+  int _lastTrayUnreadCount = -1;
+  PeerStatus? _lastTrayStatus;
+
+  void _onCoordinatorChangedForTray() {
+    if (!mounted) return;
+    final coordinator =
+        _observedCoordinator ?? context.read<MessengerCoordinator>();
+    final unread = coordinator.totalUnreadCount;
+    final status = coordinator.localStatus;
+    if (unread != _lastTrayUnreadCount || status != _lastTrayStatus) {
+      _updateSystemTray();
+    }
+  }
+
   Future<void> _initSystemTray() async {
-    final lang = context.read<LanguageProvider>();
+    await _updateSystemTray(force: true);
+  }
+
+  Future<void> _updateSystemTray({bool force = false}) async {
+    if (!mounted) return;
     try {
-      await trayManager.setIcon('assets/app_icon.ico');
-      final Menu menu = Menu(
-        items: [
-          MenuItem(key: 'show_window', label: lang.tr('trayOpen')),
-          MenuItem(key: 'toggle_compact', label: lang.tr('compactMode')),
+      final coordinator =
+          _observedCoordinator ?? context.read<MessengerCoordinator>();
+      final lang = context.read<LanguageProvider>();
+      final unread = coordinator.totalUnreadCount;
+      final status = coordinator.localStatus;
+
+      if (!force &&
+          unread == _lastTrayUnreadCount &&
+          status == _lastTrayStatus) {
+        return;
+      }
+      _lastTrayUnreadCount = unread;
+      _lastTrayStatus = status;
+
+      // 1. Cập nhật icon khay: Có badge số nếu unread > 0
+      final badgedPath = await TrayBadgeService.getBadgeIconPath(unread);
+      await trayManager.setIcon(badgedPath ?? 'assets/app_icon.ico');
+
+      // 2. Cập nhật tooltip động
+      if (unread > 0) {
+        await trayManager.setToolTip(
+          '$appName - ${lang.tr('unreadCount', [unread.toString()])}',
+        );
+      } else {
+        await trayManager.setToolTip(appName);
+      }
+
+      // 3. Menu ngữ cảnh khay hệ thống phong phú
+      final statusDesc = status == PeerStatus.online
+          ? lang.tr('online')
+          : status == PeerStatus.busy
+          ? lang.tr('busy')
+          : lang.tr('away');
+
+      final items = <MenuItem>[
+        MenuItem(key: 'show_window', label: lang.tr('trayOpen')),
+        MenuItem(key: 'toggle_compact', label: lang.tr('compactMode')),
+        MenuItem.separator(),
+        if (unread > 0) ...[
+          MenuItem(
+            key: 'mark_all_read',
+            label: '✓ ${lang.tr('markAllRead')} ($unread)',
+          ),
           MenuItem.separator(),
-          MenuItem(key: 'rescan_lan', label: lang.tr('trayRescan')),
-          MenuItem.separator(),
-          MenuItem(key: 'exit_app', label: lang.tr('trayExit')),
         ],
-      );
-      await trayManager.setContextMenu(menu);
-      await trayManager.setToolTip(appName);
+        MenuItem.submenu(
+          key: 'status_submenu',
+          label: '${lang.tr('trayStatus')}: $statusDesc',
+          submenu: Menu(
+            items: [
+              MenuItem.checkbox(
+                key: 'set_status_online',
+                label: '● ${lang.tr('online')}',
+                checked: status == PeerStatus.online,
+              ),
+              MenuItem.checkbox(
+                key: 'set_status_busy',
+                label: '■ ${lang.tr('busy')}',
+                checked: status == PeerStatus.busy,
+              ),
+              MenuItem.checkbox(
+                key: 'set_status_away',
+                label: '▲ ${lang.tr('away')}',
+                checked: status == PeerStatus.away,
+              ),
+            ],
+          ),
+        ),
+        MenuItem.separator(),
+        MenuItem(key: 'rescan_lan', label: lang.tr('trayRescan')),
+        MenuItem.separator(),
+        MenuItem(key: 'exit_app', label: lang.tr('trayExit')),
+      ];
+
+      await trayManager.setContextMenu(Menu(items: items));
     } catch (e) {
-      debugPrint('[Tray] Failed to initialize system tray: $e');
+      debugPrint('[Tray] Failed to update system tray: $e');
     }
   }
 
@@ -102,17 +200,43 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
 
   @override
   void onTrayMenuItemClick(MenuItem menuItem) async {
+    final coordinator = context.read<MessengerCoordinator>();
     if (menuItem.key == 'show_window') {
       await windowManager.show();
       await windowManager.restore();
       await windowManager.focus();
     } else if (menuItem.key == 'toggle_compact') {
       if (mounted) {
-        context.read<MessengerCoordinator>().toggleCompactMode();
+        coordinator.toggleCompactMode();
+      }
+    } else if (menuItem.key == 'mark_all_read') {
+      if (mounted) {
+        coordinator.markAllAsRead();
+      }
+    } else if (menuItem.key == 'set_status_online') {
+      if (mounted) {
+        await coordinator.updateProfile(
+          status: PeerStatus.online,
+          statusDesc: 'Sẵn sàng',
+        );
+      }
+    } else if (menuItem.key == 'set_status_busy') {
+      if (mounted) {
+        await coordinator.updateProfile(
+          status: PeerStatus.busy,
+          statusDesc: 'Bận',
+        );
+      }
+    } else if (menuItem.key == 'set_status_away') {
+      if (mounted) {
+        await coordinator.updateProfile(
+          status: PeerStatus.away,
+          statusDesc: 'Vắng mặt',
+        );
       }
     } else if (menuItem.key == 'rescan_lan') {
       if (mounted) {
-        context.read<MessengerCoordinator>().rescanNetwork();
+        coordinator.rescanNetwork();
       }
     } else if (menuItem.key == 'exit_app') {
       await _exitSafely();

@@ -8,6 +8,7 @@ class ProtocolBeebeep {
   static const headerBeep = 'BEE-BEEP',
       headerCiao = 'BEE-CIAO',
       headerChat = 'BEE-CHAT',
+      headerGroup = 'BEE-GROU',
       headerRecv = 'BEE-RECV',
       headerRead = 'BEE-READ',
       headerUser = 'BEE-USER',
@@ -19,6 +20,19 @@ class ProtocolBeebeep {
       headerReaction = 'BEE-REACT';
   static const protocolVersion = 95;
   static const idWritingMessage = 12;
+  static const idUserMessage = 16;
+  static const flagUserVCard = 16;
+  static const jaAvatarMarker = 'ja-avatar:';
+  // 128 cập nhật thành viên. 512 giải tán cả nhóm.
+  // 1024 người gửi tự rời. 2048 người nhận bị đuổi.
+  // Cờ rời và đuổi không dùng 512, để máy nhận không hiện nhầm thông báo giải tán.
+  static const flagGroupUpdate = 128;
+  static const flagGroupDisbanded = 512;
+  static const flagGroupLeft = 32; // BeeBEEP Refused: remove sender.
+  static const flagGroupKicked = 512; // BeeBEEP Delete: remove recipient.
+  static const groupDisbandMarker = 'ja-group-v1:disband';
+  static const groupInvitePrefix = 'ja-group-v1:invite:';
+  static const groupAvatarPrefix = 'ja-group-v1:avatar:';
 
   static String authenticationHash(String username, {String password = ''}) {
     final passwordHash = sha1
@@ -118,6 +132,7 @@ class ProtocolBeebeep {
       'account': parts[4],
       'publicKey': parts[5],
       'version': parts[6],
+      'hash': parts[7],
       'color': parts[8],
       'workgroup': parts[9],
       'datastreamVersion': int.tryParse(parts[11]) ?? 0,
@@ -132,22 +147,213 @@ class ProtocolBeebeep {
     required String messageId,
     required String text,
     String? recipientId,
+    String? groupId,
+    String? groupName,
+    DateTime? groupUpdatedAt,
   }) => packet(
     headerChat,
     messageId,
     text: text,
-    flags: 1,
-    data: List.filled(4, '').join(dataFieldSeparator),
+    flags: groupId == null ? 1 : 256,
+    data: [
+      '',
+      groupId ?? '',
+      groupName ?? '',
+      groupUpdatedAt?.toUtc().toIso8601String() ?? '',
+    ].join(dataFieldSeparator),
   );
+
+  // Native BeeBEEP group requests exclude the sender and recipient from records.
+  static List<int> buildGroupPacket({
+    required String groupId,
+    required String name,
+    required DateTime updatedAt,
+    required List<List<String>> members,
+    bool removed = false,
+    bool left = false,
+    bool kicked = false,
+    DateTime? invitedAt,
+    String? avatarPayload,
+  }) {
+    final extensions = <String>[];
+    if (removed) {
+      extensions.add(groupDisbandMarker);
+    } else if (!left && !kicked && invitedAt != null) {
+      extensions.add(
+        '$groupInvitePrefix${invitedAt.toUtc().toIso8601String()}',
+      );
+    }
+    if (!removed &&
+        !left &&
+        !kicked &&
+        avatarPayload != null &&
+        avatarPayload.isNotEmpty) {
+      extensions.add('$groupAvatarPrefix$avatarPayload');
+    }
+
+    return packet(
+      headerGroup,
+      '${DateTime.now().microsecondsSinceEpoch}',
+      flags: removed
+          ? flagGroupDisbanded
+          : kicked
+          ? flagGroupKicked
+          : left
+          ? flagGroupLeft
+          : flagGroupUpdate,
+      data: [
+        '',
+        groupId,
+        name,
+        updatedAt.toUtc().toIso8601String(),
+        ...extensions,
+      ].join(dataFieldSeparator),
+      text: members.isEmpty
+          ? ''
+          : [
+              '${members.length}',
+              ...members.expand((m) => m),
+            ].join(protocolFieldSeparator),
+    );
+  }
+
+  static ({
+    String id,
+    String name,
+    DateTime updatedAt,
+    bool hasRevision,
+    bool disbanded,
+    DateTime? invitedAt,
+    String? avatarPayload,
+  })?
+  groupMetadata(Map<String, dynamic> message) {
+    final fields = (message['data'] as String? ?? '').split(dataFieldSeparator);
+    if (fields.length < 4 ||
+        fields.length > 6 ||
+        !RegExp(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$').hasMatch(fields[1]) ||
+        fields[2].trim().isEmpty ||
+        fields[2].length > 256) {
+      return null;
+    }
+    final control = ((message['flags'] as int? ?? 0) & (32 | 512)) != 0;
+    final date = fields[3].isEmpty && control
+        ? message['timestamp'] as DateTime?
+        : DateTime.tryParse(fields[3]);
+    if (date == null) return null;
+
+    var disbanded = false;
+    DateTime? invitedAt;
+    String? avatarPayload;
+
+    for (int i = 4; i < fields.length; i++) {
+      final ext = fields[i];
+      if (ext == groupDisbandMarker) {
+        disbanded = true;
+      } else if (ext.startsWith(groupInvitePrefix)) {
+        invitedAt = DateTime.tryParse(ext.substring(groupInvitePrefix.length));
+      } else if (ext.startsWith(groupAvatarPrefix)) {
+        avatarPayload = ext.substring(groupAvatarPrefix.length);
+      }
+    }
+
+    if (invitedAt != null && invitedAt.isAfter(date)) return null;
+    return (
+      id: fields[1],
+      name: fields[2],
+      updatedAt: date,
+      hasRevision: fields[3].isNotEmpty,
+      disbanded: disbanded,
+      invitedAt: invitedAt,
+      avatarPayload: avatarPayload,
+    );
+  }
+
+  static List<List<String>>? groupRecords(String text) {
+    if (text.isEmpty) return [];
+    final fields = text.split(protocolFieldSeparator);
+    final count = int.tryParse(fields.first);
+    if (count == null ||
+        count < 0 ||
+        count > 512 ||
+        fields.length != 1 + count * 4) {
+      return null;
+    }
+    return [
+      for (var i = 0; i < count; i++) fields.sublist(1 + i * 4, 5 + i * 4),
+    ];
+  }
+
   static List<int> buildReceivedAckPacket(String messageId) =>
       packet(headerRecv, '26', text: messageId, flags: 128);
 
-  static List<int> buildTypingPacket({required bool isTyping}) => packet(
+  static List<int> buildTypingPacket({
+    required bool isTyping,
+    String? groupId,
+  }) => packet(
     headerUser,
     '$idWritingMessage',
+    data: groupId ?? '',
     text: isTyping ? '*' : '',
     flags: isTyping ? 3 : 1,
   );
+
+  /// Native BeeBEEP vCard: id 16, UserVCard flag, at least five data fields,
+  /// and plain PNG Base64 in text. JA preset metadata rides in the info field.
+  static List<int> buildAvatarUpdatePacket({
+    required String nickname,
+    required String colorHex,
+    String photoBase64 = '',
+    String jaPayload = '',
+  }) {
+    final safeName = nickname
+        .replaceAll(dataFieldSeparator, ' ')
+        .replaceAll(protocolFieldSeparator, ' ');
+    final color = colorHex.startsWith('#') ? colorHex : '#$colorHex';
+    final fields = <String>[
+      safeName,
+      '',
+      '',
+      '',
+      '',
+      color,
+      '',
+      '',
+      'N',
+      if (jaPayload.isNotEmpty) '$jaAvatarMarker$jaPayload',
+    ];
+    return packet(
+      headerUser,
+      '$idUserMessage',
+      data: fields.join(dataFieldSeparator),
+      text: photoBase64,
+      flags: flagUserVCard,
+    );
+  }
+
+  /// Turns a native vCard or a legacy JA `avatar:` packet into `#color|...`.
+  static String? normalizeAvatarPayload(Map<String, dynamic> message) {
+    final data = message['data'] as String? ?? '';
+    final text = (message['text'] as String? ?? '').trim();
+    if (data.startsWith('avatar:')) {
+      final payload = data.substring('avatar:'.length).trim();
+      return payload.isEmpty ? null : payload;
+    }
+    final fields = data.split(dataFieldSeparator);
+    if (fields.length < 5) return null;
+    for (final field in fields) {
+      if (field.startsWith(jaAvatarMarker)) {
+        final payload = field.substring(jaAvatarMarker.length).trim();
+        if (payload.isNotEmpty) return payload;
+      }
+    }
+    final color = fields.length > 5 && fields[5].trim().startsWith('#')
+        ? fields[5].trim()
+        : '#000000';
+    if (text.isNotEmpty && !text.startsWith('#')) {
+      return '$color|b64:$text';
+    }
+    return color;
+  }
 
   static List<int> buildReadPacket(String messageId) =>
       packet(headerRead, '27', text: messageId, flags: 128);

@@ -10,6 +10,7 @@ import 'glass_components.dart';
 import 'glass_dialog.dart';
 import 'glass_search_history_field.dart';
 import 'bounce_marquee_text.dart';
+import 'create_group_dialog.dart';
 
 enum _PeerCategory { all, online, groups }
 
@@ -29,7 +30,14 @@ class _PeerListViewState extends State<PeerListView> {
     final lang = context.watch<LanguageProvider>();
     final coordinator = context.watch<MessengerCoordinator>();
     final allPeers = coordinator.peers;
-    final groups = coordinator.groups;
+    final groups = List<GroupModel>.from(coordinator.groups)
+      ..sort((a, b) {
+        final aTime =
+            a.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bTime =
+            b.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bTime.compareTo(aTime);
+      });
     final onlinePeers = allPeers
         .where((p) => p.status != PeerStatus.offline)
         .toList();
@@ -203,7 +211,7 @@ class _PeerListViewState extends State<PeerListView> {
                       onTap: () => coordinator.selectPeer(
                         coordinator.getPeerForGroup(group),
                       ),
-                      onDelete: () => coordinator.deleteGroup(group.id),
+                      onDelete: () => _confirmDisbandGroup(context, group),
                     ),
                   const SizedBox(height: 6),
                 ],
@@ -447,123 +455,35 @@ class _SearchAndActionHeaderState extends State<_SearchAndActionHeader> {
 }
 
 void _showCreateGroupDialog(BuildContext context) {
-  final theme = ThemeProvider.of(context);
+  CreateGroupDialog.show(context);
+}
+
+void _confirmDisbandGroup(BuildContext context, GroupModel group) {
   final lang = context.read<LanguageProvider>();
   final coordinator = context.read<MessengerCoordinator>();
-  final nameController = TextEditingController();
-  final availablePeers = coordinator.peers;
-  final Set<String> selectedMemberIds = {};
-
   showGlassDialog(
     context: context,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setState) => GlassDialog(
-        title: lang.tr('createGroupTitle'),
-        icon: Icons.groups_rounded,
-        width: 380,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(lang.tr('cancel')),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: theme.colors.accentBlue,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            onPressed: () {
-              final name = nameController.text.trim();
-              if (name.isNotEmpty) {
-                coordinator.createGroup(name, selectedMemberIds.toList());
-                Navigator.pop(ctx);
-              }
-            },
-            child: Text(lang.tr('create')),
-          ),
-        ],
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: nameController,
-              autofocus: true,
-              style: const TextStyle(fontSize: 13),
-              decoration: InputDecoration(
-                hintText: lang.tr('groupNameHint'),
-                hintStyle: const TextStyle(fontSize: 12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              lang.tr('selectMembers'),
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 6),
-            Container(
-              height: 140,
-              decoration: BoxDecoration(
-                color: (theme.isDark ? Colors.white : Colors.black).withValues(
-                  alpha: 0.04,
-                ),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: (theme.isDark ? Colors.white : Colors.black)
-                      .withValues(alpha: 0.08),
-                ),
-              ),
-              child: availablePeers.isEmpty
-                  ? Center(
-                      child: Text(
-                        lang.tr('noAvailableMembers'),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      itemCount: availablePeers.length,
-                      itemBuilder: (context, i) {
-                        final p = availablePeers[i];
-                        final isChecked = selectedMemberIds.contains(p.id);
-                        return CheckboxListTile(
-                          dense: true,
-                          visualDensity: VisualDensity.compact,
-                          value: isChecked,
-                          title: Text(
-                            p.name,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          subtitle: Text(
-                            p.ip,
-                            style: const TextStyle(fontSize: 10),
-                          ),
-                          onChanged: (val) {
-                            setState(() {
-                              if (val == true) {
-                                selectedMemberIds.add(p.id);
-                              } else {
-                                selectedMemberIds.remove(p.id);
-                              }
-                            });
-                          },
-                        );
-                      },
-                    ),
-            ),
-          ],
+    builder: (ctx) => GlassDialog(
+      title: lang.tr('deleteGroup'),
+      icon: Icons.warning_amber_rounded,
+      width: 380,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: Text(lang.tr('cancel')),
         ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+          onPressed: () {
+            coordinator.deleteGroup(group.id);
+            Navigator.of(ctx).pop();
+          },
+          child: Text(lang.tr('confirm')),
+        ),
+      ],
+      child: Text(
+        lang.tr('disbandGroupConfirm'),
+        style: const TextStyle(fontSize: 13),
       ),
     ),
   );
@@ -823,8 +743,8 @@ class _GroupListTile extends StatelessWidget {
             child: Row(
               children: [
                 Container(
-                  width: 32,
-                  height: 32,
+                  width: 34,
+                  height: 34,
                   decoration: BoxDecoration(
                     color: group.color.withValues(alpha: 0.2),
                     shape: BoxShape.circle,
@@ -837,7 +757,7 @@ class _GroupListTile extends StatelessWidget {
                   child: Icon(
                     Icons.groups_rounded,
                     color: group.color,
-                    size: 16,
+                    size: 18,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -846,26 +766,82 @@ class _GroupListTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        group.name,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: isSelected
-                              ? FontWeight.w600
-                              : FontWeight.w500,
-                          color: isSelected
-                              ? theme.colors.accentBlue
-                              : (theme.isDark ? Colors.white : Colors.black87),
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              group.name,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? theme.colors.accentBlue
+                                    : (theme.isDark
+                                          ? Colors.white
+                                          : Colors.black87),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (group.lastMessageTime != null)
+                            Text(
+                              _formatTime(group.lastMessageTime!),
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                color: theme.isDark
+                                    ? Colors.white38
+                                    : Colors.black38,
+                              ),
+                            ),
+                        ],
                       ),
-                      const SizedBox(height: 1),
-                      Text(
-                        '${group.memberIds.length} ${lang.tr('groupMembersCount')}',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: theme.isDark ? Colors.white38 : Colors.black45,
-                        ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              group.lastMessage ??
+                                  '${group.memberCount} ${lang.tr('groupMembersCount')}',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: group.unreadCount > 0
+                                    ? (theme.isDark
+                                          ? Colors.white
+                                          : Colors.black87)
+                                    : (theme.isDark
+                                          ? Colors.white38
+                                          : Colors.black45),
+                                fontWeight: group.unreadCount > 0
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (group.unreadCount > 0)
+                            Container(
+                              margin: const EdgeInsets.only(left: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 1.5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: theme.colors.accentRose,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                group.unreadCount.toString(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ],
                   ),
@@ -888,6 +864,16 @@ class _GroupListTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  static String _formatTime(DateTime dt) {
+    final now = DateTime.now();
+    if (now.year == dt.year && now.month == dt.month && now.day == dt.day) {
+      final h = dt.hour.toString().padLeft(2, '0');
+      final m = dt.minute.toString().padLeft(2, '0');
+      return '$h:$m';
+    }
+    return '${dt.day}/${dt.month}';
   }
 }
 

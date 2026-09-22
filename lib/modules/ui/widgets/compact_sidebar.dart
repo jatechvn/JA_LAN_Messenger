@@ -8,6 +8,8 @@ import '../../models/peer_model.dart';
 import 'glass_components.dart';
 import 'glass_dropdown.dart';
 import 'settings_dialog.dart';
+import 'app_avatar.dart';
+import 'avatar_picker_dialog.dart';
 
 enum MainViewTab { chats, transfers }
 
@@ -247,69 +249,75 @@ class _UserStatusAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final coordinator = context.watch<MessengerCoordinator>();
+    final lang = context.watch<LanguageProvider>();
 
-    final statusItems = [
-      GlassDropdownItem<PeerStatus>(
-        value: PeerStatus.online,
+    final menuItems = [
+      GlassDropdownItem<String>(
+        value: 'online',
         label: PeerStatus.online.label,
         icon: Icons.check_circle_rounded,
         accentColor: PeerStatus.online.color,
       ),
-      GlassDropdownItem<PeerStatus>(
-        value: PeerStatus.away,
+      GlassDropdownItem<String>(
+        value: 'away',
         label: PeerStatus.away.label,
         icon: Icons.schedule_rounded,
         accentColor: PeerStatus.away.color,
       ),
-      GlassDropdownItem<PeerStatus>(
-        value: PeerStatus.busy,
+      GlassDropdownItem<String>(
+        value: 'busy',
         label: PeerStatus.busy.label,
         icon: Icons.do_not_disturb_on_rounded,
         accentColor: PeerStatus.busy.color,
       ),
+      GlassDropdownItem<String>(
+        value: 'change_avatar',
+        label: lang.tr('changeAvatar'),
+        icon: Icons.edit_rounded,
+        accentColor: const Color(0xFF60A5FA),
+      ),
     ];
 
-    return GlassDropdown<PeerStatus>(
-      items: statusItems,
-      value: coordinator.localStatus,
-      onChanged: (status) {
-        coordinator.updateProfile(status: status);
-      },
-      tooltip:
-          '${coordinator.localUsername} (${coordinator.localStatus.label})',
-      menuOffset: const Offset(46, -132),
-      menuWidth: 160,
-      customTrigger: Stack(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: coordinator.localColor.withValues(alpha: 0.2),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: coordinator.localColor.withValues(alpha: 0.6),
-                width: 1.5,
+    String currentVal = 'online';
+    if (coordinator.localStatus == PeerStatus.away) {
+      currentVal = 'away';
+    } else if (coordinator.localStatus == PeerStatus.busy) {
+      currentVal = 'busy';
+    }
+
+    return GestureDetector(
+      onSecondaryTap: () => AvatarPickerDialog.show(context),
+      child: Tooltip(
+        message:
+            '${coordinator.localUsername} (${coordinator.localStatus.label})\n${lang.tr('changeAvatar')}',
+        child: GlassDropdown<String>(
+          items: menuItems,
+          value: currentVal,
+          onChanged: (val) {
+            if (val == 'change_avatar') {
+              AvatarPickerDialog.show(context);
+            } else if (val == 'online') {
+              coordinator.updateProfile(status: PeerStatus.online);
+            } else if (val == 'away') {
+              coordinator.updateProfile(status: PeerStatus.away);
+            } else if (val == 'busy') {
+              coordinator.updateProfile(status: PeerStatus.busy);
+            }
+          },
+          menuOffset: const Offset(46, -160),
+          menuWidth: 175,
+          customTrigger: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              AppAvatar.local(size: 36),
+              Positioned(
+                right: -1,
+                bottom: -1,
+                child: StatusBadge(status: coordinator.localStatus),
               ),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              coordinator.localUsername.isNotEmpty
-                  ? coordinator.localUsername[0].toUpperCase()
-                  : 'U',
-              style: TextStyle(
-                color: coordinator.localColor,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
-            ),
+            ],
           ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: StatusBadge(status: coordinator.localStatus),
-          ),
-        ],
+        ),
       ),
     );
   }

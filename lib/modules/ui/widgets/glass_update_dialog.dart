@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import '../../theme/theme_provider.dart';
 import '../../localization/app_locale.dart';
 import '../../constants.dart';
@@ -347,28 +348,104 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
 
                           const SizedBox(height: 16),
 
-                          // Release Notes Section
+                          // Release Notes / Changelog Section
                           Row(
                             children: [
                               Icon(
-                                Icons.article_outlined,
+                                Icons.auto_awesome_rounded,
                                 size: 14,
-                                color: theme.colors.accentBlue,
+                                color: theme.colors.accentEmerald,
                               ),
                               const SizedBox(width: 6),
-                              Text(
-                                lang.tr('releaseNotes'),
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: theme.colors.accentBlue,
+                              Expanded(
+                                child: Text(
+                                  lang.tr('whatsNew'),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: theme.colors.accentEmerald,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color:
+                                      (widget.packageInfo.isRemoteUrl
+                                              ? theme.colors.accentBlue
+                                              : theme.colors.accentEmerald)
+                                          .withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color:
+                                        (widget.packageInfo.isRemoteUrl
+                                                ? theme.colors.accentBlue
+                                                : theme.colors.accentEmerald)
+                                            .withValues(alpha: 0.25),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      widget.packageInfo.isRemoteUrl
+                                          ? Icons.public_rounded
+                                          : Icons.lan_rounded,
+                                      size: 11,
+                                      color: widget.packageInfo.isRemoteUrl
+                                          ? theme.colors.accentBlue
+                                          : theme.colors.accentEmerald,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      widget.packageInfo.isRemoteUrl
+                                          ? 'GitHub Releases'
+                                          : 'Corporate LAN',
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: widget.packageInfo.isRemoteUrl
+                                            ? theme.colors.accentBlue
+                                            : theme.colors.accentEmerald,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
                           ),
+                          if (widget.packageInfo.releaseTitle != null &&
+                              widget.packageInfo.releaseTitle!
+                                  .trim()
+                                  .isNotEmpty &&
+                              widget.packageInfo.releaseTitle !=
+                                  widget
+                                      .packageInfo
+                                      .version
+                                      .displayVersion) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              widget.packageInfo.releaseTitle!,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white70 : Colors.black87,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                           const SizedBox(height: 8),
                           Container(
-                            constraints: const BoxConstraints(maxHeight: 140),
+                            constraints: const BoxConstraints(
+                              maxHeight: 180,
+                              minHeight: 60,
+                            ),
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color:
@@ -381,21 +458,66 @@ class _GlassUpdateDialogState extends State<GlassUpdateDialog> {
                               ),
                             ),
                             child: SingleChildScrollView(
-                              child: Text(
-                                widget.packageInfo.releaseNotes
-                                            ?.trim()
-                                            .isNotEmpty ==
-                                        true
-                                    ? widget.packageInfo.releaseNotes!
-                                    : 'Bản phát hành bao gồm các cải tiến hiệu năng, tính năng mới và các bản vá lỗi bảo mật.',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  height: 1.45,
-                                  color: isDark
-                                      ? Colors.white70
-                                      : Colors.black87,
-                                ),
-                              ),
+                              child:
+                                  widget.packageInfo.releaseNotes
+                                          ?.trim()
+                                          .isNotEmpty ==
+                                      true
+                                  ? MarkdownBody(
+                                      data: widget.packageInfo.releaseNotes!,
+                                      selectable: true,
+                                      styleSheet: MarkdownStyleSheet(
+                                        p: TextStyle(
+                                          fontSize: 11.5,
+                                          height: 1.45,
+                                          color: isDark
+                                              ? Colors.white70
+                                              : Colors.black87,
+                                        ),
+                                        h1: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                          color: isDark
+                                              ? Colors.white
+                                              : Colors.black,
+                                        ),
+                                        h2: TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: isDark
+                                              ? Colors.white
+                                              : Colors.black,
+                                        ),
+                                        h3: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: theme.colors.accentBlue,
+                                        ),
+                                        listBullet: TextStyle(
+                                          color: theme.colors.accentEmerald,
+                                          fontSize: 12,
+                                        ),
+                                        code: TextStyle(
+                                          fontFamily: 'Consolas, monospace',
+                                          fontSize: 10.5,
+                                          backgroundColor:
+                                              (isDark
+                                                      ? Colors.white
+                                                      : Colors.black)
+                                                  .withValues(alpha: 0.08),
+                                        ),
+                                      ),
+                                    )
+                                  : Text(
+                                      'Bản phát hành bao gồm các cải tiến hiệu năng, tính năng mới và các bản vá lỗi bảo mật.',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        height: 1.45,
+                                        color: isDark
+                                            ? Colors.white70
+                                            : Colors.black87,
+                                      ),
+                                    ),
                             ),
                           ),
 

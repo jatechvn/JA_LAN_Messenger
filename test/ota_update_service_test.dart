@@ -640,8 +640,8 @@ void main() {
         addTearDown(() => coordinator.dispose());
 
         final packageInfo = UpdatePackageInfo(
-          version: SemanticVersion.tryParse('1.3.0')!,
-          fileName: 'JA_LAN_Messenger_v1.3.0_Windows_x64.zip',
+          version: SemanticVersion.tryParse('1.5.0')!,
+          fileName: 'JA_LAN_Messenger_v1.5.0_Windows_x64.zip',
           fullPath: '/mock/update.zip',
           fileSize: 15 * 1024 * 1024,
           releaseNotes: '- Bổ sung cập nhật OTA\n- Sửa lỗi kết nối mạng',
@@ -663,13 +663,147 @@ void main() {
         await tester.pumpAndSettle();
 
         // Check version text
-        expect(find.text('v1.3.0'), findsOneWidget);
+        expect(find.text('v1.5.0'), findsOneWidget);
         expect(find.text('v$appVersion'), findsOneWidget);
         // Check release notes text
         expect(find.textContaining('Bổ sung cập nhật OTA'), findsOneWidget);
         // Check action buttons
         expect(find.byKey(const ValueKey('btn-update-now')), findsOneWidget);
         expect(find.byKey(const ValueKey('btn-update-later')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'GlassUpdateDialog renders GitHub Releases channel badge and markdown changelog',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 700);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() => tester.view.resetPhysicalSize());
+
+        final theme = ThemeProvider();
+        final lang = LanguageProvider();
+        final coordinator = MessengerCoordinator();
+        addTearDown(() => coordinator.dispose());
+
+        final packageInfo = UpdatePackageInfo(
+          version: SemanticVersion.tryParse('2.0.0')!,
+          fileName: 'JA_LAN_Messenger_v2.0.0_Windows_x64.zip',
+          fullPath:
+              'https://github.com/jatechvn/JA_LAN_Messenger/releases/download/v2.0.0/JA_LAN_Messenger_v2.0.0_Windows_x64.zip',
+          fileSize: 18 * 1024 * 1024,
+          releaseTitle: 'v2.0.0 - Big Update OTA',
+          releaseNotes:
+              '### What is New\n- **Feature**: GitHub Releases OTA\n- **Feature**: Avatar customizer',
+          htmlUrl:
+              'https://github.com/jatechvn/JA_LAN_Messenger/releases/tag/v2.0.0',
+        );
+
+        expect(packageInfo.isRemoteUrl, isTrue);
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: theme),
+              ChangeNotifierProvider.value(value: lang),
+              ChangeNotifierProvider.value(value: coordinator),
+            ],
+            child: MaterialApp(
+              home: Scaffold(body: GlassUpdateDialog(packageInfo: packageInfo)),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('GitHub Releases'), findsOneWidget);
+        expect(find.textContaining('v2.0.0 - Big Update OTA'), findsOneWidget);
+        expect(find.textContaining('GitHub Releases OTA'), findsOneWidget);
+      },
+    );
+  });
+
+  group('GitHub Releases OTA Tests', () {
+    test(
+      'checkGitHubUpdates successfully parses release JSON and extracts package info',
+      () async {
+        final mockJson = {
+          'tag_name': 'v2.5.0',
+          'name': 'JA LAN Messenger v2.5.0 Official Release',
+          'body': '## What is Hot\n* Added GitHub OTA\n* Added custom avatar',
+          'published_at': '2026-09-21T10:00:00Z',
+          'html_url':
+              'https://github.com/jatechvn/JA_LAN_Messenger/releases/tag/v2.5.0',
+          'assets': [
+            {
+              'name': 'JA_LAN_Messenger_v2.5.0_Windows_x64.zip',
+              'size': 25000000,
+              'browser_download_url':
+                  'https://github.com/download/JA_LAN_Messenger_v2.5.0_Windows_x64.zip',
+            },
+            {
+              'name': 'SHA256SUMS.txt',
+              'size': 120,
+              'browser_download_url':
+                  'https://github.com/download/SHA256SUMS.txt',
+            },
+          ],
+        };
+
+        OtaUpdateService().setMockGitHubReleaseJsonForTesting(mockJson);
+        addTearDown(
+          () => OtaUpdateService().setMockGitHubReleaseJsonForTesting(null),
+        );
+
+        final result = await OtaUpdateService().checkGitHubUpdates(
+          overrideCurrentVersion: '1.2.0',
+        );
+
+        expect(result.hasUpdate, isTrue);
+        expect(result.packageInfo, isNotNull);
+        expect(
+          result.packageInfo!.version,
+          SemanticVersion(major: 2, minor: 5, patch: 0, raw: 'v2.5.0'),
+        );
+        expect(
+          result.packageInfo!.releaseTitle,
+          'JA LAN Messenger v2.5.0 Official Release',
+        );
+        expect(result.packageInfo!.releaseNotes, contains('What is Hot'));
+        expect(result.packageInfo!.isRemoteUrl, isTrue);
+      },
+    );
+
+    test(
+      'checkForUpdates in auto mode falls back to GitHub when LAN server is unavailable',
+      () async {
+        final mockJson = {
+          'tag_name': 'v1.9.0',
+          'name': 'v1.9.0',
+          'body': 'Auto fallback update',
+          'assets': [
+            {
+              'name': 'JA_LAN_Messenger_v1.9.0_Windows_x64.zip',
+              'size': 20000000,
+              'browser_download_url': 'https://example.com/update.zip',
+            },
+          ],
+        };
+
+        OtaUpdateService().setMockGitHubReleaseJsonForTesting(mockJson);
+        addTearDown(
+          () => OtaUpdateService().setMockGitHubReleaseJsonForTesting(null),
+        );
+
+        // Point to an unreachable non-existent local server path
+        final result = await OtaUpdateService().checkForUpdates(
+          overrideServerPath: r'\\999.999.999.999\invalid_path',
+          overrideSource: 'auto',
+          overrideCurrentVersion: '1.0.0',
+        );
+
+        expect(result.hasUpdate, isTrue);
+        expect(result.packageInfo?.version.major, 1);
+        expect(result.packageInfo?.version.minor, 9);
+        expect(result.packageInfo?.releaseNotes, 'Auto fallback update');
       },
     );
   });

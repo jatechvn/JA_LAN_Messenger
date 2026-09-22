@@ -212,10 +212,10 @@ void main() {
         );
 
         // Find status avatar at the bottom
-        expect(find.byType(GlassDropdown<PeerStatus>), findsOneWidget);
+        expect(find.byType(GlassDropdown<String>), findsOneWidget);
 
         // Tap the avatar
-        await tester.tap(find.byType(GlassDropdown<PeerStatus>));
+        await tester.tap(find.byType(GlassDropdown<String>));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 200));
 

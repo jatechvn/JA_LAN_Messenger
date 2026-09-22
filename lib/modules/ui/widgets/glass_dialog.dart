@@ -15,6 +15,7 @@ class GlassDialog extends StatelessWidget {
   final EdgeInsetsGeometry contentPadding;
   final double? blurSigma;
   final Widget? headerTrailing;
+  final bool scrollable;
 
   const GlassDialog({
     super.key,
@@ -27,6 +28,7 @@ class GlassDialog extends StatelessWidget {
     this.contentPadding = const EdgeInsets.fromLTRB(20, 16, 20, 16),
     this.blurSigma,
     this.headerTrailing,
+    this.scrollable = false,
   });
 
   @override
@@ -147,6 +149,12 @@ class GlassDialog extends StatelessWidget {
                     if (height != null)
                       Expanded(
                         child: Padding(padding: contentPadding, child: child),
+                      )
+                    else if (scrollable)
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: Padding(padding: contentPadding, child: child),
+                        ),
                       )
                     else
                       Padding(padding: contentPadding, child: child),

@@ -58,7 +58,10 @@ class AppPreferences extends ChangeNotifier {
   String _imeMode = 'auto';
   bool _imeAutoBypassExternal = true;
 
-  // Cập nhật OTA qua mạng nội bộ (SMB/UNC)
+  // Cập nhật OTA: Hỗ trợ cả Internet GitHub Releases và Mạng nội bộ (SMB/UNC)
+  String _otaSource = 'auto'; // 'auto', 'github', 'lan'
+  String _otaGithubRepo = 'jatechvn/JA_LAN_Messenger';
+  String _otaGithubToken = '';
   String _otaCheckInterval = 'daily'; // 'daily', 'weekly', 'monthly', 'off'
   String _otaServerPath =
       r'\\10.81.141.226\temp\FBT\JA_PROJECT\JA_Update\JA_LAN_Messenger';
@@ -69,6 +72,19 @@ class AppPreferences extends ChangeNotifier {
 
   // Cấu hình hiệu năng phần cứng (Hardware Graphic Tier)
   String _perfTierMode = 'auto'; // 'auto', 'ultra', 'balanced', 'lite'
+
+  // Ảnh đại diện cá nhân (User Avatar)
+  String _userAvatarType = 'initials'; // 'initials', 'preset', 'custom'
+  String _userAvatarPreset = 'robot';
+  String _userAvatarCustomPath = '';
+  String _userAvatarColor = '#3B82F6';
+  String _userAvatarBase64 = '';
+
+  String get userAvatarType => _userAvatarType;
+  String get userAvatarPreset => _userAvatarPreset;
+  String get userAvatarCustomPath => _userAvatarCustomPath;
+  String get userAvatarColor => _userAvatarColor;
+  String get userAvatarBase64 => _userAvatarBase64;
 
   String get closeBehavior => _closeBehavior;
   bool get rememberCloseBehavior => _rememberCloseBehavior;
@@ -105,6 +121,9 @@ class AppPreferences extends ChangeNotifier {
   String get imeMode => _imeMode;
   bool get imeAutoBypassExternal => _imeAutoBypassExternal;
 
+  String get otaSource => _otaSource;
+  String get otaGithubRepo => _otaGithubRepo;
+  String get otaGithubToken => _otaGithubToken;
   String get otaCheckInterval => _otaCheckInterval;
   String get otaServerPath => _otaServerPath;
   String get otaUsername => _otaUsername;
@@ -132,6 +151,11 @@ class AppPreferences extends ChangeNotifier {
     AiModelInfo.resetDiscoveredModels();
     _cardBlur = null;
     _perfTierMode = 'auto';
+    _userAvatarType = 'initials';
+    _userAvatarPreset = 'robot';
+    _userAvatarCustomPath = '';
+    _userAvatarColor = '#3B82F6';
+    _userAvatarBase64 = '';
     _cardOpacity = null;
     _dialogBlur = null;
     _dialogOpacity = null;
@@ -299,6 +323,16 @@ class AppPreferences extends ChangeNotifier {
             _imeAutoBypassExternal =
                 data['imeAutoBypassExternal'] as bool? ?? true;
           }
+          if (data.containsKey('otaSource')) {
+            _otaSource = data['otaSource'] as String? ?? 'auto';
+          }
+          if (data.containsKey('otaGithubRepo')) {
+            _otaGithubRepo =
+                data['otaGithubRepo'] as String? ?? 'jatechvn/JA_LAN_Messenger';
+          }
+          if (data.containsKey('otaGithubToken')) {
+            _otaGithubToken = data['otaGithubToken'] as String? ?? '';
+          }
           if (data.containsKey('otaCheckInterval')) {
             _otaCheckInterval = data['otaCheckInterval'] as String? ?? 'daily';
           }
@@ -322,6 +356,22 @@ class AppPreferences extends ChangeNotifier {
           }
           if (data.containsKey('perfTierMode')) {
             _perfTierMode = data['perfTierMode'] as String? ?? 'auto';
+          }
+          if (data.containsKey('userAvatarType')) {
+            _userAvatarType = data['userAvatarType'] as String? ?? 'initials';
+          }
+          if (data.containsKey('userAvatarPreset')) {
+            _userAvatarPreset = data['userAvatarPreset'] as String? ?? 'robot';
+          }
+          if (data.containsKey('userAvatarCustomPath')) {
+            _userAvatarCustomPath =
+                data['userAvatarCustomPath'] as String? ?? '';
+          }
+          if (data.containsKey('userAvatarColor')) {
+            _userAvatarColor = data['userAvatarColor'] as String? ?? '#3B82F6';
+          }
+          if (data.containsKey('userAvatarBase64')) {
+            _userAvatarBase64 = data['userAvatarBase64'] as String? ?? '';
           }
           notifyListeners();
         }
@@ -460,6 +510,9 @@ class AppPreferences extends ChangeNotifier {
   }
 
   Future<void> setOtaSettings({
+    String? source,
+    String? githubRepo,
+    String? githubToken,
     String? checkInterval,
     String? serverPath,
     String? username,
@@ -467,6 +520,9 @@ class AppPreferences extends ChangeNotifier {
     DateTime? lastCheckTime,
     String? cachedUpdateVersion,
   }) async {
+    if (source != null) _otaSource = source;
+    if (githubRepo != null) _otaGithubRepo = githubRepo;
+    if (githubToken != null) _otaGithubToken = githubToken;
     if (checkInterval != null) _otaCheckInterval = checkInterval;
     if (serverPath != null) _otaServerPath = serverPath;
     if (username != null) _otaUsername = username;
@@ -483,6 +539,22 @@ class AppPreferences extends ChangeNotifier {
 
   Future<void> setPerfTierMode(String mode) async {
     _perfTierMode = mode;
+    notifyListeners();
+    await _save();
+  }
+
+  Future<void> setUserAvatar({
+    String? type,
+    String? preset,
+    String? customPath,
+    String? color,
+    String? base64,
+  }) async {
+    if (type != null) _userAvatarType = type;
+    if (preset != null) _userAvatarPreset = preset;
+    if (customPath != null) _userAvatarCustomPath = customPath;
+    if (color != null) _userAvatarColor = color;
+    if (base64 != null) _userAvatarBase64 = base64;
     notifyListeners();
     await _save();
   }
@@ -538,6 +610,9 @@ class AppPreferences extends ChangeNotifier {
       data['buzzBringToFront'] = _buzzBringToFront;
       data['imeMode'] = _imeMode;
       data['imeAutoBypassExternal'] = _imeAutoBypassExternal;
+      data['otaSource'] = _otaSource;
+      data['otaGithubRepo'] = _otaGithubRepo;
+      data['otaGithubToken'] = _otaGithubToken;
       data['otaCheckInterval'] = _otaCheckInterval;
       data['otaServerPath'] = _otaServerPath;
       data['otaUsername'] = _otaUsername;
@@ -545,6 +620,11 @@ class AppPreferences extends ChangeNotifier {
       data['otaLastCheckTime'] = _otaLastCheckTime?.toIso8601String();
       data['otaCachedUpdateVersion'] = _otaCachedUpdateVersion;
       data['perfTierMode'] = _perfTierMode;
+      data['userAvatarType'] = _userAvatarType;
+      data['userAvatarPreset'] = _userAvatarPreset;
+      data['userAvatarCustomPath'] = _userAvatarCustomPath;
+      data['userAvatarColor'] = _userAvatarColor;
+      data['userAvatarBase64'] = _userAvatarBase64;
       await file.writeAsString(jsonEncode(data), flush: true);
     } catch (e) {
       debugPrint('[AppPreferences] Save error: $e');

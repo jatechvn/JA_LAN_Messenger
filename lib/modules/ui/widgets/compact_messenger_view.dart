@@ -517,12 +517,16 @@ class _CompactPeerItemTileState extends State<_CompactPeerItemTile> {
 
     final isTyping =
         !peer.isAllUsers && !peer.isGroup && coordinator.isPeerTyping(peer.id);
+    final isGroupTyping = peer.isGroup && coordinator.isGroupTyping(peer.id);
 
     final effectiveName = peer.effectiveDisplayName(lang);
 
     final String lastMessageSnippet;
     if (isTyping) {
       lastMessageSnippet = lang.tr('typing');
+    } else if (isGroupTyping) {
+      lastMessageSnippet =
+          coordinator.getGroupTypingText(peer.id, lang) ?? lang.tr('typing');
     } else if (peer.lastMessage != null && peer.lastMessage!.isNotEmpty) {
       lastMessageSnippet = peer.lastMessage!;
     } else if (peer.isAllUsers) {

@@ -2,6 +2,26 @@
 
 All notable changes to the **JA LAN Messenger** project will be documented in this file.
 
+## [1.3.0] - 2026-09-22
+
+### 🚀 Nâng cấp & Tính năng mới
+- **Đồng bộ Avatar cá nhân qua mạng LAN (Personal Avatar LAN Sync)**: Tự động nén ảnh đại diện thành thumbnail kích thước 96x96 px Base64 (~2-4 KB), đính kèm vào handshake `BEE-CIAO` và truyền thời gian thực qua gói tin `BEE-USER` tới các kết nối TCP hiện hữu. Hiển thị tức thì ảnh đại diện của đồng nghiệp trên danh bạ, thanh tiêu đề hội thoại và bong bóng tin nhắn.
+- **Tùy biến & Đồng bộ Avatar Nhóm (Group Avatar)**: Hỗ trợ chọn avatar nhóm bằng icon preset phong phú hoặc tải ảnh từ máy tính kèm bảng màu nền tùy biến; lưu trữ metadata định dạng `ja-group-v1:avatar:...` và đồng bộ qua LAN với gói `BEE-GROU` khi tạo nhóm hoặc cập nhật. Cho phép thay đổi avatar nhóm trực tiếp trong `CreateGroupDialog`, `ConversationDetailsPanel` và `GroupMembersDialog`.
+- **Chống mở trùng ứng dụng (Single-Instance Mutex & Focus Bring)**: Tích hợp Win32 Mutex (`JA_LAN_MESSENGER_SINGLE_INSTANCE_MUTEX`) trong C++ native runner (`main.cpp` & `flutter_window.cpp`). Khi người dùng mở trùng ứng dụng, tiến trình mới sẽ tự động kích hoạt, khôi phục từ khay hệ thống và đưa cửa sổ đang chạy lên trên cùng màn hình, ngăn ngừa triệt để lỗi xung đột chiếm giữ cổng mạng `36475` / `6475`.
+- **Huy hiệu số tin nhắn chưa đọc trên Khay hệ thống (Tray Icon Badge Counter)**: Tự động vẽ số tin nhắn chưa đọc dạng huy hiệu tròn đỏ nổi bật trực tiếp lên icon khay hệ thống Windows thông qua `TrayBadgeService` (sử dụng Win32 GDI & dynamic canvas icon), cập nhật tức thì khi có tin nhắn mới hoặc khi người dùng xem cuộc trò chuyện.
+- **Nâng cấp toàn diện Nhóm chat (Group Chat Lifecycle & UX)**:
+  - Tự động lọc bỏ chính người tạo khỏi danh sách chọn thành viên khi tạo nhóm trong `CreateGroupDialog`.
+  - Nhấp trực tiếp vào dòng số lượng thành viên trên tiêu đề nhóm để mở ngay danh sách thành viên chi tiết (`GroupMembersDialog`).
+  - Hỗ trợ cơ chế giải tán nhóm triệt để (đồng bộ thông báo giải tán tới tất cả thành viên trên LAN qua gói `BEE-GROU`), rời nhóm an toàn và quản trị viên đuổi thành viên.
+  - Tích hợp chỉ báo đang soạn thảo (Typing Indicator) và thông báo tin nhắn mới có âm thanh/toast nổi trong nhóm tương tự tin nhắn cá nhân.
+
+### 🐛 Sửa lỗi & Tối ưu hóa
+- **Tối ưu hóa băng thông truyền Avatar**: Giới hạn kích thước ảnh đại diện nén Base64 giúp gói tin handshake nhẹ nhàng, kết nối nhanh chóng mà không làm trễ quá trình quét mạng.
+- **Độ ổn định vòng đời nhóm chat**: Tự động chuyển hội thoại an toàn khi nhóm bị giải tán hoặc người dùng bị xóa khỏi nhóm, xóa sạch cache tin nhắn tạm thời mà không gây lỗi giao diện.
+
+### 📦 Phát hành
+- Đồng bộ version `1.3.0+6` trong `pubspec.yaml`, `constants.dart`, `Runner.rc`, `ABOUT.txt`, `install.bat`, `installer.iss`, `README.md`, `USERGUIDE.md`, `RELEASE_NOTES.md`.
+
 ## [1.2.2] - 2026-09-21
 
 ### 🐛 Sửa lỗi & Tối ưu hóa

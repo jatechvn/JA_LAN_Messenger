@@ -43,6 +43,11 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  HWND hwnd = GetHandle();
+  if (hwnd != nullptr) {
+    ::RemovePropW(hwnd, L"JA_LAN_MESSENGER_INSTANCE");
+  }
+
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

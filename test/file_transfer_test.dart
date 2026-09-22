@@ -42,6 +42,34 @@ void main() {
       }
     },
   );
+  test('a group id rides after the BeeBEEP file fields', () async {
+    final temp = await Directory.systemTemp.createTemp('ja-group-file-');
+    final engine = FileTransferEngine();
+    List<int>? captured;
+    try {
+      await engine.startServer(port: 0);
+      engine.sendOffer = (_, packet) {
+        captured = packet;
+        return true;
+      };
+      final file = await File('${temp.path}/note.txt').writeAsString('hi');
+      await engine.sendFile(
+        peerId: '127.0.0.1:6475',
+        peerIp: '127.0.0.1',
+        peerName: 'Alice',
+        file: file,
+        groupId: 'group_abc',
+      );
+      final message = ProtocolBeebeep.parseMessage(utf8.decode(captured!));
+      final offer = FileTransferEngine.parseOffer(message!);
+      expect(offer['groupId'], 'group_abc');
+      expect((offer['fields'] as List).length, 14);
+    } finally {
+      await engine.stop();
+      await temp.delete(recursive: true);
+    }
+  });
+
   test('invalid file metadata is rejected', () {
     for (final data in [
       '0\u20281\u2028123\u2028secret',

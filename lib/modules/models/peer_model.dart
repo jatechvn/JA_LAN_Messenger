@@ -36,6 +36,9 @@ class PeerModel {
   String? accountName;
   String? hostname;
   Set<String> knownIps;
+  String? avatarPreset;
+  String? customAvatarPath;
+  String? customAvatarBase64;
 
   PeerModel({
     required this.id,
@@ -60,11 +63,70 @@ class PeerModel {
     this.accountName,
     this.hostname,
     Set<String>? knownIps,
+    this.avatarPreset,
+    this.customAvatarPath,
+    this.customAvatarBase64,
   }) : avatarColor = avatarColor ?? _generateColor(id),
        lastSeen = lastSeen ?? DateTime.now(),
        knownIps = knownIps ?? {if (ip.isNotEmpty) ip};
 
+  /// Cập nhật thông tin avatar từ chuỗi color nhận qua giao thức (#RRGGBB|preset:id|b64:data)
+  void updateAvatarFromRaw(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return;
+
+    final parts = trimmed.split('|');
+    final colorStr = parts[0].trim();
+    var parsedColor = false;
+    if (colorStr.startsWith('#') &&
+        (colorStr.length == 7 || colorStr.length == 9)) {
+      try {
+        final hex = colorStr.replaceFirst('#', '');
+        final val = int.parse(hex.length == 6 ? 'FF$hex' : hex, radix: 16);
+        avatarColor = Color(val);
+        parsedColor = true;
+      } catch (_) {}
+    }
+
+    // A plain color is the legacy/initials representation. Clear metadata
+    // from a previous preset or custom avatar instead of leaving stale UI.
+    if (parts.length == 1) {
+      if (!parsedColor) return;
+      avatarPreset = null;
+      customAvatarBase64 = null;
+      customAvatarPath = null;
+      return;
+    }
+
+    var hasPreset = false;
+    var hasBase64 = false;
+    var hasPath = false;
+    if (parts.length > 1) {
+      for (int i = 1; i < parts.length; i++) {
+        final p = parts[i].trim();
+        if (p.startsWith('preset:')) {
+          avatarPreset = p.substring(7).trim();
+          hasPreset = true;
+        } else if (p.startsWith('b64:')) {
+          customAvatarBase64 = p.substring(4).trim();
+          hasBase64 = true;
+        } else if (p.startsWith('path:')) {
+          customAvatarPath = p.substring(5).trim();
+          hasPath = true;
+        }
+      }
+    }
+
+    if (hasPreset) {
+      customAvatarBase64 = null;
+      customAvatarPath = null;
+    } else if (hasBase64 || hasPath) {
+      avatarPreset = null;
+    }
+  }
+
   bool get isAiAssistant => id == '__AI_ASSISTANT__';
+  bool get isAi => isAiAssistant;
 
   /// A session may have multiple NICs, but a nickname alone is not identity.
   String get networkSessionIdentity {
@@ -227,21 +289,28 @@ class PeerModel {
   }
 
   static PeerModel fromGroup(GroupModel group) {
-    return PeerModel(
+    final peer = PeerModel(
       id: group.id,
       name: group.name,
       ip: '',
       port: 0,
       status: PeerStatus.online,
-      statusDescription: '${group.memberIds.length} thành viên',
+      statusDescription: '${group.memberCount} thành viên',
       isGroup: true,
       isAllUsers: false,
       memberIds: group.memberIds,
       avatarColor: group.color,
     );
+    peer.unreadCount = group.unreadCount;
+    peer.lastMessage = group.lastMessage;
+    peer.lastMessageTime = group.lastMessageTime;
+    peer.avatarPreset = group.avatarPreset;
+    peer.customAvatarPath = group.customAvatarPath;
+    peer.customAvatarBase64 = group.customAvatarBase64;
+    return peer;
   }
 
-  static Color _generateColor(String key) {
+  static Color generateColor(String key) {
     final colors = [
       const Color(0xFF3B82F6), // Blue
       const Color(0xFF8B5CF6), // Purple
@@ -254,6 +323,8 @@ class PeerModel {
     final hash = key.hashCode.abs();
     return colors[hash % colors.length];
   }
+
+  static Color _generateColor(String key) => generateColor(key);
 
   String get initials {
     if (isAiAssistant) return '🤖';
@@ -293,6 +364,9 @@ class PeerModel {
     String? accountName,
     String? hostname,
     Set<String>? knownIps,
+    String? avatarPreset,
+    String? customAvatarPath,
+    String? customAvatarBase64,
   }) {
     return PeerModel(
       id: id,
@@ -317,6 +391,9 @@ class PeerModel {
       accountName: accountName ?? this.accountName,
       hostname: hostname ?? this.hostname,
       knownIps: knownIps ?? this.knownIps,
+      avatarPreset: avatarPreset ?? this.avatarPreset,
+      customAvatarPath: customAvatarPath ?? this.customAvatarPath,
+      customAvatarBase64: customAvatarBase64 ?? this.customAvatarBase64,
     );
   }
 }

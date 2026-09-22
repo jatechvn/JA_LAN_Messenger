@@ -1,6 +1,6 @@
 # JA LAN Messenger
 
-[![Version](https://img.shields.io/badge/version-1.2.2-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](CHANGELOG.md)
 [![Flutter Version](https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter)](https://flutter.dev)
 [![Dart Version](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com/windows)
@@ -14,6 +14,10 @@ A modern, ultra-lightweight, high-performance **Peer-to-Peer (P2P) Office LAN Me
 ## ⚡ Key Highlights
 
 - **Serverless Decentralized P2P**: Zero central server setup required. Instant plug-and-play communication in local networks.
+- **Personal & Group Avatar Synchronization**: Custom image upload, rich preset icons, and color paletting with automatic ultra-lightweight Base64 LAN thumbnail synchronization across peers.
+- **System Tray Icon Badge Counter**: Real-time unread message counter badge painted directly onto the Windows system tray icon via native Win32 GDI rendering.
+- **Single-Instance Mutex & Window Focus**: Enforces single-instance execution via Windows Mutex (`main.cpp`), automatically waking and bringing the existing instance to the foreground when re-opened.
+- **Comprehensive Group Chat Management**: Network-wide group dissolution synchronization, leave group, kick members, live typing indicators, and sound notifications for group conversations.
 - **Hardware Tiering & Mini PC Optimization**: Auto-detects system CPU/GPU via Windows Registry and categorizes performance into Ultra, Medium, or Lite. Lite mode eliminates heavy backdrop blur for ultra-smooth operation on budget Mini PCs (e.g. Intel N100).
 - **Showcase GlassDropdown**: Solid frosted glass popup menu for user status with zero background bleeding.
 - **Auto-Scrolling Typing Indicator**: Chat automatically scrolls into view when a peer is typing.

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:crypto/crypto.dart';
 import '../constants.dart';
 import 'app_preferences.dart';
 import 'chat_history_service.dart';
@@ -122,7 +123,7 @@ class SemanticVersion implements Comparable<SemanticVersion> {
   String get displayVersion => 'v$this';
 }
 
-/// Thông tin gói cập nhật phát hiện trên máy chủ
+/// Thông tin gói cập nhật phát hiện trên máy chủ hoặc GitHub
 class UpdatePackageInfo {
   final SemanticVersion version;
   final String fileName;
@@ -130,6 +131,9 @@ class UpdatePackageInfo {
   final int fileSize;
   final String? releaseNotes;
   final DateTime? releaseDate;
+  final String? releaseTitle;
+  final String? sha256;
+  final String? htmlUrl;
 
   const UpdatePackageInfo({
     required this.version,
@@ -138,7 +142,13 @@ class UpdatePackageInfo {
     required this.fileSize,
     this.releaseNotes,
     this.releaseDate,
+    this.releaseTitle,
+    this.sha256,
+    this.htmlUrl,
   });
+
+  bool get isRemoteUrl =>
+      fullPath.startsWith('http://') || fullPath.startsWith('https://');
 
   String get formattedSize {
     if (fileSize <= 0) return '0 B';
@@ -172,6 +182,9 @@ class UpdateCheckResult {
 
 /// Cấu hình cập nhật OTA lưu trong file JSON độc lập
 class OtaUpdateConfig {
+  final String source; // 'auto', 'github', 'lan'
+  final String githubRepo;
+  final String githubToken;
   final String serverPath;
   final String username;
   final String password;
@@ -179,6 +192,9 @@ class OtaUpdateConfig {
   final bool autoDownload;
 
   const OtaUpdateConfig({
+    this.source = 'auto',
+    this.githubRepo = 'jatechvn/JA_LAN_Messenger',
+    this.githubToken = '',
     required this.serverPath,
     required this.username,
     required this.password,
@@ -187,6 +203,9 @@ class OtaUpdateConfig {
   });
 
   factory OtaUpdateConfig.defaults() => const OtaUpdateConfig(
+    source: 'auto',
+    githubRepo: 'jatechvn/JA_LAN_Messenger',
+    githubToken: '',
     serverPath:
         r'\\10.81.141.226\temp\FBT\JA_PROJECT\JA_Update\JA_LAN_Messenger',
     username: 'user',
@@ -197,6 +216,9 @@ class OtaUpdateConfig {
 
   factory OtaUpdateConfig.fromJson(Map<String, dynamic> json) {
     return OtaUpdateConfig(
+      source: json['source'] as String? ?? 'auto',
+      githubRepo: json['githubRepo'] as String? ?? 'jatechvn/JA_LAN_Messenger',
+      githubToken: json['githubToken'] as String? ?? '',
       serverPath:
           json['serverPath'] as String? ??
           r'\\10.81.141.226\temp\FBT\JA_PROJECT\JA_Update\JA_LAN_Messenger',
@@ -208,6 +230,9 @@ class OtaUpdateConfig {
   }
 
   Map<String, dynamic> toJson() => {
+    'source': source,
+    'githubRepo': githubRepo,
+    'githubToken': githubToken,
     'serverPath': serverPath,
     'username': username,
     'password': password,
@@ -246,6 +271,7 @@ class OtaUpdateService {
 
   File? _customConfigFileForTesting;
   Directory? _customServerDirForTesting;
+  Map<String, dynamic>? _mockGitHubReleaseJsonForTesting;
 
   @visibleForTesting
   void setCustomConfigFileForTesting(File? file) {
@@ -255,6 +281,11 @@ class OtaUpdateService {
   @visibleForTesting
   void setCustomServerDirForTesting(Directory? dir) {
     _customServerDirForTesting = dir;
+  }
+
+  @visibleForTesting
+  void setMockGitHubReleaseJsonForTesting(Map<String, dynamic>? json) {
+    _mockGitHubReleaseJsonForTesting = json;
   }
 
   /// Lấy vị trí file update_config.json:
@@ -322,6 +353,9 @@ class OtaUpdateService {
     if (externalConfig != null) {
       final prefs = AppPreferences();
       await prefs.setOtaSettings(
+        source: externalConfig.source,
+        githubRepo: externalConfig.githubRepo,
+        githubToken: externalConfig.githubToken,
         checkInterval: externalConfig.checkInterval,
         serverPath: externalConfig.serverPath,
         username: externalConfig.username,
@@ -380,46 +414,402 @@ class OtaUpdateService {
     final pass = password ?? prefs.otaPassword;
 
     // Nếu là thư mục thông thường (local hoặc mapped drive), kiểm tra trực tiếp
-    final normalized = targetPath.replaceAll('/', '\\');
-    if (!normalized.startsWith(r'\\')) {
-      return await Directory(targetPath).exists();
-    }
-
-    // 1. Thử truy cập trực tiếp (nếu đã kết nối hoặc không yêu cầu mật khẩu)
     try {
-      if (await Directory(targetPath).exists()) {
-        return true;
+      final normalized = targetPath.replaceAll('/', '\\');
+      if (!normalized.startsWith(r'\\')) {
+        return await Directory(targetPath).exists();
       }
-    } catch (_) {}
 
-    // 2. Chạy 'net use' cho thư mục gốc của share
-    final shareRoot = extractSmbShareRoot(targetPath);
-    if (shareRoot != null && Platform.isWindows) {
+      // 1. Thử truy cập trực tiếp (nếu đã kết nối hoặc không yêu cầu mật khẩu)
       try {
-        final result = await Process.run('net', [
-          'use',
-          shareRoot,
-          pass,
-          '/user:$user',
-        ]);
-        if (result.exitCode == 0) {
-          return await Directory(targetPath).exists();
+        if (await Directory(targetPath).exists()) {
+          return true;
         }
-        // Mã 1219 nghĩa là đã có kết nối trước đó với cùng server
-        final out = '${result.stdout} ${result.stderr}';
-        if (out.contains('1219')) {
-          return await Directory(targetPath).exists();
-        }
-      } catch (e) {
-        debugPrint('[OtaUpdateService] net use error: $e');
-      }
-    }
+      } catch (_) {}
 
-    return await Directory(targetPath).exists();
+      // 2. Chạy 'net use' cho thư mục gốc của share
+      final shareRoot = extractSmbShareRoot(targetPath);
+      if (shareRoot != null && Platform.isWindows) {
+        try {
+          final result = await Process.run('net', [
+            'use',
+            shareRoot,
+            pass,
+            '/user:$user',
+          ]);
+          if (result.exitCode == 0) {
+            return await Directory(targetPath).exists();
+          }
+          // Mã 1219 nghĩa là đã có kết nối trước đó với cùng server
+          final out = '${result.stdout} ${result.stderr}';
+          if (out.contains('1219')) {
+            return await Directory(targetPath).exists();
+          }
+        } catch (e) {
+          debugPrint('[OtaUpdateService] net use error: $e');
+        }
+      }
+
+      return await Directory(targetPath).exists();
+    } catch (_) {
+      return false;
+    }
   }
 
-  /// Kiểm tra cập nhật trên máy chủ
-  Future<UpdateCheckResult> checkForUpdates({
+  /// Kiểm tra cập nhật qua GitHub Releases (Internet)
+  Future<UpdateCheckResult> checkGitHubUpdates({
+    String? repo,
+    String? token,
+    String? overrideCurrentVersion,
+  }) async {
+    final prefs = AppPreferences();
+    final targetRepo = (repo ?? prefs.otaGithubRepo)
+        .trim()
+        .replaceAll(RegExp(r'^https?://github\.com/'), '')
+        .replaceAll(RegExp(r'/$'), '');
+    final targetToken = (token ?? prefs.otaGithubToken).trim();
+    final currentVerStr = overrideCurrentVersion ?? appVersion;
+    final currentSemVer =
+        SemanticVersion.tryParse(currentVerStr) ??
+        const SemanticVersion(major: 1, minor: 0, patch: 0, raw: '1.0.0');
+
+    if (targetRepo.isEmpty || !targetRepo.contains('/')) {
+      return UpdateCheckResult(
+        hasUpdate: false,
+        currentVersion: currentVerStr,
+        isConnectionSuccess: false,
+        errorMessage: 'Repository GitHub không hợp lệ (định dạng: owner/repo)',
+      );
+    }
+
+    Map<String, dynamic>? releaseJson;
+
+    if (_mockGitHubReleaseJsonForTesting != null) {
+      releaseJson = _mockGitHubReleaseJsonForTesting;
+    } else {
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 15);
+      try {
+        final uri = Uri.parse(
+          'https://api.github.com/repos/$targetRepo/releases/latest',
+        );
+        final request = await client.getUrl(uri);
+        request.headers.set(
+          HttpHeaders.acceptHeader,
+          'application/vnd.github.v3+json',
+        );
+        request.headers.set(
+          HttpHeaders.userAgentHeader,
+          'JA-LAN-Messenger-OTA',
+        );
+        if (targetToken.isNotEmpty) {
+          request.headers.set(
+            HttpHeaders.authorizationHeader,
+            'Bearer $targetToken',
+          );
+        }
+
+        final response = await request.close();
+        if (response.statusCode == 404) {
+          return UpdateCheckResult(
+            hasUpdate: false,
+            currentVersion: currentVerStr,
+            isConnectionSuccess: false,
+            errorMessage:
+                'Không tìm thấy bản phát hành nào trên repository $targetRepo (hoặc repo Private cần điền GitHub Token)',
+          );
+        } else if (response.statusCode == 401 || response.statusCode == 403) {
+          return UpdateCheckResult(
+            hasUpdate: false,
+            currentVersion: currentVerStr,
+            isConnectionSuccess: false,
+            errorMessage:
+                'Lỗi xác thực GitHub API (${response.statusCode}): Vui lòng kiểm tra lại GitHub Token hoặc hạn ngạch truy cập.',
+          );
+        } else if (response.statusCode != 200) {
+          return UpdateCheckResult(
+            hasUpdate: false,
+            currentVersion: currentVerStr,
+            isConnectionSuccess: false,
+            errorMessage:
+                'Lỗi kết nối GitHub (${response.statusCode}): ${response.reasonPhrase}',
+          );
+        }
+
+        final bodyStr = await response.transform(utf8.decoder).join();
+        releaseJson = jsonDecode(bodyStr) as Map<String, dynamic>;
+      } catch (e) {
+        return UpdateCheckResult(
+          hasUpdate: false,
+          currentVersion: currentVerStr,
+          isConnectionSuccess: false,
+          errorMessage: 'Lỗi khi kết nối GitHub Releases: $e',
+        );
+      } finally {
+        client.close();
+      }
+    }
+
+    if (releaseJson == null) {
+      return UpdateCheckResult(
+        hasUpdate: false,
+        currentVersion: currentVerStr,
+        isConnectionSuccess: false,
+        errorMessage: 'Dữ liệu bản phát hành GitHub trống hoặc không hợp lệ',
+      );
+    }
+
+    final targetJson = releaseJson;
+
+    try {
+      final tagName = targetJson['tag_name'] as String? ?? '';
+      final releaseName = targetJson['name'] as String? ?? tagName;
+      final releaseBody = targetJson['body'] as String? ?? '';
+      final publishedAt = targetJson['published_at'] as String?;
+      final htmlUrl = targetJson['html_url'] as String?;
+      final releaseSemVer = SemanticVersion.tryParse(tagName);
+
+      if (releaseSemVer == null) {
+        return UpdateCheckResult(
+          hasUpdate: false,
+          currentVersion: currentVerStr,
+          errorMessage:
+              'Không thể phân tích phiên bản từ tag phát hành: $tagName',
+        );
+      }
+
+      final assets = (targetJson['assets'] as List<dynamic>? ?? []);
+      Map<String, dynamic>? zipAsset;
+      Map<String, dynamic>? shaAsset;
+
+      for (final a in assets) {
+        if (a is Map<String, dynamic>) {
+          final name = (a['name'] as String? ?? '').toLowerCase();
+          if (name.endsWith('.zip') &&
+              (name.contains('lan_messenger') || name.contains('windows'))) {
+            zipAsset = a;
+          } else if (zipAsset == null && name.endsWith('.zip')) {
+            zipAsset = a;
+          }
+          if (name.contains('sha256') || name.endsWith('.txt')) {
+            shaAsset = a;
+          }
+        }
+      }
+
+      if (zipAsset == null) {
+        return UpdateCheckResult(
+          hasUpdate: false,
+          currentVersion: currentVerStr,
+          errorMessage: 'Bản phát hành $tagName không có file .zip cho Windows',
+        );
+      }
+
+      final zipFileName = zipAsset['name'] as String;
+      final zipFileSize = zipAsset['size'] as int? ?? 0;
+      final browserDownloadUrl =
+          zipAsset['browser_download_url'] as String? ?? '';
+      final apiUrl = zipAsset['url'] as String?;
+      final downloadUrl = (targetToken.isNotEmpty && apiUrl != null)
+          ? apiUrl
+          : browserDownloadUrl;
+
+      String? foundSha256;
+      if (shaAsset != null && _mockGitHubReleaseJsonForTesting == null) {
+        try {
+          final shaUrl = (targetToken.isNotEmpty && shaAsset['url'] != null)
+              ? shaAsset['url'] as String
+              : shaAsset['browser_download_url'] as String? ?? '';
+          if (shaUrl.isNotEmpty) {
+            foundSha256 = await _fetchSha256FromUrl(
+              url: shaUrl,
+              targetZipName: zipFileName,
+              token: targetToken,
+            );
+          }
+        } catch (e) {
+          debugPrint('[OtaUpdateService] Fetch SHA256 error: $e');
+        }
+      }
+
+      final hasUpdate = releaseSemVer > currentSemVer;
+      final pkg = UpdatePackageInfo(
+        version: releaseSemVer,
+        fileName: zipFileName,
+        fullPath: downloadUrl,
+        fileSize: zipFileSize,
+        releaseNotes: releaseBody.trim().isNotEmpty ? releaseBody : null,
+        releaseDate: publishedAt != null
+            ? DateTime.tryParse(publishedAt)
+            : null,
+        releaseTitle: releaseName,
+        sha256: foundSha256,
+        htmlUrl: htmlUrl,
+      );
+
+      if (hasUpdate) {
+        await prefs.setOtaSettings(
+          cachedUpdateVersion: releaseSemVer.toString(),
+          lastCheckTime: DateTime.now(),
+        );
+      }
+
+      return UpdateCheckResult(
+        hasUpdate: hasUpdate,
+        packageInfo: pkg,
+        currentVersion: currentVerStr,
+        isConnectionSuccess: true,
+      );
+    } catch (e) {
+      return UpdateCheckResult(
+        hasUpdate: false,
+        currentVersion: currentVerStr,
+        isConnectionSuccess: false,
+        errorMessage: 'Lỗi khi phân tích bản phát hành GitHub: $e',
+      );
+    }
+  }
+
+  /// Tải nội dung file SHA256SUMS.txt từ URL và trích xuất hash tương ứng với tệp zip
+  Future<String?> _fetchSha256FromUrl({
+    required String url,
+    required String targetZipName,
+    String? token,
+  }) async {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 15);
+    try {
+      var currentUri = Uri.parse(url);
+      var req = await client.getUrl(currentUri);
+      req.headers.set(HttpHeaders.userAgentHeader, 'JA-LAN-Messenger-OTA');
+      if (token != null &&
+          token.isNotEmpty &&
+          !url.contains('objects.githubusercontent.com') &&
+          !url.contains('s3.amazonaws.com')) {
+        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+        req.headers.set(HttpHeaders.acceptHeader, 'application/octet-stream');
+      }
+
+      var resp = await req.close();
+      var redirects = 0;
+      while (resp.isRedirect && redirects < 5) {
+        redirects++;
+        final loc = resp.headers.value(HttpHeaders.locationHeader);
+        if (loc == null) break;
+        currentUri = currentUri.resolve(loc);
+        req = await client.getUrl(currentUri);
+        req.headers.set(HttpHeaders.userAgentHeader, 'JA-LAN-Messenger-OTA');
+        if (token != null &&
+            token.isNotEmpty &&
+            !currentUri.host.contains('objects.githubusercontent.com') &&
+            !currentUri.host.contains('s3.amazonaws.com')) {
+          req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+          req.headers.set(HttpHeaders.acceptHeader, 'application/octet-stream');
+        }
+        resp = await req.close();
+      }
+
+      if (resp.statusCode == 200) {
+        final text = await resp.transform(utf8.decoder).join();
+        for (final line in text.split('\n')) {
+          final trimmed = line.trim();
+          if (trimmed.isEmpty) continue;
+          final parts = trimmed.split(RegExp(r'\s+'));
+          if (parts.length >= 2) {
+            final hash = parts[0].trim();
+            final file = parts[1].replaceAll('*', '').trim();
+            if (file.toLowerCase() == targetZipName.toLowerCase() ||
+                parts.any(
+                  (p) => p.toLowerCase().contains(targetZipName.toLowerCase()),
+                )) {
+              return hash.toLowerCase();
+            }
+          }
+        }
+      }
+    } catch (_) {
+    } finally {
+      client.close();
+    }
+    return null;
+  }
+
+  /// Kiểm tra kết nối nhanh tới GitHub Releases
+  Future<Map<String, dynamic>> testGitHubConnection({
+    String? repo,
+    String? token,
+  }) async {
+    final prefs = AppPreferences();
+    final targetRepo = (repo ?? prefs.otaGithubRepo)
+        .trim()
+        .replaceAll(RegExp(r'^https?://github\.com/'), '')
+        .replaceAll(RegExp(r'/$'), '');
+    final targetToken = (token ?? prefs.otaGithubToken).trim();
+
+    if (targetRepo.isEmpty || !targetRepo.contains('/')) {
+      return {
+        'success': false,
+        'message': 'Repository GitHub không hợp lệ (định dạng: owner/repo)',
+      };
+    }
+
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 12);
+    try {
+      final uri = Uri.parse(
+        'https://api.github.com/repos/$targetRepo/releases/latest',
+      );
+      final request = await client.getUrl(uri);
+      request.headers.set(
+        HttpHeaders.acceptHeader,
+        'application/vnd.github.v3+json',
+      );
+      request.headers.set(HttpHeaders.userAgentHeader, 'JA-LAN-Messenger-OTA');
+      if (targetToken.isNotEmpty) {
+        request.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer $targetToken',
+        );
+      }
+      final response = await request.close();
+      if (response.statusCode == 200) {
+        final body = await response.transform(utf8.decoder).join();
+        final json = jsonDecode(body) as Map<String, dynamic>;
+        final tag = json['tag_name'] as String? ?? 'N/A';
+        return {
+          'success': true,
+          'message': 'Kết nối GitHub thành công! Tag mới nhất: $tag',
+          'latestTag': tag,
+          'json': json,
+        };
+      } else if (response.statusCode == 404) {
+        return {
+          'success': false,
+          'message':
+              'Không tìm thấy repository hoặc release ($targetRepo). Nếu là repo Private, vui lòng điền GitHub Token.',
+        };
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        return {
+          'success': false,
+          'message':
+              'Lỗi quyền truy cập GitHub (${response.statusCode}): Vui lòng kiểm tra lại GitHub Token.',
+        };
+      } else {
+        return {
+          'success': false,
+          'message':
+              'Lỗi GitHub HTTP ${response.statusCode}: ${response.reasonPhrase}',
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Lỗi kết nối tới GitHub: $e'};
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Kiểm tra cập nhật qua thư mục mạng nội bộ (SMB/UNC)
+  Future<UpdateCheckResult> _checkLanUpdates({
     String? overrideServerPath,
     String? overrideCurrentVersion,
     bool isManual = false,
@@ -469,6 +859,7 @@ class OtaUpdateService {
         final notes =
             json['releaseNotes'] as String? ?? json['changelog'] as String?;
         final dateStr = json['releaseDate'] as String?;
+        final expectedSha = json['sha256'] as String?;
 
         final serverSemVer = SemanticVersion.tryParse(verStr);
         if (serverSemVer != null &&
@@ -484,6 +875,7 @@ class OtaUpdateService {
               fileSize: await zipFile.length(),
               releaseNotes: notes,
               releaseDate: dateStr != null ? DateTime.tryParse(dateStr) : null,
+              sha256: expectedSha,
             );
             if (hasUpdate) {
               await prefs.setOtaSettings(
@@ -509,8 +901,6 @@ class OtaUpdateService {
           .toList();
       final List<UpdatePackageInfo> candidates = [];
 
-      // Regex tìm phiên bản trong tên file:
-      // vd: JA_LAN_Messenger_v1.1.0_Windows_x64.zip -> 1.1.0
       final verRegex = RegExp(
         r'^JA_LAN_Messenger_[vV](\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9.-]+)?(?:\+\d+)?)(?:_[a-zA-Z0-9_]+)?\.zip$',
         caseSensitive: false,
@@ -577,6 +967,144 @@ class OtaUpdateService {
     }
   }
 
+  /// Kiểm tra cập nhật (Hỗ trợ Kênh: 'auto', 'github', 'lan')
+  Future<UpdateCheckResult> checkForUpdates({
+    String? overrideServerPath,
+    String? overrideCurrentVersion,
+    String? overrideSource,
+    String? overrideRepo,
+    String? overrideToken,
+    bool isManual = false,
+  }) async {
+    final prefs = AppPreferences();
+    final source = overrideSource ?? prefs.otaSource;
+    final currentVerStr = overrideCurrentVersion ?? appVersion;
+
+    if (source == 'github') {
+      return await checkGitHubUpdates(
+        repo: overrideRepo,
+        token: overrideToken,
+        overrideCurrentVersion: currentVerStr,
+      );
+    } else if (source == 'lan') {
+      return await _checkLanUpdates(
+        overrideServerPath: overrideServerPath,
+        overrideCurrentVersion: currentVerStr,
+        isManual: isManual,
+      );
+    } else {
+      // 'auto' mode: Thử LAN trước nếu khả dụng
+      final lanResult = await _checkLanUpdates(
+        overrideServerPath: overrideServerPath,
+        overrideCurrentVersion: currentVerStr,
+        isManual: isManual,
+      );
+      if (lanResult.hasUpdate) {
+        return lanResult;
+      }
+
+      // Nếu LAN không có bản cập nhật mới hoặc không kết nối được -> chuyển sang kiểm tra GitHub Releases
+      try {
+        final ghResult = await checkGitHubUpdates(
+          repo: overrideRepo,
+          token: overrideToken,
+          overrideCurrentVersion: currentVerStr,
+        );
+        if (ghResult.hasUpdate || ghResult.isConnectionSuccess) {
+          return ghResult;
+        }
+      } catch (e) {
+        debugPrint('[OtaUpdateService] Auto fallback to GitHub error: $e');
+      }
+      return lanResult;
+    }
+  }
+
+  /// Tải tệp zip từ Internet với cơ chế stream chunk và theo dõi chuyển hướng (Redirects)
+  Future<void> _downloadRemoteZip({
+    required String url,
+    required File destinationFile,
+    required int expectedSize,
+    String? token,
+    void Function(double progress, String status)? onProgress,
+  }) async {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 30);
+    try {
+      var currentUri = Uri.parse(url);
+      var req = await client.getUrl(currentUri);
+      req.headers.set(HttpHeaders.userAgentHeader, 'JA-LAN-Messenger-OTA');
+      if (token != null &&
+          token.isNotEmpty &&
+          !url.contains('objects.githubusercontent.com') &&
+          !url.contains('s3.amazonaws.com')) {
+        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+        req.headers.set(HttpHeaders.acceptHeader, 'application/octet-stream');
+      }
+
+      var resp = await req.close();
+      var redirects = 0;
+      while (resp.isRedirect && redirects < 5) {
+        redirects++;
+        final location = resp.headers.value(HttpHeaders.locationHeader);
+        if (location == null) break;
+        currentUri = currentUri.resolve(location);
+        req = await client.getUrl(currentUri);
+        req.headers.set(HttpHeaders.userAgentHeader, 'JA-LAN-Messenger-OTA');
+        if (token != null &&
+            token.isNotEmpty &&
+            !currentUri.host.contains('objects.githubusercontent.com') &&
+            !currentUri.host.contains('s3.amazonaws.com')) {
+          req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+          req.headers.set(HttpHeaders.acceptHeader, 'application/octet-stream');
+        }
+        resp = await req.close();
+      }
+
+      if (resp.statusCode != 200) {
+        throw StateError(
+          'Tải tệp thất bại (HTTP ${resp.statusCode}): ${resp.reasonPhrase}',
+        );
+      }
+
+      final contentLength = resp.contentLength > 0
+          ? resp.contentLength
+          : expectedSize;
+      final sink = destinationFile.openWrite();
+      var downloaded = 0;
+
+      await for (final chunk in resp) {
+        sink.add(chunk);
+        downloaded += chunk.length;
+        final ratio = contentLength > 0 ? (downloaded / contentLength) : 0.5;
+        final mbDownloaded = (downloaded / (1024 * 1024)).toStringAsFixed(1);
+        final mbTotal = contentLength > 0
+            ? '${(contentLength / (1024 * 1024)).toStringAsFixed(1)} MB'
+            : '...';
+        onProgress?.call(
+          (0.1 + ratio * 0.5).clamp(0.1, 0.6),
+          'Đang tải gói cập nhật ($mbDownloaded / $mbTotal)...',
+        );
+      }
+      await sink.flush();
+      await sink.close();
+
+      if (contentLength > 0 && downloaded != contentLength) {
+        throw StateError(
+          'Tệp tải về không trọn vẹn ($downloaded / $contentLength bytes)',
+        );
+      }
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Tính mã băm SHA-256 của tệp
+  Future<String> _calculateSha256(File file) async {
+    final digest = await sha256.bind(file.openRead()).first;
+    return digest.toString();
+  }
+
   /// Thực hiện tải gói cập nhật, giải nén và kích hoạt script cập nhật
   Future<void> performUpdate(
     UpdatePackageInfo packageInfo, {
@@ -603,28 +1131,54 @@ class OtaUpdateService {
       'JA_LAN_Messenger_Update_',
     );
     final localZipFile = File('${tempBase.path}/update.zip');
-    final sourceZip = File(packageInfo.fullPath);
-    final totalBytes = await sourceZip.length();
-    if (totalBytes == 0 ||
-        (packageInfo.fileSize > 0 && totalBytes != packageInfo.fileSize)) {
-      throw StateError('Update package size changed; check for updates again');
-    }
-    final writer = localZipFile.openWrite();
-    var copied = 0;
-    try {
-      await for (final chunk in sourceZip.openRead()) {
-        writer.add(chunk);
-        copied += chunk.length;
-        onProgress?.call(
-          (0.1 + copied / totalBytes * 0.5).clamp(0.1, 0.6),
-          'Downloading update...',
+
+    if (packageInfo.isRemoteUrl) {
+      final prefs = AppPreferences();
+      await _downloadRemoteZip(
+        url: packageInfo.fullPath,
+        destinationFile: localZipFile,
+        expectedSize: packageInfo.fileSize,
+        token: prefs.otaGithubToken,
+        onProgress: onProgress,
+      );
+    } else {
+      final sourceZip = File(packageInfo.fullPath);
+      final totalBytes = await sourceZip.length();
+      if (totalBytes == 0 ||
+          (packageInfo.fileSize > 0 && totalBytes != packageInfo.fileSize)) {
+        throw StateError(
+          'Update package size changed; check for updates again',
         );
       }
-      await writer.flush();
-    } finally {
-      await writer.close();
+      final writer = localZipFile.openWrite();
+      var copied = 0;
+      try {
+        await for (final chunk in sourceZip.openRead()) {
+          writer.add(chunk);
+          copied += chunk.length;
+          onProgress?.call(
+            (0.1 + copied / totalBytes * 0.5).clamp(0.1, 0.6),
+            'Downloading update...',
+          );
+        }
+        await writer.flush();
+      } finally {
+        await writer.close();
+      }
+      if (copied != totalBytes) throw StateError('Incomplete update package');
     }
-    if (copied != totalBytes) throw StateError('Incomplete update package');
+
+    // Xác thực mã băm SHA-256 nếu có
+    if (packageInfo.sha256 != null && packageInfo.sha256!.trim().isNotEmpty) {
+      onProgress?.call(0.62, 'Đang xác thực mã băm SHA256...');
+      final actualHash = await _calculateSha256(localZipFile);
+      if (actualHash.toLowerCase() !=
+          packageInfo.sha256!.trim().toLowerCase()) {
+        throw StateError(
+          'Mã băm SHA256 không khớp!\nKỳ vọng: ${packageInfo.sha256}\nThực tế: $actualHash',
+        );
+      }
+    }
 
     // 2. Giải nén gói cập nhật
     onProgress?.call(0.65, 'Đang giải nén gói cập nhật...');

@@ -21,6 +21,9 @@ import 'glass_file_preview_dialog.dart';
 import 'markdown_message_view.dart';
 import 'bounce_marquee_text.dart';
 import 'contact_profile_dialog.dart';
+import 'app_avatar.dart';
+import 'group_members_dialog.dart';
+import 'group_mention_picker.dart';
 import '../../ime/ime_service.dart';
 import 'pinyin_candidate_bar.dart';
 import 'ime_toggle_button.dart';
@@ -357,7 +360,9 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
 
     final messages = coordinator.currentMessages;
     final isPeerTyping =
-        !peer.isAllUsers && !peer.isGroup && coordinator.isPeerTyping(peer.id);
+        (!peer.isAllUsers &&
+        ((!peer.isGroup && coordinator.isPeerTyping(peer.id)) ||
+            (peer.isGroup && coordinator.isGroupTyping(peer.id))));
     final totalItems = messages.length + (isPeerTyping ? 1 : 0);
 
     // Reset replying state & determine scroll target if active peer changed
@@ -668,6 +673,7 @@ class _ChatHeader extends StatelessWidget {
 
     final isTyping =
         !peer.isAllUsers && !peer.isGroup && coordinator.isPeerTyping(peer.id);
+    final isGroupTyping = peer.isGroup && coordinator.isGroupTyping(peer.id);
 
     final isAi = peer.isAiAssistant;
     final selectedAiModel = AppPreferences().aiSelectedModel;
@@ -679,6 +685,9 @@ class _ChatHeader extends StatelessWidget {
     final String effectiveSubtitle;
     if (isTyping) {
       effectiveSubtitle = lang.tr('typing');
+    } else if (isGroupTyping) {
+      effectiveSubtitle =
+          coordinator.getGroupTypingText(peer.id, lang) ?? lang.tr('typing');
     } else if (isAi) {
       effectiveSubtitle = peer.effectiveStatusDescription(
         lang,
@@ -694,7 +703,7 @@ class _ChatHeader extends StatelessWidget {
           '$onlineCount ${lang.tr('devicesOnline')} • ${lang.tr('allUsersDesc')}';
     } else if (peer.isGroup) {
       effectiveSubtitle =
-          '${peer.memberIds.length} ${lang.tr('groupMembersCount')}';
+          '${coordinator.groupMembers(peer.id).length} ${lang.tr('groupMembersCount')}';
     } else {
       effectiveSubtitle =
           'IP: ${peer.ip}:${peer.port} ${peer.workgroup.isNotEmpty ? "• ${peer.workgroup}" : ""}';
@@ -731,9 +740,11 @@ class _ChatHeader extends StatelessWidget {
           Expanded(
             child: Row(
               children: [
-                // Avatar (Click to view ContactProfileDialog)
+                // Avatar (Click to view ContactProfileDialog or GroupMembersDialog)
                 InkWell(
-                  onTap: !isAi
+                  onTap: peer.isGroup && !peer.isAllUsers
+                      ? () => GroupMembersDialog.show(context, peer)
+                      : !isAi
                       ? () => ContactProfileDialog.show(
                           context,
                           peer: peer,
@@ -741,87 +752,21 @@ class _ChatHeader extends StatelessWidget {
                         )
                       : null,
                   borderRadius: BorderRadius.circular(20),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: peer.avatarColor.withValues(alpha: 0.2),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: peer.avatarColor.withValues(alpha: 0.5),
-                            width: 1.2,
-                          ),
-                        ),
-                        alignment: Alignment.center,
-                        child: peer.avatarAsset != null
-                            ? ClipOval(
-                                child: Image.asset(
-                                  peer.avatarAsset!,
-                                  width: 34,
-                                  height: 34,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => Text(
-                                    peer.initials,
-                                    style: TextStyle(
-                                      color: peer.avatarColor,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : Text(
-                                peer.initials,
-                                style: TextStyle(
-                                  color: peer.avatarColor,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                      ),
-                      if (isCompact &&
-                          !peer.isAllUsers &&
-                          !peer.isGroup &&
-                          !isAi)
-                        Positioned(
-                          right: -1,
-                          bottom: -1,
-                          child: Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: peer.status.color,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: theme.isDark
-                                    ? const Color(0xFF0F172A)
-                                    : Colors.white,
-                                width: 2,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: peer.status.color.withValues(
-                                    alpha: 0.5,
-                                  ),
-                                  blurRadius: 3,
-                                  spreadRadius: 0.5,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
+                  child: AppAvatar(
+                    peer: peer,
+                    size: 34,
+                    showStatus:
+                        isCompact && !peer.isAllUsers && !peer.isGroup && !isAi,
                   ),
                 ),
                 const SizedBox(width: 8),
 
-                // Name, IP & Status / AI Controls (Click Name to Quick Rename)
+                // Name, IP & Status / AI Controls (Click Name to Quick Rename or view Group Members)
                 Expanded(
                   child: InkWell(
-                    onTap: (!isAi && !peer.isAllUsers && !peer.isGroup)
+                    onTap: peer.isGroup && !peer.isAllUsers
+                        ? () => GroupMembersDialog.show(context, peer)
+                        : (!isAi && !peer.isAllUsers)
                         ? () => showQuickNicknameDialog(
                             context: context,
                             coordinator: coordinator,
@@ -1627,7 +1572,12 @@ class _TypingIndicatorBubbleState extends State<_TypingIndicatorBubble>
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '${widget.peer.effectiveDisplayName(lang)} ${lang.tr('typing')}',
+                (widget.peer.isGroup
+                        ? context
+                              .watch<MessengerCoordinator>()
+                              .getGroupTypingText(widget.peer.id, lang)
+                        : null) ??
+                    '${widget.peer.effectiveDisplayName(lang)} ${lang.tr('typing')}',
                 style: TextStyle(
                   fontSize: 12,
                   fontStyle: FontStyle.italic,
@@ -2183,6 +2133,27 @@ class _MessageBubbleState extends State<_MessageBubble> {
     final message = widget.message;
     final isMine = message.isMine;
 
+    final isGroupOrBroadcast =
+        !isMine &&
+        (message.recipientId == '__ALL_USERS__' ||
+            coordinator.groupsMap.containsKey(message.recipientId) ||
+            (coordinator.selectedPeer?.isGroup ?? false));
+
+    final senderPeer = isGroupOrBroadcast
+        ? coordinator.peers.cast<PeerModel?>().firstWhere(
+            (p) =>
+                p != null &&
+                (p.id == message.senderId ||
+                    p.ip == message.senderId ||
+                    p.name == message.senderName),
+            orElse: () => PeerModel(
+              id: message.senderId,
+              name: message.senderName,
+              ip: '',
+            ),
+          )
+        : null;
+
     final timeStr =
         '${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}';
 
@@ -2264,225 +2235,246 @@ class _MessageBubbleState extends State<_MessageBubble> {
 
     // 2. Full-bleed Photo Bubble (Telegram/Discord style)
     if (isPureImage) {
+      Widget photoContent = Column(
+        crossAxisAlignment: isMine
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isGroupOrBroadcast) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 2),
+              child: Text(
+                message.senderName,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: PeerModel.generateColor(
+                    message.senderId.isNotEmpty
+                        ? message.senderId
+                        : message.senderName,
+                  ),
+                ),
+              ),
+            ),
+          ],
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              GestureDetector(
+                onSecondaryTapDown: (details) => _showMessageMenu(
+                  context,
+                  details.globalPosition,
+                  coordinator,
+                  lang,
+                ),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  constraints: const BoxConstraints(
+                    maxWidth: 340,
+                    maxHeight: 240,
+                    minWidth: 160,
+                    minHeight: 110,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: (theme.isDark ? Colors.white : Colors.black)
+                          .withValues(alpha: theme.isDark ? 0.12 : 0.08),
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(
+                          alpha: theme.isDark ? 0.35 : 0.08,
+                        ),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Stack(
+                      alignment: Alignment.bottomCenter,
+                      children: [
+                        Positioned.fill(
+                          child: InkWell(
+                            onTap: () => showGlassImageLightbox(
+                              context: context,
+                              filePath: file.path,
+                              fileName: attachment.fileName,
+                            ),
+                            child: Image.file(
+                              file,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Container(
+                                    color: Colors.black12,
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.broken_image_rounded,
+                                        size: 40,
+                                      ),
+                                    ),
+                                  ),
+                            ),
+                          ),
+                        ),
+                        IgnorePointer(
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.fromLTRB(10, 18, 10, 6),
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Colors.transparent, Colors.black87],
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        attachment.fileName,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      Text(
+                                        attachment.formattedSize,
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 9.5,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      timeStr,
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.white70,
+                                      ),
+                                    ),
+                                    if (isMine) ...[
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        message.status == MessageStatus.read
+                                            ? Icons.done_all_rounded
+                                            : (message.status ==
+                                                      MessageStatus.delivered
+                                                  ? Icons.done_all_rounded
+                                                  : (message.status ==
+                                                            MessageStatus.sent
+                                                        ? Icons.done_rounded
+                                                        : Icons
+                                                              .schedule_rounded)),
+                                        size: 13,
+                                        color:
+                                            message.status == MessageStatus.read
+                                            ? const Color(0xFF67E8F9)
+                                            : Colors.white70,
+                                      ),
+                                      if (message.status ==
+                                          MessageStatus.read) ...[
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          lang.tr('seen'),
+                                          style: const TextStyle(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF67E8F9),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              if (showHoverBar)
+                Positioned(
+                  top: -6,
+                  right: isMine ? null : 6,
+                  left: isMine ? 6 : null,
+                  child: AnimatedOpacity(
+                    opacity: _isHovered ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 150),
+                    child: IgnorePointer(
+                      ignoring: !_isHovered,
+                      child: _buildHoverActions(
+                        context,
+                        theme,
+                        lang,
+                        coordinator,
+                        canCopy: false,
+                        canRegenerate: false,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (message.reactions.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            _MessageReactionsBar(
+              reactions: message.reactions,
+              localUsername: coordinator.localUsername,
+              isMine: isMine,
+              onToggleReaction: (emoji) => coordinator.toggleMessageReaction(
+                message.conversationId,
+                message.id,
+                emoji,
+              ),
+              onAddReaction: () =>
+                  _showQuickReactionPicker(context, coordinator),
+            ),
+          ],
+        ],
+      );
+
+      if (isGroupOrBroadcast && senderPeer != null) {
+        photoContent = Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 6, right: 8),
+              child: AppAvatar(peer: senderPeer, size: 28, showStatus: false),
+            ),
+            Flexible(child: photoContent),
+          ],
+        );
+      }
+
       return Align(
         alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
         child: MouseRegion(
           onEnter: (_) => setState(() => _isHovered = true),
           onExit: (_) => setState(() => _isHovered = false),
-          child: Column(
-            crossAxisAlignment: isMine
-                ? CrossAxisAlignment.end
-                : CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  GestureDetector(
-                    onSecondaryTapDown: (details) => _showMessageMenu(
-                      context,
-                      details.globalPosition,
-                      coordinator,
-                      lang,
-                    ),
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      constraints: const BoxConstraints(
-                        maxWidth: 340,
-                        maxHeight: 240,
-                        minWidth: 160,
-                        minHeight: 110,
-                      ),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: (theme.isDark ? Colors.white : Colors.black)
-                              .withValues(alpha: theme.isDark ? 0.12 : 0.08),
-                          width: 1,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(
-                              alpha: theme.isDark ? 0.35 : 0.08,
-                            ),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Stack(
-                          alignment: Alignment.bottomCenter,
-                          children: [
-                            Positioned.fill(
-                              child: InkWell(
-                                onTap: () => showGlassImageLightbox(
-                                  context: context,
-                                  filePath: file.path,
-                                  fileName: attachment.fileName,
-                                ),
-                                child: Image.file(
-                                  file,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      Container(
-                                        color: Colors.black12,
-                                        child: const Center(
-                                          child: Icon(
-                                            Icons.broken_image_rounded,
-                                            size: 40,
-                                          ),
-                                        ),
-                                      ),
-                                ),
-                              ),
-                            ),
-                            IgnorePointer(
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.fromLTRB(
-                                  10,
-                                  18,
-                                  10,
-                                  6,
-                                ),
-                                decoration: const BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Colors.transparent,
-                                      Colors.black87,
-                                    ],
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            attachment.fileName,
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          Text(
-                                            attachment.formattedSize,
-                                            style: const TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 9.5,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          timeStr,
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.white70,
-                                          ),
-                                        ),
-                                        if (isMine) ...[
-                                          const SizedBox(width: 4),
-                                          Icon(
-                                            message.status == MessageStatus.read
-                                                ? Icons.done_all_rounded
-                                                : (message.status ==
-                                                          MessageStatus
-                                                              .delivered
-                                                      ? Icons.done_all_rounded
-                                                      : (message.status ==
-                                                                MessageStatus
-                                                                    .sent
-                                                            ? Icons.done_rounded
-                                                            : Icons
-                                                                  .schedule_rounded)),
-                                            size: 13,
-                                            color:
-                                                message.status ==
-                                                    MessageStatus.read
-                                                ? const Color(0xFF67E8F9)
-                                                : Colors.white70,
-                                          ),
-                                          if (message.status ==
-                                              MessageStatus.read) ...[
-                                            const SizedBox(width: 3),
-                                            Text(
-                                              lang.tr('seen'),
-                                              style: const TextStyle(
-                                                fontSize: 9.5,
-                                                fontWeight: FontWeight.w600,
-                                                color: Color(0xFF67E8F9),
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (showHoverBar)
-                    Positioned(
-                      top: -6,
-                      right: isMine ? null : 6,
-                      left: isMine ? 6 : null,
-                      child: AnimatedOpacity(
-                        opacity: _isHovered ? 1.0 : 0.0,
-                        duration: const Duration(milliseconds: 150),
-                        child: IgnorePointer(
-                          ignoring: !_isHovered,
-                          child: _buildHoverActions(
-                            context,
-                            theme,
-                            lang,
-                            coordinator,
-                            canCopy: false,
-                            canRegenerate: false,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              if (message.reactions.isNotEmpty) ...[
-                const SizedBox(height: 3),
-                _MessageReactionsBar(
-                  reactions: message.reactions,
-                  localUsername: coordinator.localUsername,
-                  isMine: isMine,
-                  onToggleReaction: (emoji) =>
-                      coordinator.toggleMessageReaction(
-                        message.conversationId,
-                        message.id,
-                        emoji,
-                      ),
-                  onAddReaction: () =>
-                      _showQuickReactionPicker(context, coordinator),
-                ),
-              ],
-            ],
-          ),
+          child: photoContent,
         ),
       );
     }
@@ -2523,347 +2515,365 @@ class _MessageBubbleState extends State<_MessageBubble> {
           math.max(260.0, availableWidth - 32.0),
         );
 
+        Widget bubbleColumn = Column(
+          crossAxisAlignment: isMine
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                GestureDetector(
+                  onSecondaryTapDown: (details) => _showMessageMenu(
+                    context,
+                    details.globalPosition,
+                    coordinator,
+                    lang,
+                  ),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOut,
+                    margin: const EdgeInsets.only(top: 8, bottom: 4),
+                    constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: bubbleBg,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(14),
+                        topRight: const Radius.circular(14),
+                        bottomLeft: Radius.circular(isMine ? 14 : 2),
+                        bottomRight: Radius.circular(isMine ? 2 : 14),
+                      ),
+                      border: widget.isHighlighted
+                          ? Border.all(color: Colors.amberAccent, width: 2.0)
+                          : (isMine
+                                ? null
+                                : (isAi
+                                      ? Border.all(
+                                          color:
+                                              (theme.isDark
+                                                      ? const Color(0xFF38BDF8)
+                                                      : const Color(0xFF0066FF))
+                                                  .withValues(
+                                                    alpha: theme.isDark
+                                                        ? 0.35
+                                                        : 0.20,
+                                                  ),
+                                          width: 1.2,
+                                        )
+                                      : (theme.isDark
+                                            ? Border.all(
+                                                color: const Color(0x1FFFFFFF),
+                                                width: 1.0,
+                                              )
+                                            : null))),
+                      boxShadow: [
+                        if (widget.isHighlighted)
+                          BoxShadow(
+                            color: Colors.amberAccent.withValues(alpha: 0.5),
+                            blurRadius: 12,
+                            spreadRadius: 2,
+                          )
+                        else
+                          BoxShadow(
+                            color: Colors.black.withValues(
+                              alpha: theme.isDark ? 0.30 : 0.04,
+                            ),
+                            blurRadius: theme.isDark ? 8 : 4,
+                            offset: const Offset(0, 2),
+                          ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: isMine
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start,
+                      children: [
+                        if (isGroupOrBroadcast) ...[
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              message.senderName,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: PeerModel.generateColor(
+                                  message.senderId.isNotEmpty
+                                      ? message.senderId
+                                      : message.senderName,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                        // Quote / Reply Banner
+                        if (message.replyToText != null) ...[
+                          _QuoteCard(
+                            senderName: message.replyToSender ?? '',
+                            snippet: message.replyToText!,
+                            isMine: isMine,
+                            onTap: message.replyToId != null
+                                ? () => widget.onScrollToMessage?.call(
+                                    message.replyToId!,
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(height: 6),
+                        ],
+                        // Khối suy nghĩ AI (nếu có thinkingContent)
+                        if (message.thinkingContent != null &&
+                            message.thinkingContent!.isNotEmpty) ...[
+                          _AiThinkingBox(message: message),
+                        ],
+
+                        // Trạng thái AI đang chuẩn bị phản hồi ban đầu
+                        if (message.isStreaming &&
+                            message.text.isEmpty &&
+                            (message.thinkingContent == null ||
+                                message.thinkingContent!.isEmpty)) ...[
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.8,
+                                    color: theme.colors.accentBlue,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  lang.tr('aiThinkingRunning'),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontStyle: FontStyle.italic,
+                                    color: theme.isDark
+                                        ? Colors.white60
+                                        : Colors.black54,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+
+                        // Nội dung tin nhắn với Markdown & Code Blocks
+                        if (message.text.trim().isNotEmpty &&
+                            (!message.hasAttachment ||
+                                !message.text.contains(
+                                  attachment?.fileName ?? '',
+                                ))) ...[
+                          MarkdownMessageView(
+                            text: message.text,
+                            isMine: isMine,
+                            isStreaming: message.isStreaming,
+                            baseTextStyle: TextStyle(
+                              color: textColor,
+                              fontSize: 13,
+                              height: 1.38,
+                            ),
+                          ),
+                          if (message.isStreaming) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 8,
+                                  height: 8,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.5,
+                                    color: isMine
+                                        ? Colors.white70
+                                        : theme.colors.accentBlue,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  lang.tr('aiGenerating'),
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontStyle: FontStyle.italic,
+                                    color: isMine
+                                        ? Colors.white70
+                                        : (theme.isDark
+                                              ? Colors.white54
+                                              : Colors.black45),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+
+                        // Nếu có đính kèm file
+                        if (message.hasAttachment) ...[
+                          if (message.text.trim().isNotEmpty &&
+                              !message.text.contains(
+                                attachment?.fileName ?? '',
+                              ))
+                            const SizedBox(height: 6),
+                          _AttachmentPreview(
+                            attachment: message.fileAttachment!,
+                            isMine: isMine,
+                          ),
+                        ],
+
+                        const SizedBox(height: 3),
+                        // Timestamp & Delivery/Read Status
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              timeStr,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: isMine
+                                    ? Colors.white70
+                                    : (theme.isDark
+                                          ? const Color(0xFF94A3B8)
+                                          : Colors.black38),
+                              ),
+                            ),
+                            if (message.aiModelTag != null) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color:
+                                      (theme.isDark
+                                              ? Colors.purple.shade900
+                                              : Colors.purple.shade50)
+                                          .withValues(alpha: 0.5),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color:
+                                        (theme.isDark
+                                                ? Colors.purple.shade400
+                                                : Colors.purple.shade300)
+                                            .withValues(alpha: 0.4),
+                                    width: 0.8,
+                                  ),
+                                ),
+                                child: Text(
+                                  message.aiModelTag!,
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w600,
+                                    color: theme.isDark
+                                        ? const Color(0xFFD8B4FE)
+                                        : const Color(0xFF7E22CE),
+                                  ),
+                                ),
+                              ),
+                            ],
+                            if (isMine) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                message.status == MessageStatus.read
+                                    ? Icons.done_all_rounded
+                                    : (message.status == MessageStatus.delivered
+                                          ? Icons.done_all_rounded
+                                          : (message.status ==
+                                                    MessageStatus.sent
+                                                ? Icons.done_rounded
+                                                : Icons.schedule_rounded)),
+                                size: 12.5,
+                                color: message.status == MessageStatus.read
+                                    ? const Color(0xFF67E8F9)
+                                    : Colors.white70,
+                              ),
+                              if (message.status == MessageStatus.read) ...[
+                                const SizedBox(width: 3),
+                                Text(
+                                  lang.tr('seen'),
+                                  style: const TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF67E8F9),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Hover Quick Actions Toolbar
+                if (showHoverBar)
+                  Positioned(
+                    top: -6,
+                    right: isMine ? null : 6,
+                    left: isMine ? 6 : null,
+                    child: AnimatedOpacity(
+                      opacity: _isHovered ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 150),
+                      child: IgnorePointer(
+                        ignoring: !_isHovered,
+                        child: _buildHoverActions(
+                          context,
+                          theme,
+                          lang,
+                          coordinator,
+                          canCopy: canCopy,
+                          canRegenerate: canRegenerate,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            if (message.reactions.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              _MessageReactionsBar(
+                reactions: message.reactions,
+                localUsername: coordinator.localUsername,
+                isMine: isMine,
+                onToggleReaction: (emoji) => coordinator.toggleMessageReaction(
+                  message.conversationId,
+                  message.id,
+                  emoji,
+                ),
+                onAddReaction: () =>
+                    _showQuickReactionPicker(context, coordinator),
+              ),
+            ],
+          ],
+        );
+
+        if (isGroupOrBroadcast && senderPeer != null) {
+          bubbleColumn = Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 8, right: 8),
+                child: AppAvatar(peer: senderPeer, size: 28, showStatus: false),
+              ),
+              Flexible(child: bubbleColumn),
+            ],
+          );
+        }
+
         return Align(
           alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
           child: MouseRegion(
             onEnter: (_) => setState(() => _isHovered = true),
             onExit: (_) => setState(() => _isHovered = false),
-            child: Column(
-              crossAxisAlignment: isMine
-                  ? CrossAxisAlignment.end
-                  : CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    GestureDetector(
-                      onSecondaryTapDown: (details) => _showMessageMenu(
-                        context,
-                        details.globalPosition,
-                        coordinator,
-                        lang,
-                      ),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOut,
-                        margin: const EdgeInsets.only(top: 8, bottom: 4),
-                        constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 9,
-                        ),
-                        decoration: BoxDecoration(
-                          color: bubbleBg,
-                          borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(14),
-                            topRight: const Radius.circular(14),
-                            bottomLeft: Radius.circular(isMine ? 14 : 2),
-                            bottomRight: Radius.circular(isMine ? 2 : 14),
-                          ),
-                          border: widget.isHighlighted
-                              ? Border.all(
-                                  color: Colors.amberAccent,
-                                  width: 2.0,
-                                )
-                              : (isMine
-                                    ? null
-                                    : (isAi
-                                          ? Border.all(
-                                              color:
-                                                  (theme.isDark
-                                                          ? const Color(
-                                                              0xFF38BDF8,
-                                                            )
-                                                          : const Color(
-                                                              0xFF0066FF,
-                                                            ))
-                                                      .withValues(
-                                                        alpha: theme.isDark
-                                                            ? 0.35
-                                                            : 0.20,
-                                                      ),
-                                              width: 1.2,
-                                            )
-                                          : (theme.isDark
-                                                ? Border.all(
-                                                    color: const Color(
-                                                      0x1FFFFFFF,
-                                                    ),
-                                                    width: 1.0,
-                                                  )
-                                                : null))),
-                          boxShadow: [
-                            if (widget.isHighlighted)
-                              BoxShadow(
-                                color: Colors.amberAccent.withValues(
-                                  alpha: 0.5,
-                                ),
-                                blurRadius: 12,
-                                spreadRadius: 2,
-                              )
-                            else
-                              BoxShadow(
-                                color: Colors.black.withValues(
-                                  alpha: theme.isDark ? 0.30 : 0.04,
-                                ),
-                                blurRadius: theme.isDark ? 8 : 4,
-                                offset: const Offset(0, 2),
-                              ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: isMine
-                              ? CrossAxisAlignment.end
-                              : CrossAxisAlignment.start,
-                          children: [
-                            // Quote / Reply Banner
-                            if (message.replyToText != null) ...[
-                              _QuoteCard(
-                                senderName: message.replyToSender ?? '',
-                                snippet: message.replyToText!,
-                                isMine: isMine,
-                                onTap: message.replyToId != null
-                                    ? () => widget.onScrollToMessage?.call(
-                                        message.replyToId!,
-                                      )
-                                    : null,
-                              ),
-                              const SizedBox(height: 6),
-                            ],
-                            // Khối suy nghĩ AI (nếu có thinkingContent)
-                            if (message.thinkingContent != null &&
-                                message.thinkingContent!.isNotEmpty) ...[
-                              _AiThinkingBox(message: message),
-                            ],
-
-                            // Trạng thái AI đang chuẩn bị phản hồi ban đầu
-                            if (message.isStreaming &&
-                                message.text.isEmpty &&
-                                (message.thinkingContent == null ||
-                                    message.thinkingContent!.isEmpty)) ...[
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 4,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    SizedBox(
-                                      width: 12,
-                                      height: 12,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 1.8,
-                                        color: theme.colors.accentBlue,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      lang.tr('aiThinkingRunning'),
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontStyle: FontStyle.italic,
-                                        color: theme.isDark
-                                            ? Colors.white60
-                                            : Colors.black54,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-
-                            // Nội dung tin nhắn với Markdown & Code Blocks
-                            if (message.text.trim().isNotEmpty &&
-                                (!message.hasAttachment ||
-                                    !message.text.contains(
-                                      attachment?.fileName ?? '',
-                                    ))) ...[
-                              MarkdownMessageView(
-                                text: message.text,
-                                isMine: isMine,
-                                isStreaming: message.isStreaming,
-                                baseTextStyle: TextStyle(
-                                  color: textColor,
-                                  fontSize: 13,
-                                  height: 1.38,
-                                ),
-                              ),
-                              if (message.isStreaming) ...[
-                                const SizedBox(height: 4),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    SizedBox(
-                                      width: 8,
-                                      height: 8,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 1.5,
-                                        color: isMine
-                                            ? Colors.white70
-                                            : theme.colors.accentBlue,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      lang.tr('aiGenerating'),
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        fontStyle: FontStyle.italic,
-                                        color: isMine
-                                            ? Colors.white70
-                                            : (theme.isDark
-                                                  ? Colors.white54
-                                                  : Colors.black45),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ],
-
-                            // Nếu có đính kèm file
-                            if (message.hasAttachment) ...[
-                              if (message.text.trim().isNotEmpty &&
-                                  !message.text.contains(
-                                    attachment?.fileName ?? '',
-                                  ))
-                                const SizedBox(height: 6),
-                              _AttachmentPreview(
-                                attachment: message.fileAttachment!,
-                                isMine: isMine,
-                              ),
-                            ],
-
-                            const SizedBox(height: 3),
-                            // Timestamp & Delivery/Read Status
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  timeStr,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: isMine
-                                        ? Colors.white70
-                                        : (theme.isDark
-                                              ? const Color(0xFF94A3B8)
-                                              : Colors.black38),
-                                  ),
-                                ),
-                                if (message.aiModelTag != null) ...[
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 5,
-                                      vertical: 1,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          (theme.isDark
-                                                  ? Colors.purple.shade900
-                                                  : Colors.purple.shade50)
-                                              .withValues(alpha: 0.5),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(
-                                        color:
-                                            (theme.isDark
-                                                    ? Colors.purple.shade400
-                                                    : Colors.purple.shade300)
-                                                .withValues(alpha: 0.4),
-                                        width: 0.8,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      message.aiModelTag!,
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w600,
-                                        color: theme.isDark
-                                            ? const Color(0xFFD8B4FE)
-                                            : const Color(0xFF7E22CE),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                if (isMine) ...[
-                                  const SizedBox(width: 4),
-                                  Icon(
-                                    message.status == MessageStatus.read
-                                        ? Icons.done_all_rounded
-                                        : (message.status ==
-                                                  MessageStatus.delivered
-                                              ? Icons.done_all_rounded
-                                              : (message.status ==
-                                                        MessageStatus.sent
-                                                    ? Icons.done_rounded
-                                                    : Icons.schedule_rounded)),
-                                    size: 12.5,
-                                    color: message.status == MessageStatus.read
-                                        ? const Color(0xFF67E8F9)
-                                        : Colors.white70,
-                                  ),
-                                  if (message.status == MessageStatus.read) ...[
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      lang.tr('seen'),
-                                      style: const TextStyle(
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF67E8F9),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // Hover Quick Actions Toolbar
-                    if (showHoverBar)
-                      Positioned(
-                        top: -6,
-                        right: isMine ? null : 6,
-                        left: isMine ? 6 : null,
-                        child: AnimatedOpacity(
-                          opacity: _isHovered ? 1.0 : 0.0,
-                          duration: const Duration(milliseconds: 150),
-                          child: IgnorePointer(
-                            ignoring: !_isHovered,
-                            child: _buildHoverActions(
-                              context,
-                              theme,
-                              lang,
-                              coordinator,
-                              canCopy: canCopy,
-                              canRegenerate: canRegenerate,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                if (message.reactions.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  _MessageReactionsBar(
-                    reactions: message.reactions,
-                    localUsername: coordinator.localUsername,
-                    isMine: isMine,
-                    onToggleReaction: (emoji) =>
-                        coordinator.toggleMessageReaction(
-                          message.conversationId,
-                          message.id,
-                          emoji,
-                        ),
-                    onAddReaction: () =>
-                        _showQuickReactionPicker(context, coordinator),
-                  ),
-                ],
-              ],
-            ),
+            child: bubbleColumn,
           ),
         );
       },
@@ -3603,6 +3613,14 @@ class _ChatInputDockState extends State<_ChatInputDock> {
         Padding(
           padding: EdgeInsets.symmetric(horizontal: hMargin),
           child: PinyinCandidateBar(textController: widget.controller),
+        ),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: hMargin),
+          child: GroupMentionPicker(
+            controller: widget.controller,
+            focusNode: widget.focusNode,
+            onChanged: widget.onChanged,
+          ),
         ),
         Container(
           margin: EdgeInsets.fromLTRB(hMargin, 0, hMargin, bMargin),
