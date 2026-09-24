@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.3.1
+# Hướng dẫn sử dụng JA LAN Messenger v1.4.0
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.3.1_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.4.0_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -91,6 +91,12 @@
 - **Xem thành viên nhóm:** Nhấp trực tiếp vào dòng số lượng thành viên (ví dụ: `3 thành viên`) trên thanh tiêu đề nhóm để mở ngay danh sách chi tiết các thành viên.
 - **Giải tán & Rời nhóm:** Quản trị viên (người tạo nhóm) có quyền giải tán nhóm, hệ thống sẽ tự động đồng bộ lệnh giải tán tới tất cả thành viên còn lại trên mạng LAN. Thành viên cũng có thể chủ động rời nhóm an toàn bất cứ lúc nào.
 - **Chỉ báo đang gõ & Thông báo nhóm:** Khi thành viên trong nhóm đang soạn tin nhắn, chỉ báo soạn thảo sẽ hiển thị ngay dưới đáy khung chat. Tin nhắn nhóm mới cũng phát âm thanh và toast thông báo tương tự tin nhắn cá nhân.
+
+### 2.14. Hàng đợi Ngoại tuyến & Tự động gửi lại (Offline Outbox & Auto-Retry)
+- **Gửi tin nhắn khi người nhận đang tắt máy:** Tin nhắn chưa thể chuyển phát sẽ tự động chuyển sang trạng thái lỗi và được lưu an toàn vào hàng đợi Outbox trên máy của bạn.
+- **Tự động gửi bù (Auto-Retry):** Ngay khi máy người nhận bật lên và kết nối vào mạng LAN, ứng dụng sẽ tự động kích hoạt gửi bù toàn bộ tin nhắn tồn đọng theo đúng thứ tự thời gian mà không cần bạn phải thao tác lại.
+- **Thao tác Thử lại trực quan (Manual Retry):** Bấm trực tiếp vào biểu tượng cảnh báo lỗi màu đỏ cam trên tin nhắn, hoặc nhấp chuột phải chọn **"Thử lại"** (`Retry`) để kích hoạt gửi lại bất kỳ lúc nào.
+- **Hỗ trợ Chat nhóm:** Tin nhắn gửi vào nhóm khi có thành viên ngoại tuyến sẽ được lưu riêng và tự động gửi bù cho thành viên đó ngay khi họ online trở lại.
 
 ---
 

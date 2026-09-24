@@ -1,14 +1,19 @@
-TAG=v1.3.1
-TITLE=JA LAN Messenger v1.3.1 — Fast Netsh Subnet Detection, Circular Translucent Avatars & Group Permissions
+TAG=v1.4.0
+TITLE=JA LAN Messenger v1.4.0 — Offline Outbox Queue & Auto-Retry on Reconnect
 BODY=
-## JA LAN Messenger v1.3.1 — Fast Netsh Subnet Detection, Circular Translucent Avatars & Group Permissions
+## JA LAN Messenger v1.4.0 — Offline Outbox Queue & Auto-Retry on Reconnect
 
-- **Tăng tốc & Ổn định hóa Nhận diện Subnet Mask (`netsh`)**: Chuyển đổi truy vấn Subnet Mask từ PowerShell sang lệnh native `netsh interface ipv4 show addresses`, giảm thời gian xuống ~5ms, không bị ảnh hưởng bởi chính sách bảo mật PowerShell hay độ trễ khởi động của Mini PC. Nhận diện hoàn hảo dải Supernet /21 (255.255.248.0) và quét đủ 2046 hosts trên toàn bộ 8 dải con.
-- **Bộ công cụ Kiểm tra & Chẩn đoán Mạng Độc lập (`verify_scan.bat` & `verify_scan.ps1`)**: Cung cấp công cụ chạy 1-click độc lập, tự động chẩn đoán cấu hình card mạng, Subnet Mask, cổng tường lửa (TCP 6475, UDP 36475) và đo đạc kết nối thời gian thực tới toàn bộ các subnet slice.
-- **Phân quyền Quản trị Nhóm chuẩn Zalo/Telegram**: Chỉ Trưởng nhóm (Creator/Admin) mới có quyền giải tán nhóm chat; thành viên thông thường chỉ có tùy chọn rời nhóm, ngăn chặn việc thành viên thường vô tình xóa nhóm chung.
-- **Khôi phục Kiểu dáng Avatar Tròn Mặc định & Màu Nền Mờ**: Đưa `isCircle: true` làm mặc định trên toàn bộ ứng dụng; khôi phục màu nền mờ `avatarColor.withValues(alpha: 0.2)` kèm viền màu đồng bộ và chữ cái đầu (Initials) / preset icon trang nhã.
-- **Đồng bộ Avatar Danh bạ & Cố định Ảnh Đại diện JA AI**: Sử dụng `AppAvatar` thống nhất cho toàn bộ danh bạ; cố định ảnh gốc `assets/ai_avatar.png` trong khung trò chuyện JA AI.
-- **Đồng bộ toàn diện phiên bản**: Cập nhật `v1.3.1+7` vào toàn bộ mã nguồn, metadata Windows Runner, tài liệu hướng dẫn và bộ cài đặt.
+- **Hàng đợi Ngoại tuyến & Tự động gửi lại (Offline Outbox Queue & Auto-Retry)**: Giải quyết triệt để vấn đề tin nhắn bị thất lạc khi người nhận đang tắt máy/ngoại tuyến trong mạng LAN P2P. Tin nhắn gửi lỗi tự động chuyển sang trạng thái `failed` và được xếp vào hàng đợi Outbox.
+- **Tự động gửi bù khi Reconnect (`flushPendingOutgoingMessagesForPeer`)**: Ngay khi máy người nhận online trở lại và hoàn tất bắt tay LAN, hệ thống tự động kích hoạt gửi bù toàn bộ tin nhắn tồn đọng theo đúng thứ tự thời gian.
+- **Hỗ trợ Chat nhóm Toàn diện**: Tự động theo dõi các thành viên nhóm đang offline tại thời điểm gửi tin và gửi bù tin nhắn nhóm cho từng thành viên khi họ kết nối lại.
+- **Giao diện Trực quan & Thao tác Thử lại (UI/UX Retry Controls)**:
+  - Hiển thị biểu tượng lỗi `Icons.error_outline_rounded` màu đỏ cam (`#F87171`) kèm chữ **"Thử lại"** trên cả bong bóng tin nhắn và thẻ tệp đính kèm.
+  - Bấm 1 chạm trực tiếp vào icon lỗi để kích hoạt gửi lại (`retrySendMessage`).
+  - Thêm tùy chọn **"Thử lại"** (`retrySend`) trực tiếp vào Menu chuột phải (Context menu) của tin nhắn.
+  - Tooltip giải thích: *"Chưa gửi được (Người nhận ngoại tuyến). Nhấn để thử lại."*
+- **Độ bền dữ liệu qua các phiên khởi động**: Tự động phục hồi trạng thái tin nhắn và chuẩn hóa các tin dở dang (`sending`) khi tắt máy thành `failed`, nạp vào Outbox để sẵn sàng gửi lại khi mở app.
+- **Đa ngôn ngữ Trọn vẹn**: Bổ sung đầy đủ chuỗi giao diện cho cả 3 ngôn ngữ: Tiếng Việt, Tiếng Anh và Tiếng Trung.
+- **Đồng bộ toàn diện phiên bản**: Cập nhật `v1.4.0+8` vào toàn bộ mã nguồn, metadata Windows Runner, tài liệu hướng dẫn và bộ cài đặt.
 
 ### Cài đặt
 Chạy file `install.bat` để cài đặt ứng dụng vào Windows (có shortcut Desktop & Start Menu, đăng ký Control Panel), hoặc chạy trực tiếp `ja_lan_messenger.exe` để sử dụng dạng portable. Xem file `USERGUIDE.md` đính kèm để biết thêm chi tiết.

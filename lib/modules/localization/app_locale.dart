@@ -442,6 +442,10 @@ class LanguageProvider extends ChangeNotifier {
       'chatHistorySize': 'Dung lượng lưu trữ',
       // Trích dẫn & Ghim tin nhắn
       'quote': 'Trích dẫn',
+      'retrySend': 'Thử lại',
+      'messageFailedTooltip':
+          'Chưa gửi được (Người nhận ngoại tuyến). Nhấn để thử lại.',
+      'messageResentSuccess': 'Đã gửi lại tin nhắn',
       'replyingTo': 'Đang trả lời',
       'cancelReply': 'Hủy trả lời',
       'pinMessage': 'Ghim tin nhắn',
@@ -855,6 +859,10 @@ class LanguageProvider extends ChangeNotifier {
       'chatHistorySize': 'Storage size',
       // Quote & Pin messages
       'quote': 'Quote',
+      'retrySend': 'Retry',
+      'messageFailedTooltip':
+          'Failed to send (Recipient offline). Click to retry.',
+      'messageResentSuccess': 'Message resent',
       'replyingTo': 'Replying to',
       'cancelReply': 'Cancel reply',
       'pinMessage': 'Pin message',
@@ -1246,6 +1254,9 @@ class LanguageProvider extends ChangeNotifier {
       'chatHistorySize': '存储大小',
       // 引用与置顶
       'quote': '引用',
+      'retrySend': '重试',
+      'messageFailedTooltip': '发送失败（接收方离线）。点击重试。',
+      'messageResentSuccess': '已重发消息',
       'replyingTo': '正在回复',
       'cancelReply': '取消回复',
       'pinMessage': '置顶消息',

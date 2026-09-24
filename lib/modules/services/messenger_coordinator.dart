@@ -94,6 +94,13 @@ class MessengerCoordinator extends ChangeNotifier {
   final Set<String> _disbandedGroupIds = {};
   final Map<String, String> _peerHashes = {};
   final Map<String, List<MessageModel>> _conversations = {};
+  // Hàng đợi tin nhắn ngoại tuyến chờ gửi lại khi peer online (Outbox Queue)
+  final Map<String, Set<String>> _pendingOfflineMessageIds = {};
+  final Set<String> _outboxInFlight = {};
+  late final Future<void> historyLoaded;
+  @visibleForTesting
+  Map<String, Set<String>> get pendingOfflineMessageIds =>
+      _pendingOfflineMessageIds;
   PeerModel? _selectedPeer;
   String _searchQuery = '';
 
@@ -298,7 +305,7 @@ class MessengerCoordinator extends ChangeNotifier {
     };
     _loadGroups();
     _loadDepartures();
-    _loadChatHistory();
+    historyLoaded = _loadChatHistory();
   }
 
   void _onPrefsChanged() {
@@ -1366,6 +1373,16 @@ class MessengerCoordinator extends ChangeNotifier {
           )
           .toList();
       for (final id in oldIds) {
+        for (final msg in _conversations[group.id] ?? <MessageModel>[]) {
+          if (msg.pendingRecipients?.remove(id) ?? false) {
+            msg.pendingRecipients!.add(peer.id);
+            _removePendingOfflineMessage(id, msg.id);
+            _pendingOfflineMessageIds
+                .putIfAbsent(peer.id, () => {})
+                .add(msg.id);
+            chatHistory.scheduleSave(group.id, _conversations[group.id]!);
+          }
+        }
         group.memberIds.remove(id);
         group.memberRecords.remove(id);
         final invitation = group.invitations.remove(id);
@@ -1403,6 +1420,9 @@ class MessengerCoordinator extends ChangeNotifier {
         showToast('toastNewDevice', ['$username ($senderIp)']);
       }
     }
+
+    // Tự động gửi lại các tin nhắn tồn đọng trong Outbox cho peer này nếu có
+    unawaited(flushPendingOutgoingMessagesForPeer(peer));
 
     notifyListeners();
   }
@@ -1550,6 +1570,22 @@ class MessengerCoordinator extends ChangeNotifier {
         if (msgs.isEmpty) continue;
 
         _conversations[convId] = msgs;
+        for (final m in msgs) {
+          if (!_isRetryableText(m)) continue;
+          if (m.isMine && m.status == MessageStatus.sending) {
+            m.status = MessageStatus.failed;
+          }
+          if (m.pendingRecipients == null &&
+              m.status == MessageStatus.failed &&
+              !convId.startsWith('group_') &&
+              convId != '__ALL_USERS__') {
+            m.pendingRecipients = {convId};
+          }
+          for (final target in m.pendingRecipients ?? <String>{}) {
+            _pendingOfflineMessageIds.putIfAbsent(target, () => {}).add(m.id);
+          }
+        }
+        chatHistory.scheduleSave(convId, msgs);
 
         final last = msgs.last;
         final lastText = last.isRevoked
@@ -1600,6 +1636,9 @@ class MessengerCoordinator extends ChangeNotifier {
             _peers[convId] = p;
           }
         }
+      }
+      for (final peer in peers.where((p) => p.status != PeerStatus.offline)) {
+        unawaited(flushPendingOutgoingMessagesForPeer(peer));
       }
       notifyListeners();
     } catch (e) {
@@ -2935,6 +2974,7 @@ class MessengerCoordinator extends ChangeNotifier {
 
   /// Gửi tin nhắn tới peer hoặc kênh đang chọn (hỗ trợ trích dẫn tin nhắn)
   Future<bool> sendMessage(String text, {MessageModel? replyTo}) async {
+    await historyLoaded;
     if (_selectedPeer == null || text.trim().isEmpty) return false;
 
     // Kết thúc trạng thái đang soạn tin khi gửi tin nhắn
@@ -2956,6 +2996,7 @@ class MessengerCoordinator extends ChangeNotifier {
       text: plainText,
       isMine: true,
       status: MessageStatus.sending,
+      pendingRecipients: {},
       replyToId: replyTo?.id,
       replyToSender: replyTo?.senderName,
       replyToText: replyTo?.text,
@@ -2963,6 +3004,24 @@ class MessengerCoordinator extends ChangeNotifier {
 
     final list = _conversations.putIfAbsent(_selectedPeer!.id, () => []);
     list.add(msg);
+    if (!_selectedPeer!.isAiAssistant) {
+      final targets = _selectedPeer!.isGroup
+          ? _selectedPeer!.memberIds
+          : _selectedPeer!.isAllUsers
+          ? peers
+                .where(
+                  (p) =>
+                      p.status != PeerStatus.offline &&
+                      !p.isGroup &&
+                      !p.isAllUsers &&
+                      !p.isAiAssistant,
+                )
+                .map((p) => p.id)
+          : [_selectedPeer!.id];
+      for (final target in targets) {
+        recordPendingOfflineMessage(target, msgId);
+      }
+    }
     chatHistory.scheduleSave(_selectedPeer!.id, list);
 
     _selectedPeer!.lastMessage = plainText;
@@ -2981,7 +3040,10 @@ class MessengerCoordinator extends ChangeNotifier {
       final onlinePeers = peers
           .where(
             (p) =>
-                !p.isGroup && !p.isAllUsers && p.status != PeerStatus.offline,
+                !p.isGroup &&
+                !p.isAllUsers &&
+                !p.isAiAssistant &&
+                p.status != PeerStatus.offline,
           )
           .toList();
       for (final peer in onlinePeers) {
@@ -2993,10 +3055,16 @@ class MessengerCoordinator extends ChangeNotifier {
           ),
         );
         if (ok) anySuccess = true;
+        if (ok) {
+          msg.pendingRecipients?.remove(peer.id);
+          _removePendingOfflineMessage(peer.id, msgId);
+        }
+        if (!ok) recordPendingOfflineMessage(peer.id, msgId);
       }
       msg.status = (anySuccess || onlinePeers.isEmpty)
           ? MessageStatus.sent
           : MessageStatus.failed;
+      chatHistory.scheduleSave(_selectedPeer!.id, list);
       notifyListeners();
       return anySuccess;
     } else if (_selectedPeer!.isGroup) {
@@ -3004,8 +3072,9 @@ class MessengerCoordinator extends ChangeNotifier {
       var anySuccess = false;
       for (final memberId in _selectedPeer!.memberIds) {
         final peer = _peers[memberId] ?? _findPeerByIpOrId(memberId);
+        var ok = false;
         if (peer != null && peer.status != PeerStatus.offline) {
-          final ok = _sendToPeer(
+          ok = _sendToPeer(
             peer.id,
             ProtocolBeebeep.buildChatPacket(
               messageId: msgId,
@@ -3016,6 +3085,13 @@ class MessengerCoordinator extends ChangeNotifier {
             ),
           );
           if (ok) anySuccess = true;
+          if (ok) {
+            msg.pendingRecipients?.remove(memberId);
+            _removePendingOfflineMessage(memberId, msgId);
+          }
+        }
+        if (!ok) {
+          recordPendingOfflineMessage(memberId, msgId);
         }
       }
       msg.status = anySuccess ? MessageStatus.sent : MessageStatus.failed;
@@ -3024,6 +3100,7 @@ class MessengerCoordinator extends ChangeNotifier {
         _groups[_selectedPeer!.id]!.lastMessageTime = msg.timestamp;
         _saveGroups();
       }
+      chatHistory.scheduleSave(_selectedPeer!.id, list);
       notifyListeners();
       return anySuccess;
     } else {
@@ -3035,9 +3112,341 @@ class MessengerCoordinator extends ChangeNotifier {
       if (msg.status == MessageStatus.sending) {
         msg.status = success ? MessageStatus.sent : MessageStatus.failed;
       }
+      if (!success) {
+        recordPendingOfflineMessage(_selectedPeer!.id, msgId);
+      } else {
+        msg.pendingRecipients?.remove(_selectedPeer!.id);
+        _removePendingOfflineMessage(_selectedPeer!.id, msgId);
+      }
+      chatHistory.scheduleSave(_selectedPeer!.id, list);
       notifyListeners();
       return success;
     }
+  }
+
+  /// Ghi nhận một tin nhắn vào Outbox chờ gửi lại khi peer online
+  @visibleForTesting
+  void recordPendingOfflineMessage(String targetKey, String messageId) {
+    _pendingOfflineMessageIds.putIfAbsent(targetKey, () => {}).add(messageId);
+    for (final entry in _conversations.entries) {
+      for (final msg in entry.value.where(
+        (m) => m.id == messageId && _isRetryableText(m),
+      )) {
+        (msg.pendingRecipients ??= {}).add(targetKey);
+        chatHistory.scheduleSave(entry.key, entry.value);
+      }
+    }
+  }
+
+  bool _isRetryableText(MessageModel msg) =>
+      msg.isMine &&
+      !msg.isRevoked &&
+      msg.fileAttachment == null &&
+      msg.recipientId != '__AI_ASSISTANT__';
+
+  bool canRetryMessage(MessageModel msg) =>
+      _isRetryableText(msg) && msg.status == MessageStatus.failed;
+
+  void _removePendingOfflineMessage(String targetKey, String messageId) {
+    _pendingOfflineMessageIds[targetKey]?.remove(messageId);
+    if (_pendingOfflineMessageIds[targetKey]?.isEmpty ?? false) {
+      _pendingOfflineMessageIds.remove(targetKey);
+    }
+  }
+
+  /// Tự động gửi lại các tin nhắn tồn đọng trong Outbox khi một peer online
+  @visibleForTesting
+  Future<void> flushPendingOutgoingMessagesForPeer(PeerModel peer) async {
+    await historyLoaded;
+    if (_disposed) return;
+    final candidateKeys = <String>{
+      peer.id,
+      peer.ip,
+      '${peer.ip}:${peer.port}',
+      peer.canonicalIdentity,
+      if (_peerHashes[peer.id] case final String hash) 'hash:$hash',
+    };
+
+    // Thu thập tin nhắn cần gửi lại
+    final messagesToRetry = <({String convId, MessageModel msg})>[];
+    final collectedMsgIds = <String>{};
+
+    // 1. Quét tin nhắn 1-1 chưa gửi được trong các conversation tương ứng
+    for (final convEntry in _conversations.entries) {
+      final convId = convEntry.key;
+      final isDirectChat = candidateKeys.contains(convId);
+      if (isDirectChat) {
+        for (final msg in convEntry.value) {
+          if (msg.isMine &&
+              _isRetryableText(msg) &&
+              (msg.status == MessageStatus.failed ||
+                  msg.status == MessageStatus.sending) &&
+              collectedMsgIds.add(msg.id)) {
+            messagesToRetry.add((convId: convId, msg: msg));
+          }
+        }
+      }
+    }
+
+    // 2. Thu thập tin nhắn nhóm mà peer này bị ghi nhận là chưa nhận được
+    for (final key in candidateKeys) {
+      final pendingMsgIds = _pendingOfflineMessageIds[key];
+      if (pendingMsgIds != null && pendingMsgIds.isNotEmpty) {
+        for (final msgId in pendingMsgIds.toList()) {
+          for (final convEntry in _conversations.entries) {
+            final group = _groups[convEntry.key];
+            if (convEntry.key == '__ALL_USERS__' ||
+                (group != null &&
+                    group.memberIds.any((id) => candidateKeys.contains(id)))) {
+              final groupMsgs = convEntry.value;
+              for (final msg in groupMsgs) {
+                if (msg.id == msgId &&
+                    _isRetryableText(msg) &&
+                    collectedMsgIds.add(msg.id)) {
+                  messagesToRetry.add((convId: convEntry.key, msg: msg));
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (messagesToRetry.isEmpty) return;
+
+    // Sắp xếp tin nhắn theo thời gian gửi từ cũ đến mới
+    messagesToRetry.sort((a, b) => a.msg.timestamp.compareTo(b.msg.timestamp));
+
+    // Đợi 100ms để kết nối socket hoàn tất ổn định sau handshake
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    final savedConvs = <String>{};
+    for (final item in messagesToRetry) {
+      if (_disposed || peer.status == PeerStatus.offline) break;
+      final msg = item.msg;
+      final convId = item.convId;
+      if (!_isRetryableText(msg) ||
+          !(_conversations[convId]?.contains(msg) ?? false)) {
+        continue;
+      }
+      if (_outboxInFlight.contains('${msg.id}:${peer.id}')) continue;
+      if (!(msg.pendingRecipients?.any(candidateKeys.contains) ??
+          (msg.status == MessageStatus.failed ||
+              msg.status == MessageStatus.sending))) {
+        continue;
+      }
+      final currentGroup = _groups[convId];
+      if (currentGroup == null &&
+          convId != '__ALL_USERS__' &&
+          !candidateKeys.contains(convId)) {
+        continue;
+      }
+      if (convId.startsWith('group_') &&
+          (currentGroup == null ||
+              !currentGroup.memberIds.any(candidateKeys.contains))) {
+        continue;
+      }
+
+      final isGroup = _groups.containsKey(convId);
+      final networkPayload =
+          msg.replyToSender != null && msg.replyToText != null
+          ? '> [${msg.replyToSender}]: ${msg.replyToText!.replaceAll('\n', ' ')}\n\n${msg.text}'
+          : msg.text;
+
+      final packet = isGroup
+          ? ProtocolBeebeep.buildChatPacket(
+              messageId: msg.id,
+              text: networkPayload,
+              groupId: convId,
+              groupName: _groups[convId]?.name,
+              groupUpdatedAt: _groups[convId]?.updatedAt,
+            )
+          : ProtocolBeebeep.buildChatPacket(
+              messageId: msg.id,
+              text: convId == '__ALL_USERS__'
+                  ? '[All Users] $networkPayload'
+                  : networkPayload,
+            );
+
+      final success = _sendToPeer(peer.id, packet);
+      if (success) {
+        if (msg.status != MessageStatus.read &&
+            msg.status != MessageStatus.delivered) {
+          msg.status = MessageStatus.sent;
+        }
+        for (final k in candidateKeys) {
+          _removePendingOfflineMessage(k, msg.id);
+          msg.pendingRecipients?.remove(k);
+        }
+        savedConvs.add(convId);
+        notifyListeners();
+        await Future.delayed(const Duration(milliseconds: 40));
+      }
+    }
+
+    for (final cId in savedConvs) {
+      final list = _conversations[cId];
+      if (list != null) {
+        chatHistory.scheduleSave(cId, list);
+      }
+    }
+  }
+
+  /// Thử gửi lại một tin nhắn bị lỗi (thủ công từ UI hoặc gọi trực tiếp)
+  Future<bool> retrySendMessage(
+    MessageModel msg, {
+    String? conversationId,
+  }) async {
+    await historyLoaded;
+    if (_disposed || !canRetryMessage(msg)) return false;
+    final convId = conversationId ?? msg.conversationId;
+    final list = _conversations[convId];
+    if (list == null || !list.contains(msg)) return false;
+    if (!_groups.containsKey(convId) &&
+        convId != '__ALL_USERS__' &&
+        _findPeerByIpOrId(convId) == null &&
+        _selectedPeer?.id != convId) {
+      return false;
+    }
+    if (convId.startsWith('group_') && !_groups.containsKey(convId)) {
+      return false;
+    }
+
+    msg.status = MessageStatus.sending;
+    notifyListeners();
+
+    final networkPayload = msg.replyToSender != null && msg.replyToText != null
+        ? '> [${msg.replyToSender}]: ${msg.replyToText!.replaceAll('\n', ' ')}\n\n${msg.text}'
+        : msg.text;
+
+    var success = false;
+    if (_groups.containsKey(convId)) {
+      // Gửi vào nhóm
+      final group = _groups[convId]!;
+      for (final memberId in group.memberIds) {
+        final peer = _peers[memberId] ?? _findPeerByIpOrId(memberId);
+        final targets = {
+          memberId,
+          if (peer != null) peer.id,
+          if (peer != null && _peerHashes[peer.id] != null)
+            'hash:${_peerHashes[peer.id]}',
+        };
+        if (msg.pendingRecipients != null &&
+            !msg.pendingRecipients!.any(targets.contains)) {
+          continue;
+        }
+        var ok = false;
+        if (peer != null && peer.status != PeerStatus.offline) {
+          ok = _sendToPeer(
+            peer.id,
+            ProtocolBeebeep.buildChatPacket(
+              messageId: msg.id,
+              text: networkPayload,
+              groupId: group.id,
+              groupName: group.name,
+              groupUpdatedAt: group.updatedAt,
+            ),
+          );
+          if (ok) success = true;
+        }
+        if (ok) {
+          for (final key in targets) {
+            _removePendingOfflineMessage(key, msg.id);
+            msg.pendingRecipients?.remove(key);
+          }
+        } else {
+          recordPendingOfflineMessage(memberId, msg.id);
+        }
+      }
+    } else if (convId == '__ALL_USERS__') {
+      final onlinePeers = peers
+          .where(
+            (p) =>
+                !p.isGroup &&
+                !p.isAllUsers &&
+                !p.isAiAssistant &&
+                p.status != PeerStatus.offline,
+          )
+          .toList();
+      for (final peer in onlinePeers) {
+        if (msg.pendingRecipients != null &&
+            !msg.pendingRecipients!.contains(peer.id)) {
+          continue;
+        }
+        final ok = _sendToPeer(
+          peer.id,
+          ProtocolBeebeep.buildChatPacket(
+            messageId: msg.id,
+            text: '[All Users] $networkPayload',
+          ),
+        );
+        if (ok) success = true;
+        if (ok) {
+          _removePendingOfflineMessage(peer.id, msg.id);
+          msg.pendingRecipients?.remove(peer.id);
+        } else {
+          recordPendingOfflineMessage(peer.id, msg.id);
+        }
+      }
+    } else {
+      // Chat cá nhân 1-1
+      final peer =
+          _peers[convId] ??
+          _findPeerByIpOrId(convId) ??
+          (_selectedPeer?.id == convId ? _selectedPeer : null);
+      if (peer != null) {
+        final flightKey = '${msg.id}:${peer.id}';
+        _outboxInFlight.add(flightKey);
+        try {
+          if (!_tcpServer.isConnected(peer.id) && peer.ip.isNotEmpty) {
+            await _tcpServer.connect(peer.ip, peer.port);
+          }
+          if (!_disposed &&
+              _isRetryableText(msg) &&
+              (_conversations[convId]?.contains(msg) ?? false)) {
+            success = _sendToPeer(
+              peer.id,
+              ProtocolBeebeep.buildChatPacket(
+                messageId: msg.id,
+                text: networkPayload,
+              ),
+            );
+          }
+        } catch (e) {
+          debugPrint('[Outbox] Connection failed: ${e.runtimeType}');
+        } finally {
+          _outboxInFlight.remove(flightKey);
+        }
+      } else {
+        success = _sendToPeer(
+          convId,
+          ProtocolBeebeep.buildChatPacket(
+            messageId: msg.id,
+            text: networkPayload,
+          ),
+        );
+      }
+    }
+
+    if (_disposed ||
+        !_isRetryableText(msg) ||
+        !(_conversations[convId]?.contains(msg) ?? false)) {
+      return false;
+    }
+    if (msg.status != MessageStatus.read &&
+        msg.status != MessageStatus.delivered) {
+      msg.status = success ? MessageStatus.sent : MessageStatus.failed;
+    }
+    if (!success && !_groups.containsKey(convId) && convId != '__ALL_USERS__') {
+      recordPendingOfflineMessage(convId, msg.id);
+    } else if (success) {
+      _removePendingOfflineMessage(convId, msg.id);
+      msg.pendingRecipients?.remove(convId);
+      showToast('messageResentSuccess');
+    }
+    chatHistory.scheduleSave(convId, list);
+    notifyListeners();
+    return success;
   }
 
   /// Điều phối gửi prompt tới mô hình AI qua hàng đợi

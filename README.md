@@ -1,6 +1,6 @@
 # JA LAN Messenger
 
-[![Version](https://img.shields.io/badge/version-1.3.1-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)](CHANGELOG.md)
 [![Flutter Version](https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter)](https://flutter.dev)
 [![Dart Version](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com/windows)
@@ -13,7 +13,7 @@ A modern, ultra-lightweight, high-performance **Peer-to-Peer (P2P) Office LAN Me
 
 ## ⚡ Key Highlights
 
-- **Serverless Decentralized P2P**: Zero central server setup required. Instant plug-and-play communication in local networks.
+- **Serverless Decentralized P2P with Offline Outbox Auto-Retry**: Zero central server setup required. Instant plug-and-play communication in local networks with automatic outbox queuing and sequential history catch-up whenever offline peers reconnect.
 - **Personal & Group Avatar Synchronization**: Custom image upload, rich preset icons, and color paletting with automatic ultra-lightweight Base64 LAN thumbnail synchronization across peers.
 - **System Tray Icon Badge Counter**: Real-time unread message counter badge painted directly onto the Windows system tray icon via native Win32 GDI rendering.
 - **Single-Instance Mutex & Window Focus**: Enforces single-instance execution via Windows Mutex (`main.cpp`), automatically waking and bringing the existing instance to the foreground when re-opened.

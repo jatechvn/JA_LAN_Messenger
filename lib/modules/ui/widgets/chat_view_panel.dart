@@ -1917,6 +1917,29 @@ class _MessageBubbleState extends State<_MessageBubble> {
             ],
           ),
         ),
+        if (coordinator.canRetryMessage(widget.message))
+          PopupMenuItem<String>(
+            value: 'retry',
+            height: 36,
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.refresh_rounded,
+                  size: 15,
+                  color: Color(0xFFF87171),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  lang.tr('retrySend'),
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: Color(0xFFF87171),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
         if (widget.message.text.isNotEmpty)
           PopupMenuItem<String>(
             value: 'copy',
@@ -1956,7 +1979,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
 
     if (!context.mounted) return;
 
-    if (value == 'reply') {
+    if (value == 'retry') {
+      coordinator.retrySendMessage(widget.message);
+    } else if (value == 'reply') {
       widget.onReply?.call(widget.message);
     } else if (value == 'pin') {
       coordinator.togglePinMessage(
@@ -2390,34 +2415,69 @@ class _MessageBubbleState extends State<_MessageBubble> {
                                     ),
                                     if (isMine) ...[
                                       const SizedBox(width: 4),
-                                      Icon(
-                                        message.status == MessageStatus.read
-                                            ? Icons.done_all_rounded
-                                            : (message.status ==
-                                                      MessageStatus.delivered
-                                                  ? Icons.done_all_rounded
-                                                  : (message.status ==
-                                                            MessageStatus.sent
-                                                        ? Icons.done_rounded
-                                                        : Icons
-                                                              .schedule_rounded)),
-                                        size: 13,
-                                        color:
-                                            message.status == MessageStatus.read
-                                            ? const Color(0xFF67E8F9)
-                                            : Colors.white70,
-                                      ),
-                                      if (message.status ==
-                                          MessageStatus.read) ...[
-                                        const SizedBox(width: 3),
-                                        Text(
-                                          lang.tr('seen'),
-                                          style: const TextStyle(
-                                            fontSize: 9.5,
-                                            fontWeight: FontWeight.w600,
-                                            color: Color(0xFF67E8F9),
+                                      if (coordinator.canRetryMessage(message))
+                                        InkWell(
+                                          onTap: () => coordinator
+                                              .retrySendMessage(message),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
                                           ),
+                                          child: Tooltip(
+                                            message: lang.tr(
+                                              'messageFailedTooltip',
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(
+                                                  Icons.error_outline_rounded,
+                                                  size: 13,
+                                                  color: Color(0xFFF87171),
+                                                ),
+                                                const SizedBox(width: 2),
+                                                Text(
+                                                  lang.tr('retrySend'),
+                                                  style: const TextStyle(
+                                                    fontSize: 9.5,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFFF87171),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        )
+                                      else ...[
+                                        Icon(
+                                          message.status == MessageStatus.read
+                                              ? Icons.done_all_rounded
+                                              : (message.status ==
+                                                        MessageStatus.delivered
+                                                    ? Icons.done_all_rounded
+                                                    : (message.status ==
+                                                              MessageStatus.sent
+                                                          ? Icons.done_rounded
+                                                          : Icons
+                                                                .schedule_rounded)),
+                                          size: 13,
+                                          color:
+                                              message.status ==
+                                                  MessageStatus.read
+                                              ? const Color(0xFF67E8F9)
+                                              : Colors.white70,
                                         ),
+                                        if (message.status ==
+                                            MessageStatus.read) ...[
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            lang.tr('seen'),
+                                            style: const TextStyle(
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFF67E8F9),
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                     ],
                                   ],
@@ -2796,30 +2856,61 @@ class _MessageBubbleState extends State<_MessageBubble> {
                             ],
                             if (isMine) ...[
                               const SizedBox(width: 4),
-                              Icon(
-                                message.status == MessageStatus.read
-                                    ? Icons.done_all_rounded
-                                    : (message.status == MessageStatus.delivered
-                                          ? Icons.done_all_rounded
-                                          : (message.status ==
-                                                    MessageStatus.sent
-                                                ? Icons.done_rounded
-                                                : Icons.schedule_rounded)),
-                                size: 12.5,
-                                color: message.status == MessageStatus.read
-                                    ? const Color(0xFF67E8F9)
-                                    : Colors.white70,
-                              ),
-                              if (message.status == MessageStatus.read) ...[
-                                const SizedBox(width: 3),
-                                Text(
-                                  lang.tr('seen'),
-                                  style: const TextStyle(
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF67E8F9),
+                              if (coordinator.canRetryMessage(message))
+                                InkWell(
+                                  onTap: () =>
+                                      coordinator.retrySendMessage(message),
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Tooltip(
+                                    message: lang.tr('messageFailedTooltip'),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.error_outline_rounded,
+                                          size: 12.5,
+                                          color: Color(0xFFF87171),
+                                        ),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          lang.tr('retrySend'),
+                                          style: const TextStyle(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFFF87171),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
+                                )
+                              else ...[
+                                Icon(
+                                  message.status == MessageStatus.read
+                                      ? Icons.done_all_rounded
+                                      : (message.status ==
+                                                MessageStatus.delivered
+                                            ? Icons.done_all_rounded
+                                            : (message.status ==
+                                                      MessageStatus.sent
+                                                  ? Icons.done_rounded
+                                                  : Icons.schedule_rounded)),
+                                  size: 12.5,
+                                  color: message.status == MessageStatus.read
+                                      ? const Color(0xFF67E8F9)
+                                      : Colors.white70,
                                 ),
+                                if (message.status == MessageStatus.read) ...[
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    lang.tr('seen'),
+                                    style: const TextStyle(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF67E8F9),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ],
                           ],

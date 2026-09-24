@@ -54,6 +54,8 @@ class MessageModel {
   final DateTime timestamp;
   final bool isMine;
   MessageStatus status;
+  // null denotes legacy history without per-recipient delivery bookkeeping.
+  Set<String>? pendingRecipients;
   final FileAttachmentInfo? fileAttachment;
   bool isRevoked;
   DateTime? revokedAt;
@@ -82,6 +84,7 @@ class MessageModel {
     DateTime? timestamp,
     required this.isMine,
     this.status = MessageStatus.sent,
+    this.pendingRecipients,
     this.fileAttachment,
     this.isRevoked = false,
     this.revokedAt,
@@ -144,6 +147,8 @@ class MessageModel {
     'timestamp': timestamp.toIso8601String(),
     'isMine': isMine,
     'status': status.name,
+    if (pendingRecipients != null)
+      'pendingRecipients': pendingRecipients!.toList(),
     if (fileAttachment != null) 'fileAttachment': fileAttachment!.toJson(),
     'isRevoked': isRevoked,
     if (revokedAt != null) 'revokedAt': revokedAt!.toIso8601String(),
@@ -195,6 +200,9 @@ class MessageModel {
       timestamp: ts,
       isMine: json['isMine'] as bool? ?? false,
       status: parseStatus(json['status'] as String?),
+      pendingRecipients: (json['pendingRecipients'] as List?)
+          ?.cast<String>()
+          .toSet(),
       fileAttachment: attachmentJson != null
           ? FileAttachmentInfo.fromJson(attachmentJson)
           : null,
