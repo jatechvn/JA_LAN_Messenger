@@ -21,6 +21,8 @@ class GroupModel {
   String? avatarPreset;
   String? customAvatarPath;
   String? customAvatarBase64;
+  String? creatorId; // Hash or endpoint ID of group creator/owner
+  List<String> adminIds; // List of co-admin endpoint/hashes
   int get memberCount => memberIds.toSet().length + 1;
 
   // Distinguishes "leave this field unchanged" from an explicit null clear.
@@ -41,10 +43,13 @@ class GroupModel {
     this.avatarPreset,
     this.customAvatarPath,
     this.customAvatarBase64,
+    this.creatorId,
+    List<String>? adminIds,
   }) : createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? createdAt ?? DateTime.now(),
        memberRecords = memberRecords ?? {},
        invitations = invitations ?? {},
+       adminIds = adminIds ?? [],
        color = color ?? _generateColor(id);
 
   static Color _generateColor(String key) {
@@ -78,7 +83,29 @@ class GroupModel {
     if (avatarPreset != null) 'avatarPreset': avatarPreset,
     if (customAvatarPath != null) 'customAvatarPath': customAvatarPath,
     if (customAvatarBase64 != null) 'customAvatarBase64': customAvatarBase64,
+    if (creatorId != null) 'creatorId': creatorId,
+    'adminIds': adminIds,
   };
+
+  bool isCreator(String userHashOrEndpoint) {
+    if (userHashOrEndpoint.isEmpty) return false;
+    if (creatorId != null && creatorId!.isNotEmpty) {
+      return creatorId == userHashOrEndpoint;
+    }
+    final prefix = creatorHashPrefix(id);
+    return prefix != null &&
+        RegExp(r'^[a-f0-9]{12,}$').hasMatch(userHashOrEndpoint) &&
+        userHashOrEndpoint.startsWith(prefix);
+  }
+
+  // Legacy JA group IDs encode a hash prefix, not a cryptographic signature.
+  static String? creatorHashPrefix(String id) =>
+      RegExp(r'^group_([a-f0-9]{12})_[0-9]+$').firstMatch(id)?.group(1);
+
+  bool isAdmin(String userHashOrEndpoint) {
+    if (isCreator(userHashOrEndpoint)) return true;
+    return adminIds.contains(userHashOrEndpoint);
+  }
 
   GroupModel copyWith({
     String? name,
@@ -93,6 +120,8 @@ class GroupModel {
     Object? avatarPreset = _keep,
     Object? customAvatarPath = _keep,
     Object? customAvatarBase64 = _keep,
+    String? creatorId,
+    List<String>? adminIds,
   }) {
     return GroupModel(
       id: id,
@@ -106,6 +135,8 @@ class GroupModel {
       unreadCount: unreadCount ?? this.unreadCount,
       lastMessage: lastMessage ?? this.lastMessage,
       lastMessageTime: lastMessageTime ?? this.lastMessageTime,
+      creatorId: creatorId ?? this.creatorId,
+      adminIds: adminIds ?? this.adminIds,
       avatarPreset: identical(avatarPreset, _keep)
           ? this.avatarPreset
           : avatarPreset as String?,
@@ -145,6 +176,12 @@ class GroupModel {
     avatarPreset: json['avatarPreset'] as String?,
     customAvatarPath: json['customAvatarPath'] as String?,
     customAvatarBase64: json['customAvatarBase64'] as String?,
+    creatorId: json['creatorId'] as String?,
+    adminIds:
+        (json['adminIds'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [],
   );
 
   static List<GroupModel> listFromJson(String source) {

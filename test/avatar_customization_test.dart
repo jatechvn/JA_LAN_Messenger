@@ -259,6 +259,14 @@ void main() {
       },
     );
 
+    test('decoded custom avatars keep the same bytes across rebuilds', () {
+      const payload = 'aGVsbG8=';
+      final first = AvatarImageCache.decode(payload);
+      final second = AvatarImageCache.decode(payload);
+      expect(first, isNotNull);
+      expect(identical(first, second), isTrue);
+    });
+
     test('bytesToThumbnailBase64 returns null on empty bytes', () async {
       final b64 = await AvatarUtils.bytesToThumbnailBase64(Uint8List(0));
       expect(b64, isNull);
@@ -437,7 +445,7 @@ void main() {
     });
 
     testWidgets(
-      'AppAvatar renders default forum icon for group without preset or image',
+      'AppAvatar renders default groups icon for group without preset or image',
       (tester) async {
         final groupPeer = PeerModel(
           id: 'group_2',
@@ -454,7 +462,7 @@ void main() {
           ),
         );
 
-        expect(find.byIcon(Icons.forum_rounded), findsOneWidget);
+        expect(find.byIcon(Icons.groups_rounded), findsOneWidget);
       },
     );
   });
@@ -545,5 +553,166 @@ void main() {
       expect(find.byType(Image), findsOneWidget);
       expect(find.byIcon(AvatarPresets.getIcon('game')), findsWidgets);
     });
+  });
+
+  group('Group Permission and Avatar Synchronization Tests', () {
+    testWidgets('AppAvatar renders Image.asset for AI Peer with avatarAsset', (
+      tester,
+    ) async {
+      final aiPeer = PeerModel.createAiAssistantPeer();
+      expect(aiPeer.avatarAsset, 'assets/ai_avatar.png');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: AppAvatar(peer: aiPeer, size: 40)),
+        ),
+      );
+
+      final imgFinder = find.byType(Image);
+      expect(imgFinder, findsOneWidget);
+      final image = tester.widget<Image>(imgFinder);
+      expect(image.image, isA<AssetImage>());
+      expect((image.image as AssetImage).assetName, 'assets/ai_avatar.png');
+    });
+
+    test(
+      'GroupModel creatorId and adminIds serialization and role checking',
+      () {
+        final group = GroupModel(
+          id: 'group_creatorhash_123456789',
+          name: 'Alpha Group',
+          memberIds: ['peer1:6475', 'peer2:6475'],
+          creatorId: 'creatorhash123456',
+          adminIds: ['creatorhash123456', 'coadminhash'],
+        );
+
+        expect(group.isCreator('creatorhash123456'), isTrue);
+        expect(group.isAdmin('creatorhash123456'), isTrue);
+        expect(group.isAdmin('coadminhash'), isTrue);
+        expect(group.isAdmin('regular_member'), isFalse);
+
+        final json = group.toJson();
+        expect(json['creatorId'], 'creatorhash123456');
+        expect(json['adminIds'], ['creatorhash123456', 'coadminhash']);
+
+        final restored = GroupModel.fromJson(json);
+        expect(restored.creatorId, 'creatorhash123456');
+        expect(restored.adminIds, ['creatorhash123456', 'coadminhash']);
+        expect(restored.isCreator('creatorhash123456'), isTrue);
+      },
+    );
+
+    test(
+      'GroupModel isCreator fallback to id prefix if creatorId is omitted',
+      () {
+        final group = GroupModel(
+          id: 'group_abcdef123456_999999',
+          name: 'Legacy Group',
+          memberIds: ['peer1:6475'],
+        );
+
+        expect(group.isCreator('abcdef1234567890'), isTrue);
+        expect(group.isCreator('otherhash1234567'), isFalse);
+      },
+    );
+
+    test('ProtocolBeebeep encodes and decodes creatorId in group packets', () {
+      final packetBytes = ProtocolBeebeep.buildGroupPacket(
+        groupId: 'grp_001',
+        name: 'Dev Ops',
+        updatedAt: DateTime.utc(2026, 9, 23, 1, 0, 0),
+        creatorId: 'user_hash_owner',
+        members: const [],
+      );
+
+      final raw = utf8.decode(packetBytes);
+      final msg = ProtocolBeebeep.parseMessage(raw);
+      expect(msg, isNotNull);
+
+      final meta = ProtocolBeebeep.groupMetadata(msg!);
+      expect(meta, isNotNull);
+      expect(meta!.creatorId, 'user_hash_owner');
+    });
+  });
+
+  group('AppAvatar Styling & Shape Default Tests', () {
+    testWidgets('AppAvatar defaults to circular shape with colored border', (
+      tester,
+    ) async {
+      final peer = PeerModel(
+        id: 'user_1',
+        name: 'Nguyen Van A',
+        ip: '192.168.1.50',
+        port: 6475,
+        avatarColor: const Color(0xFF8B5CF6),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: AppAvatar(peer: peer, size: 40)),
+        ),
+      );
+
+      final containerFinder = find.byWidgetPredicate(
+        (w) =>
+            w is Container &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).shape == BoxShape.circle,
+      );
+      expect(containerFinder, findsWidgets);
+
+      final outerContainer = tester.widget<Container>(containerFinder.first);
+      final deco = outerContainer.decoration as BoxDecoration;
+      expect(deco.shape, equals(BoxShape.circle));
+      expect(
+        deco.border?.top.color,
+        equals(const Color(0xFF8B5CF6).withValues(alpha: 0.5)),
+      );
+
+      final textFinder = find.text('NV');
+      expect(textFinder, findsOneWidget);
+      final textWidget = tester.widget<Text>(textFinder);
+      expect(textWidget.style?.color, equals(const Color(0xFF8B5CF6)));
+      expect(textWidget.style?.fontWeight, equals(FontWeight.bold));
+    });
+
+    testWidgets('AppAvatar.local defaults to circular shape', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(home: Scaffold(body: AppAvatar.local(size: 40))),
+      );
+
+      final containerFinder = find.byWidgetPredicate(
+        (w) =>
+            w is Container &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).shape == BoxShape.circle,
+      );
+      expect(containerFinder, findsWidgets);
+    });
+
+    testWidgets(
+      'AppAvatar preset icon styling uses translucent background and matching icon color',
+      (tester) async {
+        final peer = PeerModel(
+          id: 'user_2',
+          name: 'Gamer User',
+          ip: '192.168.1.51',
+          port: 6475,
+          avatarPreset: 'game',
+          avatarColor: const Color(0xFFEF4444),
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: AppAvatar(peer: peer, size: 40)),
+          ),
+        );
+
+        final iconFinder = find.byIcon(Icons.sports_esports_rounded);
+        expect(iconFinder, findsOneWidget);
+        final iconWidget = tester.widget<Icon>(iconFinder);
+        expect(iconWidget.color, equals(const Color(0xFFEF4444)));
+      },
+    );
   });
 }

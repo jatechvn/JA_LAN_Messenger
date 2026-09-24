@@ -285,6 +285,10 @@ class ConversationDetailsPanel extends StatelessWidget {
                                     initialCustomPath: peer.customAvatarPath,
                                     initialCustomBase64:
                                         peer.customAvatarBase64,
+                                    initialGroupName: peer.name,
+                                    canRenameGroup: coordinator.isGroupAdmin(
+                                      peer.id,
+                                    ),
                                   )
                                 : null,
                           ),
@@ -301,6 +305,10 @@ class ConversationDetailsPanel extends StatelessWidget {
                                   initialPreset: peer.avatarPreset,
                                   initialCustomPath: peer.customAvatarPath,
                                   initialCustomBase64: peer.customAvatarBase64,
+                                  initialGroupName: peer.name,
+                                  canRenameGroup: coordinator.isGroupAdmin(
+                                    peer.id,
+                                  ),
                                 ),
                                 borderRadius: BorderRadius.circular(12),
                                 child: Container(
@@ -399,7 +407,8 @@ class ConversationDetailsPanel extends StatelessWidget {
                       isActive: peer.isPinned,
                       onTap: () => coordinator.togglePinPeer(peer.id),
                     ),
-                    if (!peer.isAllUsers)
+                    if (!peer.isAllUsers &&
+                        (!peer.isGroup || coordinator.isGroupAdmin(peer.id)))
                       _ActionButton(
                         icon: peer.isGroup
                             ? Icons.group_add_rounded
@@ -756,46 +765,48 @@ class ConversationDetailsPanel extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  // Disband group button
-                  InkWell(
-                    onTap: () =>
-                        _showDisbandGroupConfirm(context, coordinator, peer),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.redAccent.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Colors.redAccent.withValues(alpha: 0.25),
-                          width: 1,
+                  if (coordinator.isGroupAdmin(peer.id)) ...[
+                    const SizedBox(height: 8),
+                    // Disband group button (Chỉ Admin/Trưởng nhóm mới có quyền giải tán nhóm)
+                    InkWell(
+                      onTap: () =>
+                          _showDisbandGroupConfirm(context, coordinator, peer),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
                         ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.group_remove_rounded,
-                            size: 16,
-                            color: Colors.redAccent,
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.redAccent.withValues(alpha: 0.25),
+                            width: 1,
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            lang.tr('deleteGroup'),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.group_remove_rounded,
+                              size: 16,
                               color: Colors.redAccent,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 6),
+                            Text(
+                              lang.tr('deleteGroup'),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.redAccent,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ],
             ),
@@ -827,6 +838,7 @@ class ConversationDetailsPanel extends StatelessWidget {
     LanguageProvider lang,
   ) {
     final members = coordinator.groupMembers(groupPeer.id);
+    final group = coordinator.groupsMap[groupPeer.id];
 
     if (members.isEmpty) {
       return Text(
@@ -887,7 +899,13 @@ class ConversationDetailsPanel extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (m.id != 'me')
+                    if (m.id != 'me' &&
+                        coordinator.isGroupAdmin(groupPeer.id) &&
+                        group != null &&
+                        !group.isCreator(m.id) &&
+                        !group.isCreator(
+                          group.memberRecords[m.id]?.elementAtOrNull(2) ?? '',
+                        ))
                       IconButton(
                         icon: Icon(
                           Icons.remove_circle_outline_rounded,

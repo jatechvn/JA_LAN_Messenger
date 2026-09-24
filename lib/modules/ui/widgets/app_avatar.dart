@@ -1,8 +1,34 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../../models/peer_model.dart';
 import '../../services/app_preferences.dart';
+
+/// Giữ đúng một bản byte cho mỗi ảnh Base64. Quét mạng dựng lại danh sách
+/// nhiều lần; giải mã lại sẽ tạo MemoryImage mới và avatar nhấp nháy.
+class AvatarImageCache {
+  static const int _maxEntries = 48;
+  static final Map<String, Uint8List> _bytes = {};
+
+  static Uint8List? decode(String base64) {
+    final cached = _bytes.remove(base64);
+    if (cached != null) {
+      _bytes[base64] = cached;
+      return cached;
+    }
+    try {
+      final decoded = base64Decode(base64);
+      if (_bytes.length >= _maxEntries) {
+        _bytes.remove(_bytes.keys.first);
+      }
+      _bytes[base64] = decoded;
+      return decoded;
+    } catch (_) {
+      return null;
+    }
+  }
+}
 
 /// Danh sách các preset icon phổ biến và đẹp mắt cho avatar người dùng
 class AvatarPresets {
@@ -52,6 +78,7 @@ class AppAvatar extends StatelessWidget {
   final double size;
   final bool showStatus;
   final bool isLocal;
+  final bool isCircle;
   final VoidCallback? onTap;
 
   const AppAvatar({
@@ -60,6 +87,7 @@ class AppAvatar extends StatelessWidget {
     this.size = 40,
     this.showStatus = false,
     this.isLocal = false,
+    this.isCircle = true,
     this.onTap,
   });
 
@@ -68,6 +96,7 @@ class AppAvatar extends StatelessWidget {
     Key? key,
     double size = 40,
     bool showStatus = false,
+    bool isCircle = true,
     VoidCallback? onTap,
   }) {
     return AppAvatar(
@@ -75,6 +104,7 @@ class AppAvatar extends StatelessWidget {
       size: size,
       showStatus: showStatus,
       isLocal: true,
+      isCircle: isCircle,
       onTap: onTap,
     );
   }
@@ -91,27 +121,36 @@ class AppAvatar extends StatelessWidget {
       avatarContent = _buildDefaultAvatar();
     }
 
-    final avatarWidget = ClipRRect(
-      borderRadius: BorderRadius.circular(size * 0.3),
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(size * 0.3),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.15),
-            width: 1.0,
-          ),
-        ),
-        child: avatarContent,
-      ),
+    final effectiveColor = _getEffectiveColor();
+    final borderColor = effectiveColor.withValues(alpha: 0.5);
+
+    final shapeDecoration = isCircle
+        ? BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: borderColor, width: 1.2),
+          )
+        : BoxDecoration(
+            borderRadius: BorderRadius.circular(size * 0.3),
+            border: Border.all(color: borderColor, width: 1.2),
+          );
+
+    final avatarWidget = Container(
+      width: size,
+      height: size,
+      clipBehavior: Clip.antiAlias,
+      decoration: shapeDecoration,
+      child: avatarContent,
     );
+
+    final borderRadius = isCircle
+        ? BorderRadius.circular(size / 2)
+        : BorderRadius.circular(size * 0.3);
 
     if (!showStatus) {
       return onTap != null
           ? InkWell(
               onTap: onTap,
-              borderRadius: BorderRadius.circular(size * 0.3),
+              borderRadius: borderRadius,
               child: avatarWidget,
             )
           : avatarWidget;
@@ -120,32 +159,58 @@ class AppAvatar extends StatelessWidget {
     final statusColor = _getStatusColor();
     final badgeSize = (size * 0.28).clamp(8.0, 14.0);
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(size * 0.3),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          avatarWidget,
-          Positioned(
-            right: -1,
-            bottom: -1,
-            child: Container(
-              width: badgeSize,
-              height: badgeSize,
-              decoration: BoxDecoration(
-                color: statusColor,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: const Color(0xFF1E293B),
-                  width: badgeSize > 10 ? 2 : 1.5,
-                ),
+    final statusStack = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        avatarWidget,
+        Positioned(
+          right: -1,
+          bottom: -1,
+          child: Container(
+            width: badgeSize,
+            height: badgeSize,
+            decoration: BoxDecoration(
+              color: statusColor,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: const Color(0xFF1E293B),
+                width: badgeSize > 10 ? 2 : 1.5,
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
+
+    return onTap != null
+        ? InkWell(onTap: onTap, borderRadius: borderRadius, child: statusStack)
+        : statusStack;
+  }
+
+  Color _getEffectiveColor() {
+    if (isLocal) {
+      return _getLocalColor();
+    }
+    if (peer != null) {
+      if (peer!.isAi) return const Color(0xFF6366F1);
+      if (peer!.isAllUsers) return const Color(0xFF0EA5E9);
+      return peer!.avatarColor;
+    }
+    return const Color(0xFF3B82F6);
+  }
+
+  Color _getLocalColor() {
+    final prefs = AppPreferences();
+    final colorHex = prefs.userAvatarColor.replaceFirst('#', '');
+    try {
+      final val = int.parse(
+        colorHex.length == 6 ? 'FF$colorHex' : colorHex,
+        radix: 16,
+      );
+      return Color(val);
+    } catch (_) {
+      return const Color(0xFF3B82F6);
+    }
   }
 
   Color _getStatusColor() {
@@ -166,17 +231,7 @@ class AppAvatar extends StatelessWidget {
   Widget _buildLocalAvatar() {
     final prefs = AppPreferences();
     final type = prefs.userAvatarType;
-    final colorHex = prefs.userAvatarColor.replaceFirst('#', '');
-    Color bgColor;
-    try {
-      final val = int.parse(
-        colorHex.length == 6 ? 'FF$colorHex' : colorHex,
-        radix: 16,
-      );
-      bgColor = Color(val);
-    } catch (_) {
-      bgColor = const Color(0xFF3B82F6);
-    }
+    final bgColor = _getLocalColor();
 
     if (type == 'custom') {
       final customPath = prefs.userAvatarCustomPath;
@@ -186,6 +241,7 @@ class AppAvatar extends StatelessWidget {
           width: size,
           height: size,
           fit: BoxFit.cover,
+          gaplessPlayback: true,
           errorBuilder: (_, _, _) => _buildFallbackPreset(bgColor, 'robot'),
         );
       }
@@ -200,24 +256,40 @@ class AppAvatar extends StatelessWidget {
     return _buildInitials(bgColor, name);
   }
 
+  Widget _buildAiFallback() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF6366F1), Color(0xFFEC4899)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.auto_awesome_rounded,
+          color: Colors.white,
+          size: size * 0.55,
+        ),
+      ),
+    );
+  }
+
   Widget _buildPeerAvatar(PeerModel p) {
-    if (p.isAi) {
-      return Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF6366F1), Color(0xFFEC4899)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Center(
-          child: Icon(
-            Icons.auto_awesome_rounded,
-            color: Colors.white,
-            size: size * 0.55,
-          ),
-        ),
+    if (p.avatarAsset != null && p.avatarAsset!.isNotEmpty) {
+      return Image.asset(
+        p.avatarAsset!,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => p.isAi
+            ? _buildAiFallback()
+            : _buildInitials(p.avatarColor, p.name, p),
       );
+    }
+
+    if (p.isAi) {
+      return _buildAiFallback();
     }
 
     if (p.isAllUsers) {
@@ -248,22 +320,16 @@ class AppAvatar extends StatelessWidget {
           width: size,
           height: size,
           fit: BoxFit.cover,
+          gaplessPlayback: true,
           errorBuilder: (_, _, _) => _buildGroupFallback(p),
         );
       }
 
-      if (p.customAvatarBase64 != null && p.customAvatarBase64!.isNotEmpty) {
-        try {
-          final bytes = base64Decode(p.customAvatarBase64!);
-          return Image.memory(
-            bytes,
-            width: size,
-            height: size,
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => _buildGroupFallback(p),
-          );
-        } catch (_) {}
-      }
+      final groupImage = _memoryImage(
+        p.customAvatarBase64,
+        () => _buildGroupFallback(p),
+      );
+      if (groupImage != null) return groupImage;
 
       if (p.avatarPreset != null && p.avatarPreset!.isNotEmpty) {
         return _buildFallbackPreset(p.avatarColor, p.avatarPreset!);
@@ -280,40 +346,49 @@ class AppAvatar extends StatelessWidget {
         width: size,
         height: size,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _buildInitials(p.avatarColor, p.name),
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) => _buildInitials(p.avatarColor, p.name, p),
       );
     }
 
-    if (p.customAvatarBase64 != null && p.customAvatarBase64!.isNotEmpty) {
-      try {
-        final bytes = base64Decode(p.customAvatarBase64!);
-        return Image.memory(
-          bytes,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _buildInitials(p.avatarColor, p.name),
-        );
-      } catch (_) {}
-    }
+    final peerImage = _memoryImage(
+      p.customAvatarBase64,
+      () => _buildInitials(p.avatarColor, p.name, p),
+    );
+    if (peerImage != null) return peerImage;
 
     if (p.avatarPreset != null && p.avatarPreset!.isNotEmpty) {
       if (p.avatarPreset == 'initials') {
-        return _buildInitials(p.avatarColor, p.name);
+        return _buildInitials(p.avatarColor, p.name, p);
       }
       return _buildFallbackPreset(p.avatarColor, p.avatarPreset!);
     }
 
-    return _buildInitials(p.avatarColor, p.name);
+    return _buildInitials(p.avatarColor, p.name, p);
+  }
+
+  Widget? _memoryImage(String? base64, Widget Function() fallback) {
+    if (base64 == null || base64.isEmpty) return null;
+    final bytes = AvatarImageCache.decode(base64);
+    if (bytes == null) return null;
+    return Image.memory(
+      bytes,
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+      gaplessPlayback: true,
+      errorBuilder: (_, _, _) => fallback(),
+    );
   }
 
   Widget _buildDefaultAvatar() {
+    const defaultColor = Color(0xFF3B82F6);
     return Container(
-      color: const Color(0xFF3B82F6),
+      color: defaultColor.withValues(alpha: 0.2),
       child: Center(
         child: Icon(
           Icons.person_rounded,
-          color: Colors.white,
+          color: defaultColor,
           size: size * 0.55,
         ),
       ),
@@ -322,11 +397,11 @@ class AppAvatar extends StatelessWidget {
 
   Widget _buildGroupFallback(PeerModel p) {
     return Container(
-      color: p.avatarColor,
+      color: p.avatarColor.withValues(alpha: 0.2),
       child: Center(
         child: Icon(
-          Icons.forum_rounded,
-          color: Colors.white,
+          Icons.groups_rounded,
+          color: p.avatarColor,
           size: size * 0.55,
         ),
       ),
@@ -336,39 +411,39 @@ class AppAvatar extends StatelessWidget {
   Widget _buildFallbackPreset(Color bgColor, String presetKey) {
     final iconData = AvatarPresets.getIcon(presetKey);
     return Container(
-      color: bgColor,
+      color: bgColor.withValues(alpha: 0.2),
       child: Center(
-        child: Icon(iconData, color: Colors.white, size: size * 0.55),
+        child: Icon(iconData, color: bgColor, size: size * 0.55),
       ),
     );
   }
 
-  Widget _buildInitials(Color bgColor, String name) {
-    final clean = name.trim();
-    String initials = '';
-    if (clean.isNotEmpty) {
-      final parts = clean.split(RegExp(r'\s+'));
-      if (parts.length >= 2 && parts[0].isNotEmpty && parts[1].isNotEmpty) {
-        initials = '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-      } else {
-        initials = clean.substring(0, clean.length >= 2 ? 2 : 1).toUpperCase();
-      }
-    } else {
-      initials = '?';
-    }
+  Widget _buildInitials(Color avatarColor, String name, [PeerModel? p]) {
+    final initials = p?.initials ?? _computeInitials(name);
 
     return Container(
-      color: bgColor,
+      color: avatarColor.withValues(alpha: 0.2),
       child: Center(
         child: Text(
           initials,
           style: TextStyle(
-            color: Colors.white,
+            color: avatarColor,
             fontSize: size * 0.38,
             fontWeight: FontWeight.bold,
           ),
         ),
       ),
     );
+  }
+
+  String _computeInitials(String name) {
+    final clean = name.trim();
+    if (clean.isEmpty) return '?';
+    final parts = clean.split(RegExp(r'[\s@\._-]+'));
+    final validParts = parts.where((p) => p.isNotEmpty).toList();
+    if (validParts.length >= 2) {
+      return (validParts[0][0] + validParts[1][0]).toUpperCase();
+    }
+    return clean.substring(0, clean.length >= 2 ? 2 : 1).toUpperCase();
   }
 }

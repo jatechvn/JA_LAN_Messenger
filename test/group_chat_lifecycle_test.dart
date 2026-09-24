@@ -577,6 +577,129 @@ void main() {
     await tester.pump();
     expect(coordinator.groups, isEmpty);
   });
+
+  test('an admin rename announces who changed the group name', () async {
+    final coordinator = MessengerCoordinator(tcpServer: _RecordingServer());
+    final lang = LanguageProvider();
+    addTearDown(coordinator.dispose);
+    addTearDown(lang.dispose);
+    coordinator.languageProvider = lang;
+    coordinator.handlePeerHandshake('192.0.2.1', {
+      'port': 6475,
+      'username': 'Alice',
+      'account': 'Alice',
+      'hostname': 'Alice-PC',
+      'hash': 'alice-hash',
+    }, _UnusedSocket());
+    await coordinator.createGroup('Cũ', ['192.0.2.1:6475']);
+    final group = coordinator.groups.single;
+
+    coordinator.renameGroup(group.id, 'Mới');
+
+    expect(coordinator.groups.single.name, 'Mới');
+    final localNotice = coordinator.conversationsMap[group.id]!.single;
+    expect(localNotice.senderId, 'system');
+    expect(localNotice.text, contains(coordinator.localUsername));
+    expect(localNotice.text, contains('Cũ'));
+    expect(localNotice.text, contains('Mới'));
+
+    Map<String, dynamic> packet(String name, DateTime time) =>
+        ProtocolBeebeep.parseMessage(
+          utf8.decode(
+            ProtocolBeebeep.buildGroupPacket(
+              groupId: group.id,
+              name: name,
+              updatedAt: time,
+              members: const [],
+            ),
+          ),
+        )!;
+
+    coordinator.handleGroupPacket(
+      '192.0.2.1:6475',
+      packet('Bị chặn', DateTime.now().add(const Duration(seconds: 1))),
+    );
+    expect(coordinator.groups.single.name, 'Mới');
+    expect(coordinator.conversationsMap[group.id]!.length, 1);
+
+    coordinator.groups.single.adminIds.add('192.0.2.1:6475');
+    final renamedAt = DateTime.now().add(const Duration(seconds: 2));
+    final adminPacket = packet('Từ Alice', renamedAt);
+    coordinator.handleGroupPacket('192.0.2.1:6475', adminPacket);
+    coordinator.handleGroupPacket('192.0.2.1:6475', adminPacket);
+    expect(coordinator.groups.single.name, 'Từ Alice');
+    expect(coordinator.conversationsMap[group.id]!.length, 2);
+    expect(
+      coordinator.conversationsMap[group.id]!.last.text,
+      contains('Alice'),
+    );
+  });
+
+  test('membership changes and role transfers are announced', () async {
+    final coordinator = MessengerCoordinator(tcpServer: _RecordingServer());
+    final lang = LanguageProvider();
+    addTearDown(coordinator.dispose);
+    addTearDown(lang.dispose);
+    coordinator.languageProvider = lang;
+    coordinator.handlePeerHandshake('192.0.2.1', {
+      'port': 6475,
+      'username': 'Alice',
+      'account': 'Alice',
+      'hostname': 'Alice-PC',
+      'hash': 'alice-hash',
+    }, _UnusedSocket());
+    coordinator.handlePeerHandshake('192.0.2.2', {
+      'port': 6475,
+      'username': 'Bob',
+      'account': 'Bob',
+      'hostname': 'Bob-PC',
+      'hash': 'bob-hash',
+    }, _UnusedSocket());
+    await coordinator.createGroup('Team', ['192.0.2.1:6475']);
+    final group = coordinator.groups.single;
+
+    coordinator.addGroupMembers(group.id, ['192.0.2.2:6475']);
+    expect(coordinator.groups.single.memberIds, contains('192.0.2.2:6475'));
+    expect(
+      coordinator.conversationsMap[group.id]!.single.text,
+      contains('Bob'),
+    );
+
+    coordinator.removeGroupMember(group.id, '192.0.2.2:6475');
+    expect(
+      coordinator.groups.single.memberIds,
+      isNot(contains('192.0.2.2:6475')),
+    );
+    expect(coordinator.conversationsMap[group.id]!.last.text, contains('Bob'));
+
+    coordinator.addGroupMembers(group.id, ['192.0.2.2:6475']);
+    coordinator.setGroupAdmin(group.id, '192.0.2.2:6475', admin: true);
+    expect(coordinator.groups.single.adminIds, contains('bob-hash'));
+    coordinator.transferGroupCreator(group.id, '192.0.2.2:6475');
+    expect(coordinator.isGroupCreator(group.id), isFalse);
+    expect(coordinator.conversationsMap[group.id]!.last.senderId, 'system');
+
+    final packet = ProtocolBeebeep.parseMessage(
+      utf8.decode(
+        ProtocolBeebeep.buildGroupPacket(
+          groupId: group.id,
+          name: group.name,
+          updatedAt: DateTime.now().add(const Duration(seconds: 1)),
+          members: const [],
+          left: true,
+        ),
+      ),
+    )!;
+    coordinator.handleGroupPacket('192.0.2.1:6475', packet);
+    expect(
+      coordinator.groups.single.memberIds,
+      isNot(contains('192.0.2.1:6475')),
+    );
+    expect(
+      coordinator.conversationsMap[group.id]!.last.text,
+      contains('Alice'),
+    );
+  });
 }
 
 class _RecordingServer extends LanTcpServer {

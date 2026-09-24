@@ -218,6 +218,8 @@ class _GroupMembersDialogState extends State<GroupMembersDialog> {
           (m.hostname?.toLowerCase().contains(q) ?? false);
     }).toList();
 
+    final isLocalAdmin = coordinator.isGroupAdmin(updatedPeer.id);
+
     return GlassDialog(
       title: '${updatedPeer.name} (${members.length})',
       icon: Icons.groups_rounded,
@@ -274,29 +276,34 @@ class _GroupMembersDialogState extends State<GroupMembersDialog> {
                     ],
                   ),
                 ),
-                TextButton.icon(
-                  onPressed: () async {
-                    await AvatarPickerDialog.show(
-                      context,
-                      targetGroupId: updatedPeer.id,
-                      groupName: updatedPeer.name,
-                      initialColor: updatedPeer.avatarColor,
-                      initialPreset: updatedPeer.avatarPreset,
-                      initialCustomPath: updatedPeer.customAvatarPath,
-                      initialCustomBase64: updatedPeer.customAvatarBase64,
-                    );
-                    setState(() {});
-                  },
-                  icon: const Icon(Icons.edit_outlined, size: 14),
-                  label: Text(
-                    lang.tr('changeGroupAvatar'),
-                    style: const TextStyle(fontSize: 11),
+                if (isLocalAdmin)
+                  TextButton.icon(
+                    onPressed: () async {
+                      await AvatarPickerDialog.show(
+                        context,
+                        targetGroupId: updatedPeer.id,
+                        groupName: updatedPeer.name,
+                        initialColor: updatedPeer.avatarColor,
+                        initialPreset: updatedPeer.avatarPreset,
+                        initialCustomPath: updatedPeer.customAvatarPath,
+                        initialCustomBase64: updatedPeer.customAvatarBase64,
+                        initialGroupName: updatedPeer.name,
+                        canRenameGroup: coordinator.isGroupAdmin(
+                          updatedPeer.id,
+                        ),
+                      );
+                      setState(() {});
+                    },
+                    icon: const Icon(Icons.edit_outlined, size: 14),
+                    label: Text(
+                      lang.tr('changeGroupAvatar'),
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
                   ),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                ),
               ],
             ),
           ),
@@ -324,24 +331,25 @@ class _GroupMembersDialogState extends State<GroupMembersDialog> {
           ),
           const SizedBox(height: 12),
 
-          // 2. Nút Thêm thành viên
-          OutlinedButton.icon(
-            onPressed: () => _showAddMemberPicker(context),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: (isDark
-                  ? const Color(0xFF60A5FA)
-                  : const Color(0xFF1D4ED8)),
-              side: BorderSide(
-                color: const Color(0xFF3B82F6).withValues(alpha: 0.3),
+          // 2. Nút Thêm thành viên. Thành viên thường không mời thêm người.
+          if (isLocalAdmin)
+            OutlinedButton.icon(
+              onPressed: () => _showAddMemberPicker(context),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: (isDark
+                    ? const Color(0xFF60A5FA)
+                    : const Color(0xFF1D4ED8)),
+                side: BorderSide(
+                  color: const Color(0xFF3B82F6).withValues(alpha: 0.3),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
+              icon: const Icon(Icons.person_add_rounded, size: 18),
+              label: Text(lang.tr('addMembers')),
             ),
-            icon: const Icon(Icons.person_add_rounded, size: 18),
-            label: Text(lang.tr('addMembers')),
-          ),
           const SizedBox(height: 12),
 
           // 3. Danh sách thành viên
@@ -364,6 +372,26 @@ class _GroupMembersDialogState extends State<GroupMembersDialog> {
                     itemBuilder: (context, idx) {
                       final member = filteredMembers[idx];
                       final isOnline = member.status != PeerStatus.offline;
+                      final groupModel = matchingGroups.isEmpty
+                          ? null
+                          : matchingGroups.first;
+                      final recordHash = groupModel?.memberRecords[member.id]
+                          ?.elementAtOrNull(2);
+                      final memberIsCreator = member.id == 'me'
+                          ? coordinator.isGroupCreator(updatedPeer.id)
+                          : groupModel != null &&
+                                (groupModel.isCreator(member.id) ||
+                                    (recordHash != null &&
+                                        groupModel.isCreator(recordHash)));
+                      final memberIsAdmin = member.id == 'me'
+                          ? coordinator.isGroupAdmin(updatedPeer.id)
+                          : groupModel != null &&
+                                (groupModel.isAdmin(member.id) ||
+                                    (recordHash != null &&
+                                        groupModel.isAdmin(recordHash)));
+                      final isCreatorView = coordinator.isGroupCreator(
+                        updatedPeer.id,
+                      );
 
                       return ListTile(
                         leading: AppAvatar(
@@ -381,7 +409,11 @@ class _GroupMembersDialogState extends State<GroupMembersDialog> {
                           ),
                         ),
                         subtitle: Text(
-                          '${member.ip} • ${isOnline ? lang.tr('online') : lang.tr('offline')}',
+                          '${memberIsCreator
+                              ? '${lang.tr('groupCreatorBadge')} • '
+                              : memberIsAdmin
+                              ? '${lang.tr('groupAdminBadge')} • '
+                              : ''}${member.ip} • ${isOnline ? lang.tr('online') : lang.tr('offline')}',
                           style: TextStyle(
                             color: isOnline
                                 ? (isDark
@@ -391,22 +423,75 @@ class _GroupMembersDialogState extends State<GroupMembersDialog> {
                             fontSize: 11,
                           ),
                         ),
-                        trailing: member.id == 'me'
+                        trailing:
+                            member.id == 'me' ||
+                                !isLocalAdmin ||
+                                memberIsCreator
                             ? null
-                            : IconButton(
-                                icon: Icon(
-                                  Icons.remove_circle_outline_rounded,
-                                  size: 18,
-                                  color: Colors.red.withValues(alpha: 0.7),
-                                ),
-                                tooltip: lang.tr('removeMember'),
-                                onPressed: () {
-                                  coordinator.removeGroupMember(
-                                    updatedPeer.id,
-                                    member.id,
-                                  );
-                                  setState(() {});
-                                },
+                            : Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (isCreatorView)
+                                    PopupMenuButton<String>(
+                                      tooltip: lang.tr('groupAdminBadge'),
+                                      onSelected: (action) {
+                                        if (action == 'promote') {
+                                          coordinator.setGroupAdmin(
+                                            updatedPeer.id,
+                                            member.id,
+                                            admin: true,
+                                          );
+                                        } else if (action == 'demote') {
+                                          coordinator.setGroupAdmin(
+                                            updatedPeer.id,
+                                            member.id,
+                                            admin: false,
+                                          );
+                                        } else if (action == 'transfer') {
+                                          coordinator.transferGroupCreator(
+                                            updatedPeer.id,
+                                            member.id,
+                                          );
+                                        }
+                                        setState(() {});
+                                      },
+                                      itemBuilder: (context) => [
+                                        if (!memberIsAdmin)
+                                          PopupMenuItem(
+                                            value: 'promote',
+                                            child: Text(
+                                              lang.tr('promoteAdmin'),
+                                            ),
+                                          ),
+                                        if (memberIsAdmin)
+                                          PopupMenuItem(
+                                            value: 'demote',
+                                            child: Text(lang.tr('demoteAdmin')),
+                                          ),
+                                        PopupMenuItem(
+                                          value: 'transfer',
+                                          child: Text(
+                                            lang.tr('transferCreator'),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.remove_circle_outline_rounded,
+                                      size: 18,
+                                      color: Colors.red.withValues(alpha: 0.7),
+                                    ),
+                                    tooltip: lang.tr('removeMember'),
+                                    onPressed: () {
+                                      coordinator.removeGroupMember(
+                                        updatedPeer.id,
+                                        member.id,
+                                      );
+                                      setState(() {});
+                                    },
+                                  ),
+                                ],
                               ),
                         dense: true,
                         contentPadding: const EdgeInsets.symmetric(

@@ -131,5 +131,26 @@ void main() {
       );
       expect(NetworkUtils.compareIps('192.168.1.1', '192.168.1.1'), 0);
     });
+
+    test('Parse netsh interface ipv4 show addresses output', () {
+      const netshOutput = '''
+Configuration for interface "Ethernet 2"
+    DHCP enabled:                         Yes
+    IP Address:                           172.21.175.40
+    Subnet Prefix:                        172.21.168.0/21 (mask 255.255.248.0)
+    Default Gateway:                      172.21.168.1
+    Gateway Metric:                       0
+    InterfaceMetric:                      25
+
+Configuration for interface "Loopback Pseudo-Interface 1"
+    DHCP enabled:                         No
+    IP Address:                           127.0.0.1
+    Subnet Prefix:                        127.0.0.0/8 (mask 255.0.0.0)
+    InterfaceMetric:                      75
+''';
+      final masks = NetworkUtils.parseNetshSubnetMasks(netshOutput);
+      expect(masks['172.21.175.40'], '255.255.248.0');
+      expect(masks['127.0.0.1'], '255.0.0.0');
+    });
   });
 }

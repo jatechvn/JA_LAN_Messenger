@@ -160,14 +160,14 @@ void main() {
       );
       final updated = coordinator.groups.single;
       expect(updated.memberCount, 3);
-      expect(updated.unreadCount, 7);
-      expect(updated.lastMessage, 'Important preview');
-      expect(updated.lastMessageTime, time);
+      expect(updated.unreadCount, 8);
+      expect(updated.lastMessage, contains('Bảo'));
+      expect(updated.lastMessageTime, isNot(time));
       final disk = GroupModel.listFromJson(
         MessengerCoordinator.customGroupsFileForTesting!.readAsStringSync(),
       ).single;
-      expect(disk.unreadCount, 7);
-      expect(disk.lastMessage, 'Important preview');
+      expect(disk.unreadCount, 8);
+      expect(disk.lastMessage, contains('Bảo'));
     },
   );
 
@@ -194,7 +194,10 @@ void main() {
   test(
     'native Delete=512 removes recipient without global-disband semantics',
     () {
-      coordinator.createGroup('Team', ['192.0.2.1:6475']);
+      coordinator.handleGroupPacket(
+        '192.0.2.1:6475',
+        invite('group_native_owner', DateTime.now()),
+      );
       final id = coordinator.groups.single.id;
       coordinator.handleGroupPacket('192.0.2.1:6475', nativeControl(id, 512));
       expect(coordinator.groups, isEmpty);
@@ -309,13 +312,19 @@ void main() {
   );
 
   test('kick permits a fresh explicit invite; disband stays terminal', () {
-    coordinator.createGroup('Team', ['192.0.2.1:6475']);
+    coordinator.handleGroupPacket(
+      '192.0.2.1:6475',
+      invite('group_remote_owner', DateTime.now()),
+    );
     final id = coordinator.groups.single.id;
     coordinator.handleGroupPacket('192.0.2.1:6475', nativeControl(id, 512));
     final fresh = DateTime.now().add(const Duration(seconds: 1));
     coordinator.handleGroupPacket('192.0.2.1:6475', reinvite(id, fresh));
     expect(coordinator.groups.single.id, id);
-    coordinator.deleteGroup(id);
+    coordinator.handleGroupPacket(
+      '192.0.2.1:6475',
+      invite(id, fresh, removed: true),
+    );
     coordinator.handleGroupPacket(
       '192.0.2.1:6475',
       reinvite(id, fresh.add(const Duration(seconds: 1))),
@@ -470,6 +479,63 @@ void main() {
       ChangeNotifierProvider<ThemeProvider>.value(value: theme),
     ],
     child: MaterialApp(home: Scaffold(body: child)),
+  );
+
+  testWidgets(
+    'group avatar editor reacts to revocation and member controls stay hidden',
+    (tester) async {
+      final theme = ThemeProvider(initialMode: 'light');
+      addTearDown(theme.dispose);
+      await coordinator.createGroup('Team', ['192.0.2.1:6475']);
+      final group = coordinator.groups.single;
+      await tester.pumpWidget(
+        host(
+          AvatarPickerDialog(
+            targetGroupId: group.id,
+            groupName: group.name,
+            canRenameGroup: true,
+          ),
+          theme,
+        ),
+      );
+      expect(
+        tester.widget<ElevatedButton>(find.byType(ElevatedButton)).onPressed,
+        isNotNull,
+      );
+      coordinator.transferGroupCreator(group.id, '192.0.2.1:6475');
+      final packet = decode(
+        ProtocolBeebeep.buildGroupPacket(
+          groupId: group.id,
+          name: group.name,
+          updatedAt: coordinator.groups.single.updatedAt.add(
+            const Duration(seconds: 1),
+          ),
+          members: [],
+          creatorId: 'alice-hash',
+          adminIds: [],
+          avatarPayload: '#123456',
+        ),
+      );
+      coordinator.handleGroupPacket('192.0.2.1:6475', packet);
+      await tester.pump();
+      expect(
+        tester.widget<ElevatedButton>(find.byType(ElevatedButton)).onPressed,
+        isNull,
+      );
+      expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+      expect(
+        tester.widget<OutlinedButton>(find.byType(OutlinedButton)).onPressed,
+        isNull,
+      );
+      await tester.pumpWidget(
+        host(GroupMembersDialog(groupPeer: coordinator.selectedPeer!), theme),
+      );
+      expect(find.text(lang.tr('addMembers')), findsNothing);
+      expect(find.byIcon(Icons.remove_circle_outline_rounded), findsNothing);
+      await tester.runAsync(() => ChatHistoryService().flush());
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(tester.takeException(), isNull);
+    },
   );
 
   for (final mode in ['light', 'dark']) {

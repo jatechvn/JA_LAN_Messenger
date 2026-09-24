@@ -11,6 +11,7 @@ import 'glass_dialog.dart';
 import 'glass_search_history_field.dart';
 import 'bounce_marquee_text.dart';
 import 'create_group_dialog.dart';
+import 'app_avatar.dart';
 
 enum _PeerCategory { all, online, groups }
 
@@ -266,6 +267,7 @@ class _PeerListViewState extends State<PeerListView> {
                   ),
                   for (final peer in displayPeers)
                     _PeerListTile(
+                      key: ValueKey(peer.id),
                       peer: peer,
                       isSelected: coordinator.selectedPeer?.id == peer.id,
                       onTap: () => coordinator.selectPeer(peer),
@@ -489,6 +491,37 @@ void _confirmDisbandGroup(BuildContext context, GroupModel group) {
   );
 }
 
+void _confirmLeaveGroup(BuildContext context, GroupModel group) {
+  final lang = context.read<LanguageProvider>();
+  final coordinator = context.read<MessengerCoordinator>();
+  showGlassDialog(
+    context: context,
+    builder: (ctx) => GlassDialog(
+      title: lang.tr('leaveGroup'),
+      icon: Icons.logout_rounded,
+      width: 380,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: Text(lang.tr('cancel')),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: Colors.amber.shade700),
+          onPressed: () {
+            coordinator.leaveGroup(group.id);
+            Navigator.of(ctx).pop();
+          },
+          child: Text(lang.tr('confirm')),
+        ),
+      ],
+      child: Text(
+        lang.tr('leaveGroupConfirm'),
+        style: const TextStyle(fontSize: 13),
+      ),
+    ),
+  );
+}
+
 void _showAddIpDialog(BuildContext context) {
   final theme = ThemeProvider.of(context);
   final lang = context.read<LanguageProvider>();
@@ -706,19 +739,22 @@ class _GroupListTile extends StatelessWidget {
   final GroupModel group;
   final bool isSelected;
   final VoidCallback onTap;
-  final VoidCallback onDelete;
+  final VoidCallback? onDelete;
 
   const _GroupListTile({
     required this.group,
     required this.isSelected,
     required this.onTap,
-    required this.onDelete,
+    this.onDelete,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = ThemeProvider.of(context);
     final lang = context.watch<LanguageProvider>();
+    final coordinator = context.watch<MessengerCoordinator>();
+    final isAdmin = coordinator.isGroupAdmin(group.id);
+    final groupPeer = coordinator.getPeerForGroup(group);
     final activeBg = theme.colors.accentBlue.withValues(alpha: 0.14);
 
     return Container(
@@ -742,24 +778,7 @@ class _GroupListTile extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             child: Row(
               children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: group.color.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: group.color.withValues(alpha: 0.5),
-                      width: 1,
-                    ),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    Icons.groups_rounded,
-                    color: group.color,
-                    size: 18,
-                  ),
-                ),
+                AppAvatar(peer: groupPeer, size: 34, isCircle: true),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -846,17 +865,35 @@ class _GroupListTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 14),
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 20,
-                    minHeight: 20,
+                Tooltip(
+                  message: isAdmin
+                      ? lang.tr('deleteGroup')
+                      : lang.tr('leaveGroup'),
+                  child: IconButton(
+                    icon: Icon(
+                      isAdmin ? Icons.close_rounded : Icons.logout_rounded,
+                      size: 14,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 20,
+                      minHeight: 20,
+                    ),
+                    color: theme.isDark ? Colors.white24 : Colors.black26,
+                    hoverColor:
+                        (isAdmin
+                                ? theme.colors.accentRose
+                                : theme.colors.accentAmber)
+                            .withValues(alpha: 0.2),
+                    onPressed: () {
+                      if (isAdmin) {
+                        _confirmDisbandGroup(context, group);
+                      } else {
+                        _confirmLeaveGroup(context, group);
+                      }
+                    },
                   ),
-                  color: theme.isDark ? Colors.white24 : Colors.black26,
-                  hoverColor: theme.colors.accentRose.withValues(alpha: 0.2),
-                  onPressed: onDelete,
                 ),
               ],
             ),
@@ -883,6 +920,7 @@ class _PeerListTile extends StatelessWidget {
   final VoidCallback onTap;
 
   const _PeerListTile({
+    super.key,
     required this.peer,
     required this.isSelected,
     required this.onTap,
@@ -926,45 +964,9 @@ class _PeerListTile extends StatelessWidget {
               children: [
                 // Avatar with Status Dot
                 Stack(
+                  clipBehavior: Clip.none,
                   children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: peer.avatarColor.withValues(alpha: 0.2),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: peer.avatarColor.withValues(alpha: 0.5),
-                          width: 1.2,
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: peer.avatarAsset != null
-                          ? ClipOval(
-                              child: Image.asset(
-                                peer.avatarAsset!,
-                                width: 38,
-                                height: 38,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => Text(
-                                  peer.initials,
-                                  style: TextStyle(
-                                    color: peer.avatarColor,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            )
-                          : Text(
-                              peer.initials,
-                              style: TextStyle(
-                                color: peer.avatarColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                              ),
-                            ),
-                    ),
+                    AppAvatar(peer: peer, size: 38, isCircle: true),
                     Positioned(
                       right: 0,
                       bottom: 0,

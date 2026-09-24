@@ -19,6 +19,8 @@ class AvatarPickerDialog extends StatefulWidget {
   final String? initialCustomPath;
   final String? initialCustomBase64;
   final String? initialType;
+  final String? initialGroupName;
+  final bool canRenameGroup;
 
   const AvatarPickerDialog({
     super.key,
@@ -29,6 +31,8 @@ class AvatarPickerDialog extends StatefulWidget {
     this.initialCustomPath,
     this.initialCustomBase64,
     this.initialType,
+    this.initialGroupName,
+    this.canRenameGroup = false,
   });
 
   static Future<void> show(
@@ -40,6 +44,8 @@ class AvatarPickerDialog extends StatefulWidget {
     String? initialCustomPath,
     String? initialCustomBase64,
     String? initialType,
+    String? initialGroupName,
+    bool canRenameGroup = false,
   }) {
     return showGlassDialog(
       context: context,
@@ -52,6 +58,8 @@ class AvatarPickerDialog extends StatefulWidget {
         initialCustomPath: initialCustomPath,
         initialCustomBase64: initialCustomBase64,
         initialType: initialType,
+        initialGroupName: initialGroupName,
+        canRenameGroup: canRenameGroup,
       ),
     );
   }
@@ -66,10 +74,14 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
   late String _selectedCustomPath;
   late String _selectedCustomBase64;
   late Color _selectedColor;
+  late final TextEditingController _groupNameController;
 
   @override
   void initState() {
     super.initState();
+    _groupNameController = TextEditingController(
+      text: widget.initialGroupName ?? widget.groupName ?? '',
+    );
     _selectedCustomBase64 = widget.initialCustomBase64 ?? '';
     if (widget.targetGroupId != null) {
       final hasImage =
@@ -110,6 +122,12 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
     }
   }
 
+  @override
+  void dispose() {
+    _groupNameController.dispose();
+    super.dispose();
+  }
+
   Future<void> _pickImageFromPc() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -131,6 +149,15 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
   Future<void> _save() async {
     final coordinator = context.read<MessengerCoordinator>();
     if (widget.targetGroupId != null) {
+      if (!coordinator.isGroupAdmin(widget.targetGroupId!)) {
+        if (mounted) Navigator.of(context).pop();
+        return;
+      }
+      final renamed = _groupNameController.text.trim();
+      if (renamed.isNotEmpty &&
+          renamed != (widget.initialGroupName ?? widget.groupName ?? '')) {
+        coordinator.renameGroup(widget.targetGroupId!, renamed);
+      }
       final keepRemoteImage =
           _selectedType == 'custom' &&
           _selectedCustomPath.isEmpty &&
@@ -160,6 +187,12 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
     final lang = context.watch<LanguageProvider>();
     final isDark = ThemeProvider.of(context).isDark;
     final ink = isDark ? Colors.white : Colors.black87;
+    final canEdit =
+        widget.targetGroupId == null ||
+        (context.watch<MessengerCoordinator?>()?.isGroupAdmin(
+              widget.targetGroupId!,
+            ) ??
+            false);
 
     return GlassDialog(
       title: widget.targetGroupId != null
@@ -177,7 +210,7 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
           ),
         ),
         ElevatedButton(
-          onPressed: _save,
+          onPressed: canEdit ? _save : null,
           style: ElevatedButton.styleFrom(
             backgroundColor: _selectedColor,
             foregroundColor: _selectedColor.computeLuminance() > 0.4
@@ -212,19 +245,58 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
                   ),
                 ],
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(40),
+              child: ClipOval(
                 child: SizedBox(width: 80, height: 80, child: _buildPreview()),
               ),
             ),
           ),
+          if (widget.targetGroupId != null) ...[
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                lang.tr('groupNameLabel'),
+                style: TextStyle(
+                  color: ink.withValues(alpha: 0.8),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _groupNameController,
+              enabled: canEdit,
+              maxLength: 256,
+              decoration: InputDecoration(
+                hintText: lang.tr('groupNameHint'),
+                counterText: '',
+                filled: true,
+                fillColor: ink.withValues(alpha: 0.04),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+            if (!canEdit)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  lang.tr('onlyAdminCanRename'),
+                  style: TextStyle(
+                    color: ink.withValues(alpha: 0.55),
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+          ],
           const SizedBox(height: 16),
 
           // 2. Button chọn ảnh từ máy tính
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: _pickImageFromPc,
+              onPressed: !canEdit ? null : _pickImageFromPc,
               style: OutlinedButton.styleFrom(
                 foregroundColor: ink,
                 side: BorderSide(color: ink.withValues(alpha: 0.2)),
@@ -274,12 +346,14 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
                     _selectedType == 'preset' && _selectedPreset == key;
 
                 return InkWell(
-                  onTap: () {
-                    setState(() {
-                      _selectedType = 'preset';
-                      _selectedPreset = key;
-                    });
-                  },
+                  onTap: !canEdit
+                      ? null
+                      : () {
+                          setState(() {
+                            _selectedType = 'preset';
+                            _selectedPreset = key;
+                          });
+                        },
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
                     decoration: BoxDecoration(
@@ -327,11 +401,13 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
                     _selectedColor.toARGB32() == color.toARGB32();
 
                 return InkWell(
-                  onTap: () {
-                    setState(() {
-                      _selectedColor = color;
-                    });
-                  },
+                  onTap: !canEdit
+                      ? null
+                      : () {
+                          setState(() {
+                            _selectedColor = color;
+                          });
+                        },
                   borderRadius: BorderRadius.circular(18),
                   child: Container(
                     width: 32,
@@ -404,12 +480,12 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
           ? gName.substring(0, 1).toUpperCase()
           : 'G';
       return Container(
-        color: _selectedColor,
+        color: _selectedColor.withValues(alpha: 0.2),
         child: Center(
           child: Text(
             initials,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: _selectedColor,
               fontSize: 32,
               fontWeight: FontWeight.bold,
             ),
@@ -424,12 +500,12 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
         'User';
     final initials = name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'U';
     return Container(
-      color: _selectedColor,
+      color: _selectedColor.withValues(alpha: 0.2),
       child: Center(
         child: Text(
           initials,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: _selectedColor,
             fontSize: 32,
             fontWeight: FontWeight.bold,
           ),
@@ -440,8 +516,8 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
 
   Widget _buildFallbackIcon(IconData icon) {
     return Container(
-      color: _selectedColor,
-      child: Center(child: Icon(icon, color: Colors.white, size: 42)),
+      color: _selectedColor.withValues(alpha: 0.2),
+      child: Center(child: Icon(icon, color: _selectedColor, size: 42)),
     );
   }
 }

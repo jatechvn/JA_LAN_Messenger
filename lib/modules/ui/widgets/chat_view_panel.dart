@@ -2131,6 +2131,23 @@ class _MessageBubbleState extends State<_MessageBubble> {
     final lang = context.watch<LanguageProvider>();
     final coordinator = context.read<MessengerCoordinator>();
     final message = widget.message;
+    if (message.senderId == 'system') {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 28),
+        child: Center(
+          child: Text(
+            message.text,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.35,
+              fontWeight: FontWeight.w500,
+              color: theme.isDark ? Colors.white54 : Colors.black54,
+            ),
+          ),
+        ),
+      );
+    }
     final isMine = message.isMine;
 
     final isGroupOrBroadcast =

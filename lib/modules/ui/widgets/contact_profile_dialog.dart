@@ -8,6 +8,7 @@ import '../../services/messenger_coordinator.dart';
 import 'glass_dialog.dart';
 import 'glass_components.dart';
 import 'bounce_marquee_text.dart';
+import 'app_avatar.dart';
 
 /// Hộp thoại đổi nhanh biệt danh (Quick Nickname Dialog)
 void showQuickNicknameDialog({
@@ -213,15 +214,8 @@ class ContactProfileDialog extends StatelessWidget {
                   clipBehavior: Clip.none,
                   children: [
                     Container(
-                      width: 58,
-                      height: 58,
                       decoration: BoxDecoration(
-                        color: peer.avatarColor.withValues(alpha: 0.22),
                         shape: BoxShape.circle,
-                        border: Border.all(
-                          color: peer.avatarColor.withValues(alpha: 0.6),
-                          width: 2,
-                        ),
                         boxShadow: [
                           BoxShadow(
                             color: peer.avatarColor.withValues(alpha: 0.35),
@@ -230,32 +224,7 @@ class ContactProfileDialog extends StatelessWidget {
                           ),
                         ],
                       ),
-                      alignment: Alignment.center,
-                      child: peer.avatarAsset != null
-                          ? ClipOval(
-                              child: Image.asset(
-                                peer.avatarAsset!,
-                                width: 58,
-                                height: 58,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => Text(
-                                  peer.initials,
-                                  style: TextStyle(
-                                    color: peer.avatarColor,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 20,
-                                  ),
-                                ),
-                              ),
-                            )
-                          : Text(
-                              peer.initials,
-                              style: TextStyle(
-                                color: peer.avatarColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 20,
-                              ),
-                            ),
+                      child: AppAvatar(peer: peer, size: 58, isCircle: true),
                     ),
                     if (!peer.isAllUsers &&
                         !peer.isGroup &&

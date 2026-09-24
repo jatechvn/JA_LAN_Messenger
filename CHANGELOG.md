@@ -2,6 +2,20 @@
 
 All notable changes to the **JA LAN Messenger** project will be documented in this file.
 
+## [1.3.1] - 2026-09-24
+
+### 🚀 Nâng cấp & Tính năng mới
+- **Tăng tốc & Ổn định hóa Nhận diện Subnet Mask trên Windows (`netsh`)**: Chuyển đổi phương thức truy vấn Subnet Mask từ PowerShell sang lệnh native `netsh interface ipv4 show addresses`, giảm thời gian truy vấn từ >5000ms xuống chỉ **~5ms**. Loại bỏ hoàn toàn lỗi timeout và lỗi chặn chính sách `Restricted ExecutionPolicy` trên các dòng Mini PC / máy cấu hình thấp, đảm bảo phát hiện chính xác các dải Supernet /21 (`255.255.248.0`) và quét toàn diện đủ 2046 hosts trên 8 dải con.
+- **Bộ công cụ Kiểm tra & Chẩn đoán Mạng Độc lập (`verify_scan.bat` & `verify_scan.ps1`)**: Cung cấp công cụ chạy 1-click không cần cài Flutter/Dart SDK, tự động chẩn đoán cấu hình card mạng, Subnet Mask, cổng tường lửa (TCP 6475, UDP 36475), đọc file cấu hình preferences và đo đạc kết nối thời gian thực tới toàn bộ các subnet slice.
+- **Phân quyền Quản trị Nhóm chuẩn Zalo/Telegram**: Chỉ Trưởng nhóm (Creator/Admin) mới có quyền giải tán nhóm chat; thành viên thông thường chỉ có tùy chọn rời nhóm, ngăn chặn việc thành viên thường vô tình xóa nhóm chung.
+
+### 🐛 Sửa lỗi & Tối ưu hóa
+- **Khôi phục Kiểu dáng Avatar Tròn Mặc định & Màu Nền Mờ Tinh Tế**: Đưa `isCircle: true` làm mặc định trên toàn bộ ứng dụng; khôi phục màu nền mờ `avatarColor.withValues(alpha: 0.2)` kèm viền màu đồng bộ `effectiveColor.withValues(alpha: 0.5)` và chữ cái đầu (Initials) / preset icon hiển thị trang nhã, không còn hiện tượng hình vuông khuyết góc hay nền màu đặc chói mắt.
+- **Đồng bộ Avatar Danh bạ & Cố định Ảnh Đại diện JA AI**: Sử dụng `AppAvatar` thống nhất cho toàn bộ danh bạ bạn bè và nhóm; cố định nạp ảnh gốc `assets/ai_avatar.png` trong khung trò chuyện JA AI.
+
+### 📦 Phát hành
+- Đồng bộ version `1.3.1+7` trong `pubspec.yaml`, `constants.dart`, `Runner.rc`, `ABOUT.txt`, `install.bat`, `installer.iss`, `README.md`, `USERGUIDE.md`, `RELEASE_NOTES.md`.
+
 ## [1.3.0] - 2026-09-22
 
 ### 🚀 Nâng cấp & Tính năng mới

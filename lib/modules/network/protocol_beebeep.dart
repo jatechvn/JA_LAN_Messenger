@@ -23,9 +23,8 @@ class ProtocolBeebeep {
   static const idUserMessage = 16;
   static const flagUserVCard = 16;
   static const jaAvatarMarker = 'ja-avatar:';
-  // 128 cập nhật thành viên. 512 giải tán cả nhóm.
-  // 1024 người gửi tự rời. 2048 người nhận bị đuổi.
-  // Cờ rời và đuổi không dùng 512, để máy nhận không hiện nhầm thông báo giải tán.
+  // Native Request=128, Refused=32 (sender leaves), Delete=512 (recipient removed).
+  // JA disband uses Delete plus an explicit metadata marker.
   static const flagGroupUpdate = 128;
   static const flagGroupDisbanded = 512;
   static const flagGroupLeft = 32; // BeeBEEP Refused: remove sender.
@@ -33,6 +32,7 @@ class ProtocolBeebeep {
   static const groupDisbandMarker = 'ja-group-v1:disband';
   static const groupInvitePrefix = 'ja-group-v1:invite:';
   static const groupAvatarPrefix = 'ja-group-v1:avatar:';
+  static const groupCreatorPrefix = 'ja-group-v1:creator:';
 
   static String authenticationHash(String username, {String password = ''}) {
     final passwordHash = sha1
@@ -174,6 +174,8 @@ class ProtocolBeebeep {
     bool kicked = false,
     DateTime? invitedAt,
     String? avatarPayload,
+    String? creatorId,
+    List<String>? adminIds,
   }) {
     final extensions = <String>[];
     if (removed) {
@@ -188,7 +190,22 @@ class ProtocolBeebeep {
         !kicked &&
         avatarPayload != null &&
         avatarPayload.isNotEmpty) {
-      extensions.add('$groupAvatarPrefix$avatarPayload');
+      // v1.3.0 accepts at most six data fields. Its avatar parser ignores
+      // unknown pipe attributes, so carry ownership alongside the avatar.
+      final owner = creatorId != null && creatorId.isNotEmpty
+          ? '|creator:${Uri.encodeComponent(creatorId)}'
+          : '';
+      extensions.add(
+        '$groupAvatarPrefix$avatarPayload$owner${_adminMarkup(adminIds)}',
+      );
+    }
+    if (!removed &&
+        (avatarPayload == null || avatarPayload.isEmpty || left || kicked) &&
+        creatorId != null &&
+        creatorId.isNotEmpty) {
+      extensions.add(
+        '$groupCreatorPrefix${Uri.encodeComponent(creatorId)}${_adminMarkup(adminIds)}',
+      );
     }
 
     return packet(
@@ -225,11 +242,13 @@ class ProtocolBeebeep {
     bool disbanded,
     DateTime? invitedAt,
     String? avatarPayload,
+    String? creatorId,
+    List<String>? adminIds,
   })?
   groupMetadata(Map<String, dynamic> message) {
     final fields = (message['data'] as String? ?? '').split(dataFieldSeparator);
     if (fields.length < 4 ||
-        fields.length > 6 ||
+        fields.length > 8 ||
         !RegExp(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$').hasMatch(fields[1]) ||
         fields[2].trim().isEmpty ||
         fields[2].length > 256) {
@@ -244,6 +263,8 @@ class ProtocolBeebeep {
     var disbanded = false;
     DateTime? invitedAt;
     String? avatarPayload;
+    String? creatorId;
+    List<String>? adminIds;
 
     for (int i = 4; i < fields.length; i++) {
       final ext = fields[i];
@@ -252,7 +273,18 @@ class ProtocolBeebeep {
       } else if (ext.startsWith(groupInvitePrefix)) {
         invitedAt = DateTime.tryParse(ext.substring(groupInvitePrefix.length));
       } else if (ext.startsWith(groupAvatarPrefix)) {
-        avatarPayload = ext.substring(groupAvatarPrefix.length);
+        final parsed = _parseRoleMarkup(
+          ext.substring(groupAvatarPrefix.length),
+        );
+        avatarPayload = parsed.payload;
+        creatorId = parsed.creatorId ?? creatorId;
+        adminIds = parsed.adminIds ?? adminIds;
+      } else if (ext.startsWith(groupCreatorPrefix)) {
+        final parsed = _parseRoleMarkup(
+          ext.substring(groupCreatorPrefix.length),
+        );
+        creatorId = parsed.creatorId ?? parsed.payload;
+        adminIds = parsed.adminIds ?? adminIds;
       }
     }
 
@@ -265,6 +297,47 @@ class ProtocolBeebeep {
       disbanded: disbanded,
       invitedAt: invitedAt,
       avatarPayload: avatarPayload,
+      creatorId: creatorId,
+      adminIds: adminIds,
+    );
+  }
+
+  static String _adminMarkup(List<String>? adminIds) {
+    if (adminIds == null) return '';
+    final ids = adminIds.where((id) => id.isNotEmpty).toSet().join(',');
+    return '|admins:${Uri.encodeComponent(ids)}';
+  }
+
+  static ({String? payload, String? creatorId, List<String>? adminIds})
+  _parseRoleMarkup(String raw) {
+    final parts = raw.split('|');
+    final kept = <String>[];
+    String? creatorId;
+    List<String>? adminIds;
+    for (final part in parts) {
+      if (part.startsWith('creator:')) {
+        try {
+          creatorId = Uri.decodeComponent(part.substring(8));
+        } on FormatException {
+          continue;
+        }
+      } else if (part.startsWith('admins:')) {
+        try {
+          adminIds = Uri.decodeComponent(
+            part.substring(7),
+          ).split(',').where((id) => id.isNotEmpty).toList();
+        } on FormatException {
+          continue;
+        }
+      } else {
+        kept.add(part);
+      }
+    }
+    final payload = kept.join('|');
+    return (
+      payload: payload.isEmpty ? null : payload,
+      creatorId: creatorId,
+      adminIds: adminIds,
     );
   }
 

@@ -394,6 +394,8 @@ class MessengerCoordinator extends ChangeNotifier {
           updatedAt: group.updatedAt,
           invitedAt: group.invitations[id],
           avatarPayload: avatarPayload,
+          creatorId: group.creatorId,
+          adminIds: _groupAdminIdentities(group).toList(),
           members: [
             for (final other in group.memberIds)
               if (other != id) _groupRecord(other, group),
@@ -455,6 +457,14 @@ class MessengerCoordinator extends ChangeNotifier {
           : !meta.updatedAt.isAfter(existing.updatedAt);
       if (stale) return;
     }
+    final senderIsAdmin =
+        existing != null &&
+        (existing.isAdmin(sender.id) || existing.isAdmin(senderIdentity));
+    if ((isDisband || isKicked) && !senderIsAdmin) return;
+    // Co-admins cannot remove the owner from their own group.
+    if (isKicked && existing != null && existing.isCreator(_localUserHash)) {
+      return;
+    }
     if (isDisband) {
       if (existing != null) {
         final gName = existing.name;
@@ -478,6 +488,14 @@ class MessengerCoordinator extends ChangeNotifier {
     }
     if (isLeft) {
       if (existing == null) return;
+      _appendGroupNotice(
+        existing,
+        messageId:
+            'leave_${meta.id}_${sender.id}_${meta.updatedAt.microsecondsSinceEpoch}',
+        localeKey: 'groupMemberLeftNotice',
+        args: [sender.name],
+        fallback: '${sender.name} đã rời nhóm',
+      );
       final records = Map<String, List<String>>.from(existing.memberRecords)
         ..remove(sender.id);
       final updated = existing.copyWith(
@@ -497,6 +515,9 @@ class MessengerCoordinator extends ChangeNotifier {
       return;
     }
     if (flags & ProtocolBeebeep.flagGroupUpdate == 0) return;
+    // Snapshots are authoritative mutations, including avatar and roster edits.
+    // A regular member may leave above, but cannot advance the group revision.
+    if (existing != null && !senderIsAdmin) return;
     final records = ProtocolBeebeep.groupRecords(
       message['text'] as String? ?? '',
     );
@@ -521,6 +542,30 @@ class MessengerCoordinator extends ChangeNotifier {
       final known = _peerHashes.entries.where((entry) => entry.value == hash);
       final id = known.isEmpty ? 'hash:$hash' : known.first.key;
       memberRecords[id] = record;
+    }
+    if (existing != null &&
+        existing.memberIds.any(
+          (id) =>
+              (existing.isCreator(id) ||
+                  existing.isCreator(_groupMemberIdentity(id, existing))) &&
+              !memberRecords.containsKey(id),
+        )) {
+      return;
+    }
+    String? creatorId = existing?.creatorId;
+    if (existing == null) {
+      final prefix = GroupModel.creatorHashPrefix(meta.id);
+      if (prefix == null) {
+        // Native/legacy groups do not carry verifiable owner metadata.
+        creatorId = senderIdentity;
+      } else {
+        final candidates = [
+          _localUserHash,
+          senderIdentity,
+          ...memberRecords.values.map((record) => record[2]),
+        ];
+        creatorId = candidates.where((id) => id.startsWith(prefix)).firstOrNull;
+      }
     }
     Color? groupColor = existing?.color;
     String? groupPreset = existing?.avatarPreset;
@@ -552,13 +597,73 @@ class MessengerCoordinator extends ChangeNotifier {
       }
     }
 
+    final oldMemberIds = existing?.memberIds.toSet() ?? const <String>{};
+    final newMemberIds = memberRecords.keys.toSet();
+    if (existing != null) {
+      for (final id in newMemberIds.difference(oldMemberIds)) {
+        final label = memberRecords[id]!.first;
+        _appendGroupNotice(
+          existing,
+          messageId:
+              'add_${meta.id}_${id}_${meta.updatedAt.microsecondsSinceEpoch}',
+          localeKey: 'groupMemberAddedNotice',
+          args: [sender.name, label],
+          fallback: '${sender.name} đã thêm $label vào nhóm',
+        );
+      }
+      if (senderIsAdmin) {
+        for (final id in oldMemberIds.difference(newMemberIds)) {
+          _appendGroupNotice(
+            existing,
+            messageId:
+                'remove_${meta.id}_${id}_${meta.updatedAt.microsecondsSinceEpoch}',
+            localeKey: 'groupMemberRemovedNotice',
+            args: [sender.name, _groupMemberLabel(id, existing)],
+            fallback:
+                '${sender.name} đã mời ${_groupMemberLabel(id, existing)} ra khỏi nhóm',
+          );
+        }
+      }
+    }
+
+    final nameChanged = existing != null && existing.name != meta.name;
+    final appliedName = nameChanged && !senderIsAdmin
+        ? existing.name
+        : meta.name;
+    if (nameChanged && senderIsAdmin) {
+      _appendGroupRenameNotice(
+        existing,
+        who: sender.name,
+        oldName: existing.name,
+        newName: appliedName,
+        messageId: 'rename_${meta.id}_${meta.updatedAt.microsecondsSinceEpoch}',
+      );
+    }
+
+    if (meta.creatorId != null &&
+        meta.creatorId!.isNotEmpty &&
+        (existing == null ||
+            existing.isCreator(sender.id) ||
+            existing.isCreator(senderIdentity))) {
+      creatorId = meta.creatorId;
+    }
+    final senderIsCreator =
+        existing != null &&
+        (existing.isCreator(sender.id) || existing.isCreator(senderIdentity));
+    final adminIds =
+        meta.adminIds != null && (existing == null || senderIsCreator)
+        ? meta.adminIds!
+        : (existing?.adminIds ?? <String>[]);
+
     final group = GroupModel(
       id: meta.id,
-      name: meta.name,
+      name: appliedName,
       memberIds: memberRecords.keys.toList(),
       memberRecords: memberRecords,
       updatedAt: meta.updatedAt,
       createdAt: existing?.createdAt,
+      creatorId: creatorId,
+      adminIds: adminIds,
       color: groupColor,
       avatarPreset: groupPreset,
       customAvatarBase64: groupBase64,
@@ -571,6 +676,13 @@ class MessengerCoordinator extends ChangeNotifier {
           if (memberRecords.containsKey(entry.key)) entry.key: entry.value,
       },
     );
+    if (existing != null && senderIsCreator) {
+      _appendGroupRoleNotices(existing, group, sender.name);
+      // Notices update local preview/unread state after the snapshot is built.
+      group.lastMessage = existing.lastMessage;
+      group.lastMessageTime = existing.lastMessageTime;
+      group.unreadCount = existing.unreadCount;
+    }
     _groups[group.id] = group;
     _saveGroups();
     if (_selectedPeer?.id == group.id) {
@@ -1515,6 +1627,8 @@ class MessengerCoordinator extends ChangeNotifier {
       id: id,
       name: name.trim(),
       memberIds: memberIds.where((id) => id != 'me').toSet().toList(),
+      creatorId: _localUserHash,
+      adminIds: [_localUserHash],
       color: color,
       avatarPreset: avatarPreset,
       customAvatarPath: customAvatarPath,
@@ -1539,7 +1653,7 @@ class MessengerCoordinator extends ChangeNotifier {
     String? customBase64,
   }) async {
     final group = _groups[groupId];
-    if (group == null) return;
+    if (group == null || !isGroupAdmin(groupId)) return;
 
     final hasNewFile = customPath != null && customPath.isNotEmpty;
     final hasRemoteImage = customBase64 != null && customBase64.isNotEmpty;
@@ -1562,8 +1676,11 @@ class MessengerCoordinator extends ChangeNotifier {
       storedPreset = preset;
     }
 
-    final updated = group.copyWith(
-      color: color ?? group.color,
+    // Image conversion yields: membership and roles may change while awaiting it.
+    final current = _groups[groupId];
+    if (current == null || !isGroupAdmin(groupId)) return;
+    final updated = current.copyWith(
+      color: color ?? current.color,
       avatarPreset: storedPreset,
       customAvatarPath: storedPath,
       customAvatarBase64: thumbnailBase64,
@@ -1579,10 +1696,169 @@ class MessengerCoordinator extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Đổi tên nhóm. Chỉ quản trị viên. Các máy khác nhận tên mới qua gói nhóm
+  /// và tự ghi một dòng thông báo trong khung chat.
+  void renameGroup(String groupId, String newName) {
+    final group = _groups[groupId];
+    final trimmed = newName.trim();
+    if (group == null || trimmed.isEmpty || trimmed.length > 256) return;
+    if (trimmed == group.name) return;
+    if (!isGroupAdmin(groupId)) return;
+
+    final oldName = group.name;
+    final updated = group.copyWith(name: trimmed, updatedAt: DateTime.now());
+    _groups[groupId] = updated;
+    _appendGroupRenameNotice(
+      updated,
+      who: localUsername,
+      oldName: oldName,
+      newName: trimmed,
+      messageId:
+          'rename_${updated.id}_${updated.updatedAt.microsecondsSinceEpoch}',
+    );
+    _saveGroups();
+    if (_selectedPeer?.id == groupId) {
+      _selectedPeer = PeerModel.fromGroup(updated);
+    }
+    _syncGroup(updated);
+    notifyListeners();
+  }
+
+  void _appendGroupRenameNotice(
+    GroupModel group, {
+    required String who,
+    required String oldName,
+    required String newName,
+    required String messageId,
+  }) {
+    _appendGroupNotice(
+      group,
+      messageId: messageId,
+      localeKey: 'groupRenamedNotice',
+      args: [who, oldName, newName],
+      fallback: '$who đã đổi tên nhóm từ "$oldName" thành "$newName"',
+    );
+  }
+
+  void _appendGroupNotice(
+    GroupModel group, {
+    required String messageId,
+    required String localeKey,
+    required List<String> args,
+    required String fallback,
+  }) {
+    final list = _conversations.putIfAbsent(group.id, () => []);
+    if (list.any((message) => message.id == messageId)) return;
+    final notice = languageProvider?.tr(localeKey, args) ?? fallback;
+    final isCurrentChat = _selectedPeer?.id == group.id;
+    list.add(
+      MessageModel(
+        id: messageId,
+        senderId: 'system',
+        senderName: args.isEmpty ? '' : args.first,
+        recipientId: group.id,
+        text: notice,
+        isMine: false,
+        status: isCurrentChat ? MessageStatus.read : MessageStatus.delivered,
+      ),
+    );
+    chatHistory.scheduleSave(group.id, list);
+    group.lastMessage = notice;
+    group.lastMessageTime = list.last.timestamp;
+    if (!isCurrentChat) group.unreadCount++;
+  }
+
+  String _groupMemberLabel(String memberId, GroupModel group) {
+    if (memberId == 'me' || memberId == _localUserHash) return localUsername;
+    final entry = group.memberRecords.entries
+        .where((entry) => entry.value.elementAtOrNull(2) == memberId)
+        .firstOrNull;
+    if (entry != null) memberId = entry.key;
+    final peer = _findPeerByIpOrId(memberId);
+    if (peer != null && peer.name.trim().isNotEmpty) return peer.name;
+    final recorded = group.memberRecords[memberId];
+    if (recorded != null &&
+        recorded.isNotEmpty &&
+        recorded.first.trim().isNotEmpty) {
+      return recorded.first;
+    }
+    return memberId;
+  }
+
+  String _groupMemberIdentity(String id, GroupModel group) => id == 'me'
+      ? _localUserHash
+      : _peerHashes[id] ?? group.memberRecords[id]?.elementAtOrNull(2) ?? id;
+
+  Set<String> _groupAdminIdentities(GroupModel group) =>
+      group.adminIds.map((id) => _groupMemberIdentity(id, group)).toSet();
+
+  void _appendGroupRoleNotices(
+    GroupModel previous,
+    GroupModel next,
+    String who,
+  ) {
+    final ownerChanged = previous.creatorId != next.creatorId;
+    final before = _groupAdminIdentities(previous);
+    final after = _groupAdminIdentities(next);
+    for (final id in {
+      ...before.difference(after),
+      ...after.difference(before),
+    }) {
+      // Owner status is implicit; a transfer gets one dedicated notice.
+      if (id == previous.creatorId || id == next.creatorId) continue;
+      final promoted = after.contains(id);
+      final label = _groupMemberLabel(id, next);
+      _appendGroupNotice(
+        previous,
+        messageId:
+            'admin_${next.id}_${id}_${next.updatedAt.microsecondsSinceEpoch}',
+        localeKey: promoted
+            ? 'groupAdminPromotedNotice'
+            : 'groupAdminDemotedNotice',
+        args: [who, label],
+        fallback: promoted
+            ? '$who đã chỉ định $label làm quản trị viên'
+            : '$who đã gỡ quyền quản trị của $label',
+      );
+    }
+    if (ownerChanged && next.creatorId != null) {
+      final label = _groupMemberLabel(next.creatorId!, next);
+      _appendGroupNotice(
+        previous,
+        messageId:
+            'owner_${next.id}_${next.creatorId}_${next.updatedAt.microsecondsSinceEpoch}',
+        localeKey: 'groupCreatorTransferredNotice',
+        args: [who, label],
+        fallback: '$who đã chuyển quyền người tạo cho $label',
+      );
+    }
+  }
+
+  /// Kiểm tra xem người dùng hiện tại có quyền quản trị viên (Admin/Creator) của nhóm không
+  bool isGroupAdmin(String groupId) {
+    final group = _groups[groupId];
+    if (group == null) return false;
+    return group.isAdmin(_localUserHash);
+  }
+
+  /// Kiểm tra xem người dùng hiện tại có phải là người tạo nhóm (Creator) không
+  bool isGroupCreator(String groupId) {
+    final group = _groups[groupId];
+    if (group == null) return false;
+    return group.isCreator(_localUserHash);
+  }
+
   void deleteGroup(String groupId, {bool notifyPeers = true}) {
     final group = _groups[groupId];
     if (group != null) {
       if (notifyPeers) {
+        if (!isGroupAdmin(groupId)) {
+          debugPrint(
+            '[Coordinator] Non-admin cannot disband group $groupId. Falling back to leaveGroup.',
+          );
+          leaveGroup(groupId);
+          return;
+        }
         _disbandedGroupIds.add(groupId);
         _leftGroupIds.remove(groupId);
         _leftGroupAt.remove(groupId);
@@ -1616,11 +1892,12 @@ class MessengerCoordinator extends ChangeNotifier {
 
   void addGroupMembers(String groupId, List<String> newMemberIds) {
     final group = _groups[groupId];
-    if (group == null) return;
-    final updatedIds = {
-      ...group.memberIds,
-      ...newMemberIds,
-    }.where((id) => id != 'me').toList();
+    if (group == null || !isGroupAdmin(groupId)) return;
+    final added = newMemberIds
+        .where((id) => id != 'me' && !group.memberIds.contains(id))
+        .toList();
+    if (added.isEmpty) return;
+    final updatedIds = {...group.memberIds, ...added}.toList();
     final updatedGroup = group.copyWith(
       memberIds: updatedIds,
       updatedAt: DateTime.now(),
@@ -1634,6 +1911,17 @@ class MessengerCoordinator extends ChangeNotifier {
       }
     }
     _groups[groupId] = updatedGroup;
+    for (final id in added) {
+      _appendGroupNotice(
+        updatedGroup,
+        messageId:
+            'add_${groupId}_${id}_${updatedGroup.updatedAt.microsecondsSinceEpoch}',
+        localeKey: 'groupMemberAddedNotice',
+        args: [localUsername, _groupMemberLabel(id, updatedGroup)],
+        fallback:
+            '$localUsername đã thêm ${_groupMemberLabel(id, updatedGroup)} vào nhóm',
+      );
+    }
     _syncGroup(updatedGroup);
     _saveGroups();
     if (_selectedPeer?.id == groupId) {
@@ -1644,7 +1932,15 @@ class MessengerCoordinator extends ChangeNotifier {
 
   void removeGroupMember(String groupId, String memberId) {
     final group = _groups[groupId];
-    if (group == null) return;
+    if (group == null ||
+        !isGroupAdmin(groupId) ||
+        !group.memberIds.contains(memberId)) {
+      return;
+    }
+    final memberIdentity =
+        _peerHashes[memberId] ?? group.memberRecords[memberId]?[2] ?? memberId;
+    if (group.isCreator(memberId) || group.isCreator(memberIdentity)) return;
+    final memberName = _groupMemberLabel(memberId, group);
     final updatedIds = group.memberIds.where((id) => id != memberId).toList();
     final updatedGroup = group.copyWith(
       memberIds: updatedIds,
@@ -1652,11 +1948,90 @@ class MessengerCoordinator extends ChangeNotifier {
       invitations: Map.of(group.invitations)..remove(memberId),
     );
     _groups[groupId] = updatedGroup;
+    _appendGroupNotice(
+      updatedGroup,
+      messageId:
+          'remove_${groupId}_${memberId}_${updatedGroup.updatedAt.microsecondsSinceEpoch}',
+      localeKey: 'groupMemberRemovedNotice',
+      args: [localUsername, memberName],
+      fallback: '$localUsername đã mời $memberName ra khỏi nhóm',
+    );
     _sendDeparture(group.id, group.name, memberId, kicked: true);
     _syncGroup(updatedGroup);
     _saveGroups();
     if (_selectedPeer?.id == groupId) {
       _selectedPeer = PeerModel.fromGroup(updatedGroup);
+    }
+    notifyListeners();
+  }
+
+  /// Chỉ người tạo mới chỉ định hoặc gỡ quản trị viên.
+  void setGroupAdmin(String groupId, String memberId, {required bool admin}) {
+    final group = _groups[groupId];
+    if (group == null || !isGroupCreator(groupId)) return;
+    if (!group.memberIds.contains(memberId)) return;
+    final identity =
+        _peerHashes[memberId] ?? group.memberRecords[memberId]?[2] ?? memberId;
+    if (group.isCreator(memberId) || group.isCreator(identity)) return;
+    final ids = _groupAdminIdentities(group).toList();
+    if (admin) {
+      if (ids.contains(identity)) return;
+      ids.add(identity);
+    } else if (!ids.remove(identity)) {
+      return;
+    }
+    final updated = group.copyWith(adminIds: ids, updatedAt: DateTime.now());
+    _groups[groupId] = updated;
+    _appendGroupNotice(
+      updated,
+      messageId:
+          'admin_${groupId}_${memberId}_${updated.updatedAt.microsecondsSinceEpoch}',
+      localeKey: admin ? 'groupAdminPromotedNotice' : 'groupAdminDemotedNotice',
+      args: [localUsername, _groupMemberLabel(memberId, updated)],
+      fallback: admin
+          ? '$localUsername đã chỉ định ${_groupMemberLabel(memberId, updated)} làm quản trị viên'
+          : '$localUsername đã gỡ quyền quản trị của ${_groupMemberLabel(memberId, updated)}',
+    );
+    _saveGroups();
+    _syncGroup(updated);
+    if (_selectedPeer?.id == groupId) {
+      _selectedPeer = PeerModel.fromGroup(updated);
+    }
+    notifyListeners();
+  }
+
+  /// Chỉ người tạo mới chuyển quyền sở hữu. Người nhận trở thành người tạo.
+  void transferGroupCreator(String groupId, String memberId) {
+    final group = _groups[groupId];
+    if (group == null || !isGroupCreator(groupId)) return;
+    if (!group.memberIds.contains(memberId)) return;
+    final identity =
+        _peerHashes[memberId] ?? group.memberRecords[memberId]?[2] ?? memberId;
+    if (group.isCreator(memberId) || group.isCreator(identity)) return;
+    final admins = {
+      ..._groupAdminIdentities(group),
+      _localUserHash,
+      identity,
+    }.toList();
+    final updated = group.copyWith(
+      creatorId: identity,
+      adminIds: admins,
+      updatedAt: DateTime.now(),
+    );
+    _groups[groupId] = updated;
+    _appendGroupNotice(
+      updated,
+      messageId:
+          'owner_${groupId}_${memberId}_${updated.updatedAt.microsecondsSinceEpoch}',
+      localeKey: 'groupCreatorTransferredNotice',
+      args: [localUsername, _groupMemberLabel(memberId, updated)],
+      fallback:
+          '$localUsername đã chuyển quyền người tạo cho ${_groupMemberLabel(memberId, updated)}',
+    );
+    _saveGroups();
+    _syncGroup(updated);
+    if (_selectedPeer?.id == groupId) {
+      _selectedPeer = PeerModel.fromGroup(updated);
     }
     notifyListeners();
   }

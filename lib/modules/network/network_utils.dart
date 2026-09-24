@@ -270,6 +270,44 @@ class NetworkUtils {
     _cachedNetmasksTime = null;
   }
 
+  /// Parse only adjacent IPv4/mask lines from netsh output
+  static Map<String, String> parseNetshSubnetMasks(String text) {
+    final masks = <String, String>{};
+    String? currentIp;
+    final addressRegex = RegExp(r'(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])');
+    for (final line in const LineSplitter().convert(text)) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+      if (trimmed.toLowerCase().contains('ip address') ||
+          (trimmed.contains('IP') && trimmed.contains(':'))) {
+        final matches = addressRegex
+            .allMatches(trimmed)
+            .map((m) => m.group(0)!)
+            .where(isValidIp)
+            .toList();
+        if (matches.isNotEmpty) {
+          currentIp = matches.first;
+        }
+      }
+      if (currentIp != null && trimmed.toLowerCase().contains('mask')) {
+        final matches = addressRegex
+            .allMatches(trimmed)
+            .map((m) => m.group(0)!)
+            .where((ip) => ip.startsWith('255.') && isValidIp(ip))
+            .toList();
+        if (matches.isNotEmpty) {
+          final mask = matches.first;
+          try {
+            maskToPrefixLength(mask);
+            masks[currentIp] = mask;
+          } catch (_) {}
+          currentIp = null;
+        }
+      }
+    }
+    return masks;
+  }
+
   static Future<Map<String, String>> _getWindowsSubnetMasks({
     bool forceRefresh = false,
   }) async {
@@ -284,26 +322,43 @@ class NetworkUtils {
     final Map<String, String> map = {};
     if (!Platform.isWindows) return map;
 
+    // 1. Try netsh first (ultra-fast 5ms, no PowerShell runtime cold-start penalty)
     try {
-      // .NET returns address/mask pairs without depending on ipconfig language.
-      final result = await Process.run('powershell.exe', [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        r"[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); @([System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() | ForEach-Object { $_.GetIPProperties().UnicastAddresses | Where-Object { $_.Address.AddressFamily -eq 'InterNetwork' } | ForEach-Object { @{ip=$_.Address.ToString(); mask=$_.IPv4Mask.ToString()} }) | ConvertTo-Json -Compress",
-      ]).timeout(const Duration(seconds: 5));
+      final result = await Process.run('netsh', [
+        'interface',
+        'ipv4',
+        'show',
+        'addresses',
+      ]).timeout(const Duration(seconds: 3));
       if (result.exitCode == 0) {
-        final decoded = jsonDecode(result.stdout.toString());
-        final entries = decoded is List ? decoded : [decoded];
-        for (final entry in entries) {
-          final ip = entry['ip'] as String, mask = entry['mask'] as String;
-          maskToPrefixLength(mask);
-          if (isValidIp(ip)) map[ip] = mask;
-        }
+        map.addAll(parseNetshSubnetMasks(result.stdout.toString()));
       }
-    } catch (_) {
-      /* Fall back to ipconfig below. */
+    } catch (_) {}
+
+    // 2. If netsh returned nothing, fall back to PowerShell
+    if (map.isEmpty) {
+      try {
+        final result = await Process.run('powershell.exe', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          r"[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); @([System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() | ForEach-Object { $_.GetIPProperties().UnicastAddresses | Where-Object { $_.Address.AddressFamily -eq 'InterNetwork' } | ForEach-Object { @{ip=$_.Address.ToString(); mask=$_.IPv4Mask.ToString()} }) | ConvertTo-Json -Compress",
+        ]).timeout(const Duration(seconds: 5));
+        if (result.exitCode == 0) {
+          final decoded = jsonDecode(result.stdout.toString());
+          final entries = decoded is List ? decoded : [decoded];
+          for (final entry in entries) {
+            final ip = entry['ip'] as String, mask = entry['mask'] as String;
+            maskToPrefixLength(mask);
+            if (isValidIp(ip)) map[ip] = mask;
+          }
+        }
+      } catch (_) {
+        /* Fall back to ipconfig below. */
+      }
     }
+
+    // 3. Fall back to ipconfig
     if (map.isEmpty) {
       try {
         final result = await Process.run(

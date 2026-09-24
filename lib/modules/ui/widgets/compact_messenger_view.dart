@@ -8,6 +8,7 @@ import '../../models/peer_model.dart';
 import '../../constants.dart';
 import 'chat_view_panel.dart';
 import 'glass_components.dart';
+import 'app_avatar.dart';
 
 enum _CompactFilter { all, unread, online }
 
@@ -243,6 +244,7 @@ class _CompactConversationListState extends State<_CompactConversationList> {
                   itemBuilder: (context, index) {
                     final item = filtered[index];
                     return _CompactPeerItemTile(
+                      key: ValueKey(item.id),
                       peer: item,
                       onTap: () => coordinator.selectPeer(item),
                     );
@@ -499,7 +501,11 @@ class _CompactPeerItemTile extends StatefulWidget {
   final PeerModel peer;
   final VoidCallback onTap;
 
-  const _CompactPeerItemTile({required this.peer, required this.onTap});
+  const _CompactPeerItemTile({
+    super.key,
+    required this.peer,
+    required this.onTap,
+  });
 
   @override
   State<_CompactPeerItemTile> createState() => _CompactPeerItemTileState();
@@ -563,45 +569,9 @@ class _CompactPeerItemTileState extends State<_CompactPeerItemTile> {
               children: [
                 // Avatar with online status dot
                 Stack(
+                  clipBehavior: Clip.none,
                   children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: peer.avatarColor.withValues(alpha: 0.2),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: peer.avatarColor.withValues(alpha: 0.45),
-                          width: 1,
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: peer.avatarAsset != null
-                          ? ClipOval(
-                              child: Image.asset(
-                                peer.avatarAsset!,
-                                width: 34,
-                                height: 34,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => Text(
-                                  peer.initials,
-                                  style: TextStyle(
-                                    color: peer.avatarColor,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            )
-                          : Text(
-                              peer.initials,
-                              style: TextStyle(
-                                color: peer.avatarColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                            ),
-                    ),
+                    AppAvatar(peer: peer, size: 34, isCircle: true),
                     if (!peer.isAllUsers && !peer.isGroup)
                       Positioned(
                         right: 0,
