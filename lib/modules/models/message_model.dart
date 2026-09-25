@@ -47,9 +47,10 @@ class FileAttachmentInfo {
 
 class MessageModel {
   final String id;
-  final String senderId;
+  String senderId;
   final String senderName;
-  final String recipientId;
+  String recipientId;
+  String? sourceSession;
   String text;
   final DateTime timestamp;
   final bool isMine;
@@ -85,6 +86,7 @@ class MessageModel {
     required this.isMine,
     this.status = MessageStatus.sent,
     this.pendingRecipients,
+    this.sourceSession,
     this.fileAttachment,
     this.isRevoked = false,
     this.revokedAt,
@@ -141,6 +143,7 @@ class MessageModel {
   Map<String, dynamic> toJson() => {
     'id': id,
     'senderId': senderId,
+    if (sourceSession != null) 'sourceSession': sourceSession,
     'senderName': senderName,
     'recipientId': recipientId,
     'text': text,
@@ -194,6 +197,7 @@ class MessageModel {
     return MessageModel(
       id: json['id'] as String? ?? '',
       senderId: json['senderId'] as String? ?? '',
+      sourceSession: json['sourceSession'] as String?,
       senderName: json['senderName'] as String? ?? '',
       recipientId: json['recipientId'] as String? ?? '',
       text: json['text'] as String? ?? '',

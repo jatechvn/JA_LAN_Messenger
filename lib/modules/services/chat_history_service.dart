@@ -19,6 +19,17 @@ class ChatHistoryService {
   final Map<String, List<MessageModel>> _pending = {};
   Future<void> _writes = Future.value();
   final Map<String, Object> _writeErrors = {};
+  final Map<String, Set<String>> _aliases = {};
+
+  void linkConversations(Set<String> ids) {
+    final linked = <String>{...ids};
+    for (final id in ids) {
+      linked.addAll(_aliases[id] ?? {});
+    }
+    for (final id in linked) {
+      _aliases[id] = linked;
+    }
+  }
 
   Future<void> _enqueue(Future<void> Function() action) {
     final next = _writes.then((_) => action());
@@ -42,6 +53,7 @@ class ChatHistoryService {
   void setCustomDirectoryForTesting(Directory? dir) {
     _cancelAllTimers();
     _customDir = dir;
+    _aliases.clear();
     _writeErrors.clear();
   }
 
@@ -114,9 +126,17 @@ class ChatHistoryService {
   /// Ghi ngay lập tức danh sách tin nhắn vào file tương ứng
   Future<void> saveImmediately(
     String conversationId,
-    List<MessageModel> messages,
-  ) async {
+    List<MessageModel> messages, {
+    bool mirrorAliases = true,
+  }) async {
     if (!AppPreferences().chatHistoryEnabled) return;
+    if (mirrorAliases) {
+      for (final alias in _aliases[conversationId] ?? <String>{}) {
+        if (alias != conversationId) {
+          await saveImmediately(alias, messages, mirrorAliases: false);
+        }
+      }
+    }
 
     _debounceTimers.remove(conversationId)?.cancel();
     _pending.remove(conversationId);

@@ -105,9 +105,10 @@ class ProtocolBeebeep {
       workgroup,
       '5.15.2',
       '19',
-      '',
+      '', // Native BeeBEEP statusChangedIn (ISO timestamp).
       '',
       hostname,
+      'JA_LAN_MESSENGER', // Optional JA extension after native HELLO fields.
     ].join(dataFieldSeparator);
     return packet(
       headerCiao,
@@ -139,8 +140,39 @@ class ProtocolBeebeep {
       'protocolVersion': int.parse(message['id'] as String),
       'flags': message['flags'],
       'auth': message['data'],
+      'client': parts.length > 15
+          ? parts[15]
+          : (parts.length > 12 && parts[12] == 'JA_LAN_MESSENGER'
+                ? parts[12]
+                : ''),
       'hostname': parts.length > 14 ? parts[14] : '',
     };
+  }
+
+  /// Xác định chính xác thiết bị đầu xa có thực sự là phần mềm BeeBEEP gốc hay không
+  /// Tránh đánh dấu nhầm JA LAN Messenger là BeeBEEP
+  static bool isRemoteBeebeep({
+    required String version,
+    required String color,
+    String client = '',
+  }) {
+    // Nếu có chữ ký định danh JA_LAN_MESSENGER rõ ràng
+    if (client == 'JA_LAN_MESSENGER' || client.contains('JA_')) return false;
+
+    // Giao thức avatar của JA LAN Messenger chứa payload '|preset:' hoặc '|b64:'
+    if (color.contains('|preset:') || color.contains('|b64:')) return false;
+
+    // Phiên bản ứng dụng JA LAN Messenger là dòng 1.x.x hoặc chứa 'JA'
+    if (version.startsWith('1.') || version.contains('JA')) return false;
+
+    // Phần mềm BeeBEEP chính thức (C++/Qt) thuộc các dòng 5.x.x, 4.x.x, 3.x.x
+    if (version.startsWith('5.') ||
+        version.startsWith('4.') ||
+        version.startsWith('3.')) {
+      return true;
+    }
+
+    return false;
   }
 
   static List<int> buildChatPacket({

@@ -23,6 +23,7 @@ import 'ai_service.dart';
 import 'ai_queue_manager.dart';
 import 'app_preferences.dart';
 import 'known_devices_registry.dart';
+import 'peer_session_registry.dart';
 import 'network_preferences.dart';
 import 'chat_history_service.dart';
 import 'clipboard_image.dart';
@@ -78,6 +79,9 @@ class MessengerCoordinator extends ChangeNotifier {
 
   // Quản lý Peers, Kênh Toàn thể và Nhóm trò chuyện
   final Map<String, PeerModel> _peers = {};
+  late final PeerSessionRegistry _peerSessions = PeerSessionRegistry(
+    chatHistory.getStorageDirectory(),
+  );
   final PeerModel _allUsersPeer = PeerModel.createAllUsersPeer();
   final PeerModel _aiPeer = PeerModel.createAiAssistantPeer();
   late final AiService aiService;
@@ -375,6 +379,8 @@ class MessengerCoordinator extends ChangeNotifier {
       .toString();
 
   List<String> _groupRecord(String id, GroupModel group) {
+    final existing = group.memberRecords[id];
+    if (existing != null) return existing;
     final peer = _findPeerByIpOrId(id);
     if (peer == null) return group.memberRecords[id] ?? [id, '', id, ''];
     return [peer.name, peer.accountName ?? '', _peerHashes[peer.id] ?? id, ''];
@@ -414,7 +420,7 @@ class MessengerCoordinator extends ChangeNotifier {
 
   @visibleForTesting
   void handleGroupPacket(String endpoint, Map<String, dynamic> message) {
-    final sender = _findPeerByIpOrId(endpoint);
+    final sender = _incomingPeer(endpoint);
     final meta = ProtocolBeebeep.groupMetadata(message);
     if (sender == null || meta == null) return;
     if (meta.updatedAt.isAfter(
@@ -429,7 +435,14 @@ class MessengerCoordinator extends ChangeNotifier {
     final isLeft = flags & ProtocolBeebeep.flagGroupLeft != 0;
     final isControl = isDisband || isKicked || isLeft;
     final priorMembers = _leftGroupMembers[meta.id];
-    final senderIdentity = _peerHashes[sender.id] ?? sender.id;
+    final senderIdentity = _incomingHash(endpoint, sender);
+    final expectedHash = _groups[meta.id]?.memberRecords[sender.id]
+        ?.elementAtOrNull(2);
+    if (expectedHash != null &&
+        expectedHash != sender.id &&
+        expectedHash != senderIdentity) {
+      return;
+    }
     final canRejoin =
         !isControl &&
         flags & ProtocolBeebeep.flagGroupUpdate != 0 &&
@@ -536,18 +549,18 @@ class MessengerCoordinator extends ChangeNotifier {
       _saveDepartures();
     }
     final memberRecords = <String, List<String>>{
-      sender.id: [
-        sender.name,
-        sender.accountName ?? '',
-        _peerHashes[sender.id] ?? sender.id,
-        '',
-      ],
+      sender.id: [sender.name, sender.accountName ?? '', senderIdentity, ''],
     };
     for (final record in records) {
       final hash = record[2];
       if (hash.isEmpty || hash == _localUserHash) continue;
       final known = _peerHashes.entries.where((entry) => entry.value == hash);
-      final id = known.isEmpty ? 'hash:$hash' : known.first.key;
+      final session = _peerSessions.sessions.values
+          .where((s) => s.hash == hash)
+          .firstOrNull;
+      final id =
+          session?.conversationId ??
+          (known.isEmpty ? 'hash:$hash' : known.first.key);
       memberRecords[id] = record;
     }
     if (existing != null &&
@@ -701,11 +714,17 @@ class MessengerCoordinator extends ChangeNotifier {
   @visibleForTesting
   void handleGroupMessage(String endpoint, Map<String, dynamic> message) {
     final meta = ProtocolBeebeep.groupMetadata(message);
-    final sender = _findPeerByIpOrId(endpoint);
+    final sender = _incomingPeer(endpoint);
     final group = meta == null ? null : _groups[meta.id];
     if (group == null ||
         sender == null ||
         !group.memberIds.contains(sender.id)) {
+      return;
+    }
+    final expectedHash = group.memberRecords[sender.id]?.elementAtOrNull(2);
+    if (expectedHash != null &&
+        expectedHash != sender.id &&
+        expectedHash != _incomingHash(endpoint, sender)) {
       return;
     }
     handleIncomingMessage(
@@ -717,26 +736,182 @@ class MessengerCoordinator extends ChangeNotifier {
     );
   }
 
+  /// Xác định định danh phần cứng/thiết bị chuẩn tắc để gộp kết nối và cuộc trò chuyện
+  String _canonicalDeviceKey(PeerModel p) {
+    if (p.isAiAssistant || p.isAllUsers || p.isGroup) return p.id;
+    final identity =
+        PeerSessionRegistry.identity(p) ?? _peerSessions.identities[p.id];
+    if (identity != null) return identity;
+    // Historical IPs are only a migration hint when exactly one identity owns it.
+    final matches = knownDevices.devices.values
+        .where(
+          (d) =>
+              d.id.contains('@') &&
+              (d.knownIps.contains(p.ip) || d.lastIp == p.ip),
+        )
+        .map((d) => d.id.toLowerCase())
+        .toSet();
+    return matches.length == 1 ? matches.single : 'endpoint:${p.id}';
+  }
+
+  /// Kiểm tra 2 PeerModel có đại diện cho cùng một máy trạm vật lý trong mạng LAN không
+  bool _isSamePhysicalPeer(PeerModel a, PeerModel b, {String? senderIp}) {
+    if (identical(a, b)) return true;
+    if (a.isGroup ||
+        b.isGroup ||
+        a.isAllUsers ||
+        b.isAllUsers ||
+        a.isAiAssistant ||
+        b.isAiAssistant) {
+      return false;
+    }
+
+    final keyA = _canonicalDeviceKey(a);
+    final keyB = _canonicalDeviceKey(b);
+    if (!keyA.startsWith('endpoint:') && !keyB.startsWith('endpoint:')) {
+      return keyA == keyB;
+    }
+    // A history-only endpoint can acquire its first verified identity. Never
+    // use IP overlap to merge two known, conflicting accounts/hosts.
+    return a.id == b.id &&
+        (!_peerSessions.identities.containsKey(a.id) || keyA == keyB);
+  }
+
+  /// Kiểm tra một peer có đang được chọn làm cuộc hội thoại hiện tại không
+  bool isPeerSelected(PeerModel peer) {
+    if (_selectedPeer == null) return false;
+    if (identical(_selectedPeer, peer)) return true;
+    if (_selectedPeer!.id == peer.id) return true;
+    if (_selectedPeer!.isAllUsers && peer.isAllUsers) return true;
+    if (_selectedPeer!.isAiAssistant && peer.isAiAssistant) return true;
+    if (_selectedPeer!.isGroup || peer.isGroup) return false;
+    return _isSamePhysicalPeer(_selectedPeer!, peer);
+  }
+
+  /// Hợp nhất tin nhắn giữa 2 ID cuộc hội thoại của cùng một thiết bị/người dùng
+  void _mergeConversations(String targetId, String sourceId) {
+    if (targetId == sourceId) return;
+    for (final entry in _peerSessions.sessions.entries.toList()) {
+      if (entry.value.conversationId == sourceId) {
+        _peerSessions.sessions[entry.key] = PeerTransportSession(
+          targetId,
+          entry.value.remote,
+          entry.value.hash,
+        )..available = entry.value.available;
+      }
+    }
+    final targetList = _conversations[targetId];
+    final sourceList = _conversations[sourceId];
+    if (targetList == null && sourceList == null) return;
+    final aliases =
+        _conversations.entries
+            .where(
+              (e) =>
+                  (targetList != null && identical(e.value, targetList)) ||
+                  (sourceList != null && identical(e.value, sourceList)),
+            )
+            .map((e) => e.key)
+            .toSet()
+          ..addAll([sourceId, targetId]);
+    final combinedMap = <String, MessageModel>{};
+    for (final m in [...?targetList, ...?sourceList]) {
+      if (m.isMine && aliases.contains(m.recipientId)) m.recipientId = targetId;
+      if (!m.isMine && aliases.contains(m.senderId)) m.senderId = targetId;
+      if (m.pendingRecipients != null &&
+          m.pendingRecipients!.any(aliases.contains)) {
+        m.pendingRecipients!.removeWhere(aliases.contains);
+        m.pendingRecipients!.add(targetId);
+      }
+      final key = '${m.isMine}:${m.sourceSession ?? ''}:${m.id}';
+      combinedMap.putIfAbsent(key, () => m);
+    }
+
+    final merged = combinedMap.values.toList()
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+    chatHistory.linkConversations(aliases);
+    for (final alias in aliases) {
+      _conversations[alias] = merged;
+      final pending = _pendingOfflineMessageIds.remove(alias);
+      if (pending != null) {
+        _pendingOfflineMessageIds
+            .putIfAbsent(targetId, () => {})
+            .addAll(pending);
+      }
+      // Keep legacy files recoverable and synchronized, without deleting history.
+      chatHistory.scheduleSave(alias, merged);
+    }
+  }
+
+  /// Hợp nhất các peer và cuộc hội thoại đã tải từ đĩa lúc khởi động ứng dụng
+  void _consolidateLoadedPeersAndConversations() {
+    final nonGroupPeers = _peers.values
+        .where((p) => !p.isGroup && !p.isAllUsers && !p.isAiAssistant)
+        .toSet()
+        .toList();
+
+    for (int i = 0; i < nonGroupPeers.length; i++) {
+      final a = nonGroupPeers[i];
+      for (int j = i + 1; j < nonGroupPeers.length; j++) {
+        final b = nonGroupPeers[j];
+        if (identical(a, b)) continue;
+        if (_isSamePhysicalPeer(a, b)) {
+          a.knownIps.addAll(b.knownIps);
+          if (b.ip.isNotEmpty) a.knownIps.add(b.ip);
+          if (a.customNickname == null && b.customNickname != null) {
+            a.customNickname = b.customNickname;
+          }
+          a.isPinned = a.isPinned || b.isPinned;
+
+          _mergeConversations(a.id, b.id);
+
+          final pending = _pendingOfflineMessageIds.remove(b.id);
+          if (pending != null) {
+            _pendingOfflineMessageIds
+                .putIfAbsent(a.id, () => {})
+                .addAll(pending);
+          }
+
+          for (final key in _peers.keys.toList()) {
+            if (identical(_peers[key], b)) {
+              _peers[key] = a;
+            }
+          }
+          _peers[b.id] = a;
+        }
+      }
+    }
+  }
+
   List<PeerModel> get peers {
-    // Deduplicate peers by canonical identity
+    // Deduplicate peers by canonical device identity
     final Map<String, PeerModel> uniqueMap = {};
     for (final p in _peers.values) {
       if (p.isGroup || p.isAllUsers) continue;
-      final key = p.networkSessionIdentity;
+      final key = _canonicalDeviceKey(p);
 
       final existing = uniqueMap[key];
       if (existing == null) {
         uniqueMap[key] = p;
       } else {
-        // If one is online and the other is offline, keep the online one
-        if (existing.status == PeerStatus.offline &&
+        PeerModel winner;
+        // Giữ nguyên peer đang được chọn nếu có để UI không bị nhảy
+        if (identical(existing, _selectedPeer)) {
+          winner = existing;
+        } else if (identical(p, _selectedPeer)) {
+          winner = p;
+        } else if (existing.status == PeerStatus.offline &&
             p.status != PeerStatus.offline) {
-          uniqueMap[key] = p;
+          winner = p;
         } else if ((p.status == PeerStatus.offline) ==
                 (existing.status == PeerStatus.offline) &&
             p.lastSeen.isAfter(existing.lastSeen)) {
-          uniqueMap[key] = p;
+          winner = p;
+        } else {
+          winner = existing;
         }
+
+        uniqueMap[key] = winner;
       }
     }
 
@@ -1050,7 +1225,7 @@ class MessengerCoordinator extends ChangeNotifier {
     _tcpServer.passwordProvider = () =>
         security.isEncryptionEnabled ? security.password : '';
     _tcpServer.onUserStatus = (id, message) {
-      final peer = _peers[id];
+      final peer = _incomingPeer(id);
       if (_disposed || peer == null) return;
       peer.status = switch (message['data']) {
         '1' => PeerStatus.online,
@@ -1059,25 +1234,29 @@ class MessengerCoordinator extends ChangeNotifier {
         _ => PeerStatus.offline,
       };
       peer.statusDescription = message['text'] as String;
+      final session = _peerSessions.sessions[id];
+      if (session != null) {
+        session.remote.status = peer.status;
+        session.remote.statusDescription = peer.statusDescription;
+        _refreshLogicalPeer(peer);
+      }
       peer.lastSeen = DateTime.now();
       notifyListeners();
     };
     _tcpServer.onAvatarUpdate = (id, avatarPayload) {
-      final peer = _peers[id];
+      final peer = _incomingPeer(id);
       if (_disposed || peer == null) return;
+      _peerSessions.sessions[id]?.remote.updateAvatarFromRaw(avatarPayload);
       peer.updateAvatarFromRaw(avatarPayload);
+      if (_peerSessions.forConversation(peer.id).isNotEmpty) {
+        _refreshLogicalPeer(peer);
+      }
       peer.lastSeen = DateTime.now();
       notifyListeners();
     };
-    _tcpServer.onDisconnected = (id) {
-      if (_disposed) return;
-      // BeeBEEP và socket TCP ngang hàng trong mạng LAN thường tự động đóng sau khi hoàn tất
-      // truyền tải hoặc hết thời gian chờ idle. Không vội đánh dấu peer thành offline ngay lập tức
-      // để tránh hiện tượng thông báo và trạng thái bị chập chờn (flapping).
-      // Quá trình _checkPeerLiveness định kỳ sẽ kiểm tra timeout 45s không có tín hiệu để chuyển offline.
-    };
+    _tcpServer.onDisconnected = handlePeerDisconnected;
     _tcpServer.onActivity = (id) {
-      _peers[id]?.lastSeen = DateTime.now();
+      _incomingPeer(id)?.lastSeen = DateTime.now();
     };
     _tcpServer.onHandshake = handlePeerHandshake;
     _tcpServer.onMessage = handleIncomingMessage;
@@ -1269,6 +1448,13 @@ class MessengerCoordinator extends ChangeNotifier {
     }
 
     final endpoint = '$senderIp:$remotePort';
+    final version = data['version'] as String? ?? '';
+    final client = data['client'] as String? ?? '';
+    final isBeebeepClient = ProtocolBeebeep.isRemoteBeebeep(
+      version: version,
+      color: colorRaw,
+      client: client,
+    );
 
     // Tạo đối tượng tạm để tính canonicalIdentity chính xác theo máy vật lý
     final candidate = PeerModel(
@@ -1279,7 +1465,7 @@ class MessengerCoordinator extends ChangeNotifier {
       status: status,
       statusDescription: statusDesc,
       workgroup: workgroup,
-      isBeebeep: true,
+      isBeebeep: isBeebeepClient,
       accountName: account.isNotEmpty && account != '???' ? account : null,
       hostname: hostname.isNotEmpty && hostname != '???' ? hostname : null,
       knownIps: {senderIp},
@@ -1290,43 +1476,119 @@ class MessengerCoordinator extends ChangeNotifier {
 
     final identityKey = candidate.canonicalIdentity;
 
-    // Tìm peer đã tồn tại (qua endpoint chính xác hoặc canonicalIdentity của cùng 1 máy vật lý)
-    PeerModel? existingPeer = _peers[endpoint];
-    if (existingPeer == null) {
-      for (final p in _peers.values) {
-        if (p.isGroup || p.isAllUsers) continue;
-        // Chỉ gộp khi canonicalIdentity là một khóa máy vật lý cụ thể (không phải fallback endpoint IP:Port)
-        if (p.networkSessionIdentity == candidate.networkSessionIdentity) {
-          existingPeer = p;
-          break;
-        }
-      }
+    // Tìm tất cả peer hiện tại tương ứng với cùng một máy vật lý
+    final matchingPeers = _peers.values.where((p) {
+      if (p.isGroup || p.isAllUsers || p.isAiAssistant) return false;
+      return _isSamePhysicalPeer(p, candidate, senderIp: senderIp);
+    }).toSet();
+
+    PeerModel primaryPeer;
+    if (_selectedPeer != null && matchingPeers.contains(_selectedPeer)) {
+      primaryPeer = _selectedPeer!;
+    } else if (_peers.containsKey(endpoint) &&
+        matchingPeers.contains(_peers[endpoint])) {
+      primaryPeer = _peers[endpoint]!;
+    } else if (matchingPeers.isNotEmpty) {
+      primaryPeer = matchingPeers.firstWhere(
+        (p) => p.status != PeerStatus.offline,
+        orElse: () => matchingPeers.first,
+      );
+    } else {
+      final occupied = _peers[endpoint];
+      final remembered = _peerSessions.identities[endpoint];
+      final conflict =
+          (occupied != null && !matchingPeers.contains(occupied)) ||
+          (remembered != null &&
+              remembered != PeerSessionRegistry.identity(candidate));
+      final id = conflict
+          ? 'peer_${sha256.convert(utf8.encode(PeerSessionRegistry.identity(candidate) ?? endpoint))}'
+          : endpoint;
+      primaryPeer = _peers[id] ?? candidate.copyWith(id: id);
     }
 
+    final previousSession = _peerSessions.sessions[endpoint];
+    if (previousSession != null &&
+        previousSession.conversationId != primaryPeer.id) {
+      previousSession.available = false;
+      final previousPeer = _peers[previousSession.conversationId];
+      _peerSessions.sessions.remove(endpoint);
+      if (previousPeer != null) _refreshLogicalPeer(previousPeer);
+    }
+    _peerSessions.remember(
+      primaryPeer.id,
+      PeerSessionRegistry.identity(candidate),
+    );
+    _peerSessions.sessions[endpoint] = PeerTransportSession(
+      primaryPeer.id,
+      candidate,
+      data['hash'] as String? ?? '',
+    );
+
     final now = DateTime.now();
-    final peer = existingPeer ?? candidate;
-    peer.isPinned = AppPreferences().isPeerPinned(identityKey);
+    primaryPeer.isBeebeep = isBeebeepClient;
+    primaryPeer.isPinned =
+        AppPreferences().isPeerPinned(identityKey) || primaryPeer.isPinned;
     if (colorRaw.isNotEmpty) {
-      peer.updateAvatarFromRaw(colorRaw);
+      primaryPeer.updateAvatarFromRaw(colorRaw);
     }
 
     // Cập nhật thông tin mới nhất cho peer
     if (username.isNotEmpty && username != '???') {
-      peer.name = username;
+      primaryPeer.name = username;
     }
-    peer.ip = senderIp;
-    peer.port = remotePort;
-    peer.status = status;
-    peer.statusDescription = statusDesc;
-    peer.workgroup = workgroup;
-    peer.lastSeen = now;
+    primaryPeer.ip = senderIp;
+    primaryPeer.port = remotePort;
+    primaryPeer.status = status;
+    primaryPeer.statusDescription = statusDesc;
+    primaryPeer.workgroup = workgroup;
+    primaryPeer.lastSeen = now;
     if (account.isNotEmpty && account != '???') {
-      peer.accountName = account;
+      primaryPeer.accountName = account;
     }
     if (hostname.isNotEmpty && hostname != '???') {
-      peer.hostname = hostname;
+      primaryPeer.hostname = hostname;
     }
-    peer.knownIps.add(senderIp);
+    primaryPeer.knownIps.add(senderIp);
+    primaryPeer.knownIps.addAll(candidate.knownIps);
+
+    // Gộp tất cả peer trùng lặp khác vào primaryPeer và gộp lịch sử trò chuyện
+    for (final other in matchingPeers) {
+      if (identical(other, primaryPeer)) continue;
+      primaryPeer.knownIps.addAll(other.knownIps);
+      if (other.customNickname != null && primaryPeer.customNickname == null) {
+        primaryPeer.customNickname = other.customNickname;
+      }
+      primaryPeer.isPinned = primaryPeer.isPinned || other.isPinned;
+
+      _mergeConversations(primaryPeer.id, other.id);
+
+      final otherPending = _pendingOfflineMessageIds.remove(other.id);
+      if (otherPending != null) {
+        _pendingOfflineMessageIds
+            .putIfAbsent(primaryPeer.id, () => {})
+            .addAll(otherPending);
+      }
+
+      for (final key in _peers.keys.toList()) {
+        if (identical(_peers[key], other)) {
+          _peers[key] = primaryPeer;
+        }
+      }
+      _peers[other.id] = primaryPeer;
+    }
+
+    // Gộp hội thoại với endpoint hiện tại nếu có lịch sử riêng
+    if (_peers[endpoint] == null || matchingPeers.contains(_peers[endpoint])) {
+      _mergeConversations(primaryPeer.id, endpoint);
+    }
+
+    // Đảm bảo selection không bị nhảy nếu đang chọn peer này
+    if (_selectedPeer != null &&
+        _isSamePhysicalPeer(_selectedPeer!, primaryPeer, senderIp: senderIp)) {
+      _selectedPeer = primaryPeer;
+    }
+
+    final peer = primaryPeer;
 
     // Nếu chưa có hostname chuẩn (hoặc là ???), thử phân giải ngược Reverse DNS trong nền
     if (peer.hostname == null ||
@@ -1357,11 +1619,13 @@ class MessengerCoordinator extends ChangeNotifier {
           .catchError((_) {});
     }
 
-    // Đảm bảo endpoint và peer.id cùng trỏ tới thực thể này
-    _peers[endpoint] = peer;
+    // Đảm bảo endpoint, peer.id và tất cả các IP đã biết cùng trỏ tới thực thể này
+    if (_peers[endpoint] == null || matchingPeers.contains(_peers[endpoint])) {
+      _peers[endpoint] = peer;
+    }
     _peers[peer.id] = peer;
     final userHash = data['hash'] as String? ?? '';
-    if (userHash.isNotEmpty) _peerHashes[peer.id] = userHash;
+    _refreshLogicalPeer(peer);
     for (final group in _groups.values) {
       final oldIds = group.memberIds
           .where(
@@ -1390,7 +1654,15 @@ class MessengerCoordinator extends ChangeNotifier {
         if (!group.memberIds.contains(peer.id)) group.memberIds.add(peer.id);
       }
       if (group.memberIds.contains(peer.id)) {
-        group.memberRecords[peer.id] = _groupRecord(peer.id, group);
+        group.memberRecords.putIfAbsent(
+          peer.id,
+          () => [
+            peer.name,
+            peer.accountName ?? '',
+            userHash.isNotEmpty ? userHash : peer.id,
+            '',
+          ],
+        );
         _syncGroup(group, onlyMember: peer.id);
         if (_selectedPeer?.id == group.id) {
           _selectedPeer = PeerModel.fromGroup(group);
@@ -1533,7 +1805,7 @@ class MessengerCoordinator extends ChangeNotifier {
     _leftGroupMembers[group.id] = {
       for (final id in group.memberIds) ...[
         id,
-        _peerHashes[id] ?? group.memberRecords[id]?[2] ?? id,
+        group.memberRecords[id]?[2] ?? _peerHashes[id] ?? id,
       ],
     };
   }
@@ -1569,6 +1841,18 @@ class MessengerCoordinator extends ChangeNotifier {
         final msgs = entry.value;
         if (msgs.isEmpty) continue;
 
+        final arriving = _conversations[convId];
+        if (arriving != null) {
+          final existingKeys = msgs
+              .map((m) => '${m.isMine}:${m.sourceSession}:${m.id}')
+              .toSet();
+          msgs.addAll(
+            arriving.where(
+              (m) => existingKeys.add('${m.isMine}:${m.sourceSession}:${m.id}'),
+            ),
+          );
+          msgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+        }
         _conversations[convId] = msgs;
         for (final m in msgs) {
           if (!_isRetryableText(m)) continue;
@@ -1637,6 +1921,10 @@ class MessengerCoordinator extends ChangeNotifier {
           }
         }
       }
+
+      // Khởi tạo hợp nhất các cuộc trò chuyện và thiết bị cùng máy vật lý từ lịch sử
+      _consolidateLoadedPeersAndConversations();
+
       for (final peer in peers.where((p) => p.status != PeerStatus.offline)) {
         unawaited(flushPendingOutgoingMessagesForPeer(peer));
       }
@@ -1826,7 +2114,7 @@ class MessengerCoordinator extends ChangeNotifier {
 
   String _groupMemberIdentity(String id, GroupModel group) => id == 'me'
       ? _localUserHash
-      : _peerHashes[id] ?? group.memberRecords[id]?.elementAtOrNull(2) ?? id;
+      : group.memberRecords[id]?.elementAtOrNull(2) ?? _peerHashes[id] ?? id;
 
   Set<String> _groupAdminIdentities(GroupModel group) =>
       group.adminIds.map((id) => _groupMemberIdentity(id, group)).toSet();
@@ -1977,7 +2265,7 @@ class MessengerCoordinator extends ChangeNotifier {
       return;
     }
     final memberIdentity =
-        _peerHashes[memberId] ?? group.memberRecords[memberId]?[2] ?? memberId;
+        group.memberRecords[memberId]?[2] ?? _peerHashes[memberId] ?? memberId;
     if (group.isCreator(memberId) || group.isCreator(memberIdentity)) return;
     final memberName = _groupMemberLabel(memberId, group);
     final updatedIds = group.memberIds.where((id) => id != memberId).toList();
@@ -2010,7 +2298,7 @@ class MessengerCoordinator extends ChangeNotifier {
     if (group == null || !isGroupCreator(groupId)) return;
     if (!group.memberIds.contains(memberId)) return;
     final identity =
-        _peerHashes[memberId] ?? group.memberRecords[memberId]?[2] ?? memberId;
+        group.memberRecords[memberId]?[2] ?? _peerHashes[memberId] ?? memberId;
     if (group.isCreator(memberId) || group.isCreator(identity)) return;
     final ids = _groupAdminIdentities(group).toList();
     if (admin) {
@@ -2045,7 +2333,7 @@ class MessengerCoordinator extends ChangeNotifier {
     if (group == null || !isGroupCreator(groupId)) return;
     if (!group.memberIds.contains(memberId)) return;
     final identity =
-        _peerHashes[memberId] ?? group.memberRecords[memberId]?[2] ?? memberId;
+        group.memberRecords[memberId]?[2] ?? _peerHashes[memberId] ?? memberId;
     if (group.isCreator(memberId) || group.isCreator(identity)) return;
     final admins = {
       ..._groupAdminIdentities(group),
@@ -2087,8 +2375,33 @@ class MessengerCoordinator extends ChangeNotifier {
   }
 
   bool _sendToPeer(String endpoint, List<int> packet) {
-    if (_tcpServer.send(endpoint, packet)) return true;
     final peer = _peers[endpoint];
+    if (peer != null) {
+      final sessions = _peerSessions.forConversation(peer.id);
+      if (sessions.isNotEmpty ||
+          _peerSessions.identities.containsKey(peer.id)) {
+        final message = ProtocolBeebeep.parseMessage(utf8.decode(packet));
+        final groupId = message == null
+            ? null
+            : ProtocolBeebeep.groupMetadata(message)?.id;
+        final expected = _groups[groupId]?.memberRecords[peer.id]
+            ?.elementAtOrNull(2);
+        for (final session in sessions) {
+          if (!session.available ||
+              session.remote.status == PeerStatus.offline) {
+            continue;
+          }
+          if (expected != null &&
+              expected != peer.id &&
+              session.hash != expected) {
+            continue;
+          }
+          if (_tcpServer.send(session.endpoint, packet)) return true;
+        }
+        return false;
+      }
+    }
+    if (_tcpServer.send(endpoint, packet)) return true;
     if (peer == null) return false;
     for (final alias in _peers.entries) {
       if (alias.key != endpoint &&
@@ -2098,6 +2411,55 @@ class MessengerCoordinator extends ChangeNotifier {
       }
     }
     return false;
+  }
+
+  PeerModel? _incomingPeer(String endpoint) {
+    final exact = _peerSessions.sessions[endpoint];
+    if (exact != null) return _peers[exact.conversationId];
+    final byIp = _peerSessions.sessions.values
+        .where((s) => s.remote.ip == endpoint && s.available)
+        .map((s) => s.conversationId)
+        .toSet();
+    if (byIp.length == 1) return _peers[byIp.single];
+    return byIp.isEmpty ? _findPeerByIpOrId(endpoint) : null;
+  }
+
+  String _incomingHash(String endpoint, PeerModel peer) =>
+      _peerSessions.sessions[endpoint]?.hash.isNotEmpty == true
+      ? _peerSessions.sessions[endpoint]!.hash
+      : (_peerHashes[peer.id] ?? peer.id);
+
+  void _refreshLogicalPeer(PeerModel peer) {
+    final sessions = _peerSessions.forConversation(peer.id);
+    final available = sessions
+        .where((s) => s.available && s.remote.status != PeerStatus.offline)
+        .toList();
+    if (available.isEmpty) {
+      peer.status = PeerStatus.offline;
+      return;
+    }
+    final preferred = available.first;
+    peer.ip = preferred.remote.ip;
+    peer.port = preferred.remote.port;
+    peer.status = preferred.remote.status;
+    peer.statusDescription = preferred.remote.statusDescription;
+    peer.isBeebeep = preferred.remote.isBeebeep;
+    peer.avatarColor = preferred.remote.avatarColor;
+    peer.avatarPreset = preferred.remote.avatarPreset;
+    peer.customAvatarBase64 = preferred.remote.customAvatarBase64;
+    // One stable preferred identity for newly created groups; inbound uses the
+    // exact sending session and existing groups retain their recorded hash.
+    if (preferred.hash.isNotEmpty) _peerHashes[peer.id] = preferred.hash;
+  }
+
+  @visibleForTesting
+  void handlePeerDisconnected(String endpoint) {
+    final session = _peerSessions.sessions[endpoint];
+    if (session == null || _disposed) return;
+    session.available = false;
+    final peer = _peers[session.conversationId];
+    if (peer != null) _refreshLogicalPeer(peer);
+    notifyListeners();
   }
 
   /// Tách thông tin trích dẫn nếu tin nhắn mạng chứa format trích dẫn
@@ -2132,7 +2494,7 @@ class MessengerCoordinator extends ChangeNotifier {
     final decryptedText = text;
 
     final senderPeer =
-        _findPeerByIpOrId(senderIp) ??
+        _incomingPeer(senderIp) ??
         PeerModel(
           id: senderIp,
           name: senderIp,
@@ -2230,7 +2592,9 @@ class MessengerCoordinator extends ChangeNotifier {
       } else {
         // 3. Tin nhắn trò chuyện trực tiếp cá nhân
         final quote = _parseQuote(decryptedText);
-        final isCurrentChat = _selectedPeer?.id == senderPeer.id;
+        final isCurrentChat =
+            _selectedPeer != null &&
+            _isSamePhysicalPeer(_selectedPeer!, senderPeer, senderIp: senderIp);
         final msg = MessageModel(
           id: messageId,
           senderId: senderPeer.id,
@@ -2245,8 +2609,26 @@ class MessengerCoordinator extends ChangeNotifier {
         );
 
         final list = _conversations.putIfAbsent(senderPeer.id, () => []);
+        msg.sourceSession = _incomingHash(senderIp, senderPeer);
+        if (list.any(
+          (m) =>
+              !m.isMine &&
+              m.id == messageId &&
+              m.sourceSession == msg.sourceSession,
+        )) {
+          return;
+        }
         list.add(msg);
         chatHistory.scheduleSave(senderPeer.id, list);
+
+        // Đảm bảo cuộc hội thoại đang mở lập tức đồng bộ tin nhắn mới
+        if (_selectedPeer != null &&
+            isCurrentChat &&
+            _selectedPeer!.id != senderPeer.id) {
+          _conversations[_selectedPeer!.id] = list;
+          _selectedPeer!.lastMessage = quote.text;
+          _selectedPeer!.lastMessageTime = timestamp;
+        }
 
         senderPeer.lastMessage = quote.text;
         senderPeer.lastMessageTime = timestamp;
@@ -2255,8 +2637,10 @@ class MessengerCoordinator extends ChangeNotifier {
           senderPeer.unreadCount++;
         } else {
           // Gửi ngay tín hiệu đã xem (Read receipt) về phía gửi
-          _sendToPeer(
-            senderPeer.id,
+          _tcpServer.send(
+            _peerSessions.sessions.containsKey(senderIp)
+                ? senderIp
+                : senderPeer.id,
             ProtocolBeebeep.buildReadPacket(messageId),
           );
         }
@@ -2274,7 +2658,7 @@ class MessengerCoordinator extends ChangeNotifier {
 
   /// Xử lý gói tin ACK từ phía nhận
   void _handleMessageAck(String senderIp, String messageId) {
-    final peer = _findPeerByIpOrId(senderIp);
+    final peer = _incomingPeer(senderIp);
     final convId = peer?.id ?? senderIp;
     final list = _conversations[convId];
     if (list != null) {
@@ -2390,7 +2774,7 @@ class MessengerCoordinator extends ChangeNotifier {
     _buzzTriggerCount++;
     unawaited(_triggerNativeBuzzAlert());
 
-    final peer = _findPeerByIpOrId(senderIp);
+    final peer = _incomingPeer(senderIp);
     final senderName = peer?.displayName ?? senderIp;
     final conversationId = peer?.id ?? senderIp;
     final text =
@@ -2598,7 +2982,7 @@ class MessengerCoordinator extends ChangeNotifier {
   ]) {
     if (_disposed) return;
     final peer =
-        _findPeerByIpOrId(senderIp) ??
+        _incomingPeer(senderIp) ??
         PeerModel(
           id: senderIp,
           name: senderIp,
@@ -2649,7 +3033,7 @@ class MessengerCoordinator extends ChangeNotifier {
   void _handleIncomingReadReceipt(String senderIp, String messageId) {
     if (_disposed) return;
     final peer =
-        _findPeerByIpOrId(senderIp) ??
+        _incomingPeer(senderIp) ??
         PeerModel(
           id: senderIp,
           name: senderIp,
@@ -2692,10 +3076,16 @@ class MessengerCoordinator extends ChangeNotifier {
   /// Xử lý yêu cầu thu hồi tin nhắn nhận được
   void _handleIncomingRevoke(String senderIp, String messageId) {
     if (_disposed) return;
+    final sender = _incomingPeer(senderIp);
+    if (sender == null) return;
+    final origin = _incomingHash(senderIp, sender);
     var found = false;
     for (final entry in _conversations.entries) {
       for (final msg in entry.value) {
-        if (msg.id == messageId) {
+        if (msg.id == messageId &&
+            !msg.isMine &&
+            msg.senderId == sender.id &&
+            (msg.sourceSession == null || msg.sourceSession == origin)) {
           msg.isRevoked = true;
           msg.revokedAt = DateTime.now();
           found = true;
@@ -2771,7 +3161,7 @@ class MessengerCoordinator extends ChangeNotifier {
     String senderName,
   ) {
     if (_disposed || (action != 'add' && action != 'remove')) return;
-    final sender = _findPeerByIpOrId(endpoint);
+    final sender = _incomingPeer(endpoint);
     if (sender == null) return;
     bool updated = false;
     for (final entry in _conversations.entries) {
@@ -2904,6 +3294,9 @@ class MessengerCoordinator extends ChangeNotifier {
       if (!p.isGroup &&
           !p.isAllUsers &&
           p.status != PeerStatus.offline &&
+          !_peerSessions
+              .forConversation(p.id)
+              .any((s) => s.available && _tcpServer.isConnected(s.endpoint)) &&
           !_tcpServer.isConnected(p.id) &&
           now.difference(p.lastSeen).inSeconds > 45) {
         p.status = PeerStatus.offline;
@@ -3174,7 +3567,9 @@ class MessengerCoordinator extends ChangeNotifier {
     // 1. Quét tin nhắn 1-1 chưa gửi được trong các conversation tương ứng
     for (final convEntry in _conversations.entries) {
       final convId = convEntry.key;
-      final isDirectChat = candidateKeys.contains(convId);
+      final isDirectChat =
+          candidateKeys.contains(convId) &&
+          (_peers[convId] == null || identical(_peers[convId], peer));
       if (isDirectChat) {
         for (final msg in convEntry.value) {
           if (msg.isMine &&
@@ -3777,9 +4172,28 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
 
     var anySuccess = false;
     for (final peer in targets) {
+      final expectedHash = selected.isGroup
+          ? _groups[selected.id]?.memberRecords[peer.id]?.elementAtOrNull(2)
+          : null;
+      final routes = _peerSessions.forConversation(peer.id);
+      final route = routes
+          .where(
+            (s) =>
+                s.available &&
+                s.remote.status != PeerStatus.offline &&
+                (expectedHash == null ||
+                    expectedHash == peer.id ||
+                    s.hash == expectedHash),
+          )
+          .firstOrNull;
+      if (route == null &&
+          (routes.isNotEmpty ||
+              _peerSessions.identities.containsKey(peer.id))) {
+        throw StateError('Recipient session is offline');
+      }
       final task = await _fileEngine.sendFile(
-        peerId: peer.id,
-        peerIp: peer.ip,
+        peerId: route?.endpoint ?? peer.id,
+        peerIp: route?.remote.ip ?? peer.ip,
         peerName: peer.name,
         file: file,
         groupId: selected.isGroup && !selected.isAllUsers ? selected.id : null,
@@ -4192,7 +4606,14 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
 
   /// Xóa toàn bộ lịch sử tin nhắn của cuộc trò chuyện
   void clearConversation(String peerId) {
-    _conversations[peerId]?.clear();
+    final list = _conversations[peerId];
+    list?.clear();
+    for (final entry in _conversations.entries) {
+      if (list != null && identical(entry.value, list)) {
+        _pendingOfflineMessageIds.remove(entry.key);
+        chatHistory.scheduleSave(entry.key, list);
+      }
+    }
     final peer = _peers[peerId];
     if (peer != null) {
       peer.lastMessage = null;
@@ -4267,9 +4688,14 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
     if (groupId == null) return null;
     final group = _groups[groupId];
     if (group == null) return null;
-    final sender =
-        _findPeerByIpOrId(task.peerId) ?? _findPeerByIpOrId(task.peerIp);
+    final sender = _incomingPeer(task.peerId) ?? _incomingPeer(task.peerIp);
     if (sender == null || !group.memberIds.contains(sender.id)) return null;
+    final expectedHash = group.memberRecords[sender.id]?.elementAtOrNull(2);
+    if (expectedHash != null &&
+        expectedHash != sender.id &&
+        expectedHash != _incomingHash(task.peerId, sender)) {
+      return null;
+    }
     return group;
   }
 
@@ -4287,7 +4713,7 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
     final group = _groupForIncomingFile(task);
 
     final senderPeer =
-        _peers[task.peerId] ??
+        _incomingPeer(task.peerId) ??
         _peers.values.firstWhere(
           (p) => p.ip == task.peerIp,
           orElse: () =>

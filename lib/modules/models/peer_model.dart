@@ -343,6 +343,7 @@ class PeerModel {
   }
 
   PeerModel copyWith({
+    String? id,
     String? name,
     String? ip,
     int? port,
@@ -369,7 +370,7 @@ class PeerModel {
     String? customAvatarBase64,
   }) {
     return PeerModel(
-      id: id,
+      id: id ?? this.id,
       name: name ?? this.name,
       ip: ip ?? this.ip,
       port: port ?? this.port,

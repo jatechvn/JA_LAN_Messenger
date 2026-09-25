@@ -39,8 +39,10 @@ void main() {
       hello('198.51.100.2', 'PC-B');
       expect(coordinator.peers.where((p) => !p.isAiAssistant), hasLength(2));
       hello('192.0.2.1', 'PC-A', port: 6477);
-      expect(coordinator.peers.where((p) => !p.isAiAssistant), hasLength(3));
-      expect(first.port, 6475);
+      // Cùng một máy vật lý dù đổi cổng (ví dụ 6475 BeeBEEP vs 6477 JA) vẫn gộp thành 1 peer duy nhất
+      expect(coordinator.peers.where((p) => !p.isAiAssistant), hasLength(2));
+      expect(coordinator.selectedPeer, same(first));
+      expect(coordinator.peersMap['192.0.2.1:6477'], same(first));
     },
   );
 }

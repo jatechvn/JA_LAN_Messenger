@@ -269,7 +269,7 @@ class _PeerListViewState extends State<PeerListView> {
                     _PeerListTile(
                       key: ValueKey(peer.id),
                       peer: peer,
-                      isSelected: coordinator.selectedPeer?.id == peer.id,
+                      isSelected: coordinator.isPeerSelected(peer),
                       onTap: () => coordinator.selectPeer(peer),
                     ),
                 ],
