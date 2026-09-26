@@ -661,8 +661,8 @@ void main() {
         addTearDown(() => coordinator.dispose());
 
         final packageInfo = UpdatePackageInfo(
-          version: SemanticVersion.tryParse('1.5.0')!,
-          fileName: 'JA_LAN_Messenger_v1.5.0_Windows_x64.zip',
+          version: SemanticVersion.tryParse('9.9.0')!,
+          fileName: 'JA_LAN_Messenger_v9.9.0_Windows_x64.zip',
           fullPath: '/mock/update.zip',
           fileSize: 15 * 1024 * 1024,
           releaseNotes: '- Bổ sung cập nhật OTA\n- Sửa lỗi kết nối mạng',
@@ -684,7 +684,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Check version text
-        expect(find.text('v1.5.0'), findsOneWidget);
+        expect(find.text('v9.9.0'), findsOneWidget);
         expect(find.text('v$appVersion'), findsOneWidget);
         // Check release notes text
         expect(find.textContaining('Bổ sung cập nhật OTA'), findsOneWidget);

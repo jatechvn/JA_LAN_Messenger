@@ -53,12 +53,14 @@ class ConversationDetailsPanel extends StatelessWidget {
     PeerModel peer,
   ) {
     final lang = context.read<LanguageProvider>();
-    final controller = TextEditingController(text: peer.displayName);
+    final controller = TextEditingController(
+      text: peer.isGroup ? peer.name : peer.displayName,
+    );
 
     showGlassDialog(
       context: context,
       builder: (ctx) => GlassDialog(
-        title: lang.tr('editName'),
+        title: peer.isGroup ? lang.tr('renameGroup') : lang.tr('editName'),
         icon: Icons.edit_note_rounded,
         width: 380,
         actions: [
@@ -68,7 +70,17 @@ class ConversationDetailsPanel extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () {
-              coordinator.setPeerNickname(peer.id, controller.text.trim());
+              final newName = controller.text.trim();
+              if (peer.isGroup) {
+                if (newName.isNotEmpty) {
+                  coordinator.renameGroup(peer.id, newName);
+                }
+              } else {
+                coordinator.setPeerNickname(
+                  peer.id,
+                  newName.isEmpty ? null : newName,
+                );
+              }
               Navigator.of(ctx).pop();
             },
             child: Text(lang.tr('save')),
@@ -77,8 +89,11 @@ class ConversationDetailsPanel extends StatelessWidget {
         child: TextField(
           controller: controller,
           autofocus: true,
+          maxLength: 256,
           decoration: InputDecoration(
-            hintText: lang.tr('nickname'),
+            hintText: peer.isGroup
+                ? lang.tr('groupNameHint')
+                : lang.tr('nickname'),
             border: const OutlineInputBorder(),
           ),
         ),
@@ -350,7 +365,10 @@ class ConversationDetailsPanel extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          if (!peer.isAllUsers && !peer.isAiAssistant) ...[
+                          if (!peer.isAllUsers &&
+                              !peer.isAiAssistant &&
+                              (!peer.isGroup ||
+                                  coordinator.isGroupAdmin(peer.id))) ...[
                             const SizedBox(width: 4),
                             InkWell(
                               onTap: () => _showEditNicknameDialog(

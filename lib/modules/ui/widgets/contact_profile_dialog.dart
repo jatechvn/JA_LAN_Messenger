@@ -12,7 +12,7 @@ import 'bounce_marquee_text.dart';
 import 'app_avatar.dart';
 
 /// Hộp thoại đổi nhanh biệt danh (Quick Nickname Dialog)
-void showQuickNicknameDialog({
+Future<void> showQuickNicknameDialog({
   required BuildContext context,
   required MessengerCoordinator coordinator,
   required PeerModel peer,
@@ -22,14 +22,14 @@ void showQuickNicknameDialog({
     text: peer.customNickname ?? peer.name,
   );
 
-  showGlassDialog(
+  return showGlassDialog(
     context: context,
     builder: (ctx) {
       final theme = ThemeProvider.of(ctx);
       final isDark = theme.isDark;
 
       return GlassDialog(
-        title: lang.tr('quickRename'),
+        title: peer.isGroup ? lang.tr('renameGroup') : lang.tr('quickRename'),
         icon: Icons.edit_rounded,
         width: 350,
         actions: [
@@ -37,7 +37,9 @@ void showQuickNicknameDialog({
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(lang.tr('cancel')),
           ),
-          if (peer.customNickname != null && peer.customNickname!.isNotEmpty)
+          if (!peer.isGroup &&
+              peer.customNickname != null &&
+              peer.customNickname!.isNotEmpty)
             TextButton(
               style: TextButton.styleFrom(
                 foregroundColor: theme.colors.accentRose,
@@ -55,10 +57,16 @@ void showQuickNicknameDialog({
             ),
             onPressed: () {
               final newName = controller.text.trim();
-              coordinator.setPeerNickname(
-                peer.id,
-                newName.isEmpty ? null : newName,
-              );
+              if (peer.isGroup) {
+                if (newName.isNotEmpty) {
+                  coordinator.renameGroup(peer.id, newName);
+                }
+              } else {
+                coordinator.setPeerNickname(
+                  peer.id,
+                  newName.isEmpty ? null : newName,
+                );
+              }
               Navigator.of(ctx).pop();
             },
             child: Text(lang.tr('save')),
@@ -555,10 +563,9 @@ class _PeerWinrmConfigDialogState extends State<_PeerWinrmConfigDialog> {
     _userController = TextEditingController(text: existing?.username ?? '');
     _passController = TextEditingController(text: existing?.password ?? '');
     _portController = TextEditingController(
-      text:
-          (existing != null && existing.port > 0)
-              ? existing.port.toString()
-              : prefs.winrmDefaultPort.toString(),
+      text: (existing != null && existing.port > 0)
+          ? existing.port.toString()
+          : prefs.winrmDefaultPort.toString(),
     );
     _customPathController = TextEditingController(
       text: existing?.customAppPath ?? '',
@@ -576,22 +583,17 @@ class _PeerWinrmConfigDialogState extends State<_PeerWinrmConfigDialog> {
 
   Future<void> _testConnection() async {
     final prefs = AppPreferences();
-    final user =
-        _userController.text.trim().isNotEmpty
-            ? _userController.text.trim()
-            : prefs.winrmDefaultUsername;
-    final pass =
-        _passController.text.isNotEmpty
-            ? _passController.text
-            : prefs.winrmDefaultPassword;
+    final user = _userController.text.trim().isNotEmpty
+        ? _userController.text.trim()
+        : prefs.winrmDefaultUsername;
+    final pass = _passController.text.isNotEmpty
+        ? _passController.text
+        : prefs.winrmDefaultPassword;
     final port =
         int.tryParse(_portController.text.trim()) ?? prefs.winrmDefaultPort;
-    final ip =
-        widget.peer.ip.isNotEmpty
-            ? widget.peer.ip
-            : (widget.peer.knownIps.isNotEmpty
-                ? widget.peer.knownIps.first
-                : '');
+    final ip = widget.peer.ip.isNotEmpty
+        ? widget.peer.ip
+        : (widget.peer.knownIps.isNotEmpty ? widget.peer.knownIps.first : '');
 
     if (ip.isEmpty) {
       setState(() {
@@ -634,10 +636,9 @@ class _PeerWinrmConfigDialogState extends State<_PeerWinrmConfigDialog> {
         username: _userController.text.trim(),
         password: _passController.text,
         port: int.tryParse(_portController.text.trim()) ?? 5985,
-        customAppPath:
-            _customPathController.text.trim().isNotEmpty
-                ? _customPathController.text.trim()
-                : null,
+        customAppPath: _customPathController.text.trim().isNotEmpty
+            ? _customPathController.text.trim()
+            : null,
       );
       await prefs.setWinrmConfigForPeer(widget.peer.canonicalIdentity, config);
     }
@@ -730,10 +731,8 @@ class _PeerWinrmConfigDialogState extends State<_PeerWinrmConfigDialog> {
                           : Icons.visibility_outlined,
                       size: 16,
                     ),
-                    onPressed:
-                        () => setState(
-                          () => _obscurePassword = !_obscurePassword,
-                        ),
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
                   ),
                 ),
               ),
@@ -788,17 +787,16 @@ class _PeerWinrmConfigDialogState extends State<_PeerWinrmConfigDialog> {
                     ),
                   ),
                   onPressed: _isTesting ? null : _testConnection,
-                  icon:
-                      _isTesting
-                          ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.black87,
-                            ),
-                          )
-                          : const Icon(Icons.network_check_rounded, size: 15),
+                  icon: _isTesting
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.black87,
+                          ),
+                        )
+                      : const Icon(Icons.network_check_rounded, size: 15),
                   label: Text(
                     _isTesting
                         ? lang.tr('winrmTesting')
@@ -843,14 +841,13 @@ class _PeerWinrmConfigDialogState extends State<_PeerWinrmConfigDialog> {
                         _testResult!,
                         style: TextStyle(
                           fontSize: 11.5,
-                          color:
-                              _testSuccess == true
-                                  ? (isDark
-                                      ? Colors.greenAccent
-                                      : Colors.green.shade800)
-                                  : (isDark
-                                      ? Colors.redAccent
-                                      : Colors.red.shade800),
+                          color: _testSuccess == true
+                              ? (isDark
+                                    ? Colors.greenAccent
+                                    : Colors.green.shade800)
+                              : (isDark
+                                    ? Colors.redAccent
+                                    : Colors.red.shade800),
                         ),
                       ),
                     ),
@@ -864,4 +861,3 @@ class _PeerWinrmConfigDialogState extends State<_PeerWinrmConfigDialog> {
     );
   }
 }
-

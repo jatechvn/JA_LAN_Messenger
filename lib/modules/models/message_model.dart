@@ -179,7 +179,7 @@ class MessageModel {
 
     final ts = json['timestamp'] != null
         ? DateTime.tryParse(json['timestamp'] as String)?.toLocal() ??
-            DateTime.now()
+              DateTime.now()
         : DateTime.now();
     final revAt = json['revokedAt'] != null
         ? DateTime.tryParse(json['revokedAt'] as String)?.toLocal()

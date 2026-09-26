@@ -5,6 +5,7 @@ import '../../services/messenger_coordinator.dart';
 import '../../localization/app_locale.dart';
 import 'app_avatar.dart';
 import 'avatar_picker_dialog.dart';
+import 'contact_profile_dialog.dart';
 import 'glass_dialog.dart';
 import '../../theme/theme_provider.dart';
 
@@ -257,14 +258,47 @@ class _GroupMembersDialogState extends State<GroupMembersDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        updatedPeer.name,
-                        style: TextStyle(
-                          color: ink,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              updatedPeer.name,
+                              style: TextStyle(
+                                color: ink,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (isLocalAdmin) ...[
+                            const SizedBox(width: 4),
+                            Tooltip(
+                              message: lang.tr('renameGroup'),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(4),
+                                onTap: () async {
+                                  await showQuickNicknameDialog(
+                                    context: context,
+                                    coordinator: coordinator,
+                                    peer: updatedPeer,
+                                    lang: lang,
+                                  );
+                                  if (mounted) setState(() {});
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.all(2.0),
+                                  child: Icon(
+                                    Icons.edit_outlined,
+                                    size: 13,
+                                    color: ink.withValues(alpha: 0.6),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       Text(
                         '${members.length} ${lang.tr('members') != 'members' ? lang.tr('members') : 'thành viên'}',

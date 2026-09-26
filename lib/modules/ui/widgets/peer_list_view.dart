@@ -12,6 +12,9 @@ import 'glass_search_history_field.dart';
 import 'bounce_marquee_text.dart';
 import 'create_group_dialog.dart';
 import 'app_avatar.dart';
+import 'avatar_picker_dialog.dart';
+import 'contact_profile_dialog.dart';
+import 'group_members_dialog.dart';
 
 enum _PeerCategory { all, online, groups }
 
@@ -775,6 +778,8 @@ class _GroupListTile extends StatelessWidget {
         child: InkWell(
           canRequestFocus: false,
           onTap: onTap,
+          onSecondaryTapDown: (details) =>
+              _showContextMenu(context, details.globalPosition),
           borderRadius: BorderRadius.circular(10),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -903,6 +908,137 @@ class _GroupListTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _showContextMenu(BuildContext context, Offset position) async {
+    final coordinator = context.read<MessengerCoordinator>();
+    final lang = context.read<LanguageProvider>();
+    final theme = ThemeProvider.of(context);
+    final isAdmin = coordinator.isGroupAdmin(group.id);
+    final groupPeer = coordinator.getPeerForGroup(group);
+
+    final selected = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx + 1,
+        position.dy + 1,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      color: theme.isDark ? const Color(0xFF232530) : Colors.white,
+      items: [
+        if (isAdmin) ...[
+          PopupMenuItem<String>(
+            value: 'rename',
+            height: 38,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.edit_outlined,
+                  size: 16,
+                  color: theme.isDark ? Colors.white70 : Colors.black87,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  lang.tr('renameGroup'),
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ],
+            ),
+          ),
+          PopupMenuItem<String>(
+            value: 'avatar',
+            height: 38,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.image_outlined,
+                  size: 16,
+                  color: theme.isDark ? Colors.white70 : Colors.black87,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  lang.tr('changeGroupAvatar'),
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ],
+            ),
+          ),
+        ],
+        PopupMenuItem<String>(
+          value: 'members',
+          height: 38,
+          child: Row(
+            children: [
+              Icon(
+                Icons.people_outline_rounded,
+                size: 16,
+                color: theme.isDark ? Colors.white70 : Colors.black87,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                lang.tr('groupMembers'),
+                style: const TextStyle(fontSize: 12.5),
+              ),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(height: 8),
+        PopupMenuItem<String>(
+          value: 'leave_or_disband',
+          height: 38,
+          child: Row(
+            children: [
+              Icon(
+                isAdmin ? Icons.delete_outline_rounded : Icons.logout_rounded,
+                size: 16,
+                color: Colors.redAccent.shade200,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                isAdmin ? lang.tr('deleteGroup') : lang.tr('leaveGroup'),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Colors.redAccent.shade200,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (!context.mounted) return;
+
+    if (selected == 'rename') {
+      showQuickNicknameDialog(
+        context: context,
+        coordinator: coordinator,
+        peer: groupPeer,
+        lang: lang,
+      );
+    } else if (selected == 'avatar') {
+      await AvatarPickerDialog.show(
+        context,
+        targetGroupId: groupPeer.id,
+        groupName: groupPeer.name,
+        initialColor: groupPeer.avatarColor,
+        initialPreset: groupPeer.avatarPreset,
+        initialCustomPath: groupPeer.customAvatarPath,
+        initialCustomBase64: groupPeer.customAvatarBase64,
+        initialGroupName: groupPeer.name,
+        canRenameGroup: isAdmin,
+      );
+    } else if (selected == 'members') {
+      GroupMembersDialog.show(context, groupPeer);
+    } else if (selected == 'leave_or_disband') {
+      if (isAdmin) {
+        _confirmDisbandGroup(context, group);
+      } else {
+        _confirmLeaveGroup(context, group);
+      }
+    }
   }
 
   static String _formatTime(DateTime dt) {

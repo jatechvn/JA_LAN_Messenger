@@ -2,6 +2,26 @@
 
 All notable changes to the **JA LAN Messenger** project will be documented in this file.
 
+## [1.5.1] - 2026-09-26
+
+### 🚀 Nâng cấp & Tính năng mới
+- **Đổi tên nhóm sau khi tạo (Group Renaming & Multi-entry Support)**:
+  - Khắc phục hoàn toàn lỗi không thể đổi tên nhóm sau khi tạo nhóm.
+  - Bổ sung định tuyến tự động từ `setPeerNickname` sang `renameGroup` khi ID là nhóm, tránh việc bị bỏ qua do nhầm lẫn danh bạ 1-1.
+  - Thêm nút đổi tên nhóm (biểu tượng bút chì) trực tiếp trên thanh tiêu đề cuộc trò chuyện nhóm (`ChatViewPanel`) dành cho Quản trị viên.
+  - Thêm nút đổi tên nhóm trực tiếp trong phần tiêu đề của hộp thoại xem thành viên nhóm (`GroupMembersDialog`).
+  - Bổ sung menu chuột phải (Context Menu) cho thẻ nhóm trong danh sách (`PeerListView`): Đổi tên nhóm, Đổi ảnh đại diện nhóm, Xem danh sách thành viên, Rời nhóm / Giải tán nhóm.
+  - Chuẩn hóa hộp thoại chi tiết (`ConversationDetailsPanel`) và hộp thoại đổi nhanh biệt danh (`showQuickNicknameDialog`) hiển thị tiêu đề và gợi ý "Đổi tên nhóm" đa ngôn ngữ (Tiếng Việt, English, 简体中文).
+- **Tối ưu Nút Chọn Nhanh Chu kỳ Cập nhật OTA**:
+  - Chuyển đổi dropdown list chọn thời gian kiểm tra bản cập nhật sang dạng các nút bấm chọn nhanh trực quan (Quick Selection Chips) theo chuẩn UX Desktop.
+
+### 🐛 Sửa lỗi & Tối ưu hóa
+- **Đồng bộ hóa Tên Nhóm Tức thì**: Cập nhật tức thì tên nhóm hiển thị trên thanh tiêu đề và danh bạ ngay khi hoàn tất đổi tên, đồng bộ thời gian thực đến tất cả các thành viên qua giao thức P2P.
+- **Bảo toàn Quyền Quản trị Nhóm**: Xác minh chặt chẽ phân quyền quản trị viên, tránh việc người dùng bị mất quyền sửa tên hoặc avatar nhóm khi khởi động lại ứng dụng.
+
+### 📦 Phát hành
+- Đồng bộ version `1.5.1+11` trong `pubspec.yaml`, `constants.dart`, `Runner.rc`, `ABOUT.txt`, `README.md`, `USERGUIDE.md`, `RELEASE_NOTES.md`.
+
 ## [1.5.0] - 2026-09-26
 
 ### 🚀 Nâng cấp & Tính năng mới

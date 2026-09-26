@@ -83,7 +83,9 @@ void main() {
     AppPreferences().setCustomFileForTesting(null);
     MessengerCoordinator.customGroupsFileForTesting = null;
     ThemeProvider.registryQueryOverride = null;
-    await dir.delete(recursive: true);
+    try {
+      await dir.delete(recursive: true);
+    } catch (_) {}
   });
 
   Map<String, dynamic> invite(
@@ -698,6 +700,33 @@ void main() {
       final groupPeer = coordinator.getPeerForGroup(group);
       expect(groupPeer.avatarPreset, equals('palette'));
       expect(groupPeer.avatarColor, equals(const Color(0xFFEC4899)));
+    },
+  );
+
+  test(
+    'setPeerNickname and renameGroup correctly update group name and selectedPeer',
+    () {
+      peer('192.168.1.50', 'Bob', 'bob_hash');
+      coordinator.createGroup('Original Group', ['192.168.1.50:6475']);
+      final groupId = coordinator.groups
+          .firstWhere((g) => g.name == 'Original Group')
+          .id;
+
+      // Test coordinator.setPeerNickname routing to renameGroup
+      coordinator.setPeerNickname(groupId, 'Updated Group Name');
+      expect(
+        coordinator.groups.firstWhere((g) => g.id == groupId).name,
+        equals('Updated Group Name'),
+      );
+      expect(coordinator.selectedPeer?.name, equals('Updated Group Name'));
+
+      // Test direct renameGroup
+      coordinator.renameGroup(groupId, 'Final Group Name');
+      expect(
+        coordinator.groups.firstWhere((g) => g.id == groupId).name,
+        equals('Final Group Name'),
+      );
+      expect(coordinator.selectedPeer?.name, equals('Final Group Name'));
     },
   );
 }

@@ -5195,8 +5195,14 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
     }
   }
 
-  /// Đặt biệt danh cho liên hệ
+  /// Đặt biệt danh cho liên hệ (hoặc đổi tên nhóm nếu là group ID)
   void setPeerNickname(String peerId, String? nickname) {
+    if (_groups.containsKey(peerId)) {
+      if (nickname != null && nickname.trim().isNotEmpty) {
+        renameGroup(peerId, nickname.trim());
+      }
+      return;
+    }
     final peer = _peers[peerId];
     if (peer != null) {
       peer.customNickname = (nickname != null && nickname.trim().isNotEmpty)

@@ -967,15 +967,31 @@ class _ChatHeader extends StatelessWidget {
                               ),
                               if (!isAi &&
                                   !peer.isAllUsers &&
-                                  !peer.isGroup) ...[
+                                  (!peer.isGroup ||
+                                      coordinator.isGroupAdmin(peer.id))) ...[
                                 const SizedBox(width: 4),
                                 Tooltip(
-                                  message: lang.tr('editNickname'),
-                                  child: Icon(
-                                    Icons.edit_rounded,
-                                    size: 12,
-                                    color: theme.colors.accentBlue.withValues(
-                                      alpha: 0.7,
+                                  message: peer.isGroup
+                                      ? lang.tr('renameGroup')
+                                      : lang.tr('editNickname'),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(4),
+                                    onTap: () {
+                                      showQuickNicknameDialog(
+                                        context: context,
+                                        coordinator: coordinator,
+                                        peer: peer,
+                                        lang: lang,
+                                      );
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(2),
+                                      child: Icon(
+                                        Icons.edit_rounded,
+                                        size: 12,
+                                        color: theme.colors.accentBlue
+                                            .withValues(alpha: 0.7),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1391,7 +1407,8 @@ class _ChatHeader extends StatelessWidget {
             ] else ...[
               _BuzzActionButton(
                 onPressed: onBuzz,
-                tooltip: (!peer.isAllUsers &&
+                tooltip:
+                    (!peer.isAllUsers &&
                         !peer.isGroup &&
                         peer.status == PeerStatus.offline)
                     ? lang.tr('buzzOfflineTooltip')
@@ -3865,7 +3882,8 @@ class _ChatInputDockState extends State<_ChatInputDock> {
     final coordinator = context.watch<MessengerCoordinator>();
     final isAiChat = coordinator.selectedPeer?.isAiAssistant == true;
     final isAiBusy = isAiChat && coordinator.isAiActive;
-    final isTargetOffline = coordinator.selectedPeer != null &&
+    final isTargetOffline =
+        coordinator.selectedPeer != null &&
         !coordinator.selectedPeer!.isAllUsers &&
         !coordinator.selectedPeer!.isGroup &&
         coordinator.selectedPeer!.status == PeerStatus.offline;

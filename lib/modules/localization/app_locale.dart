@@ -362,6 +362,7 @@ class LanguageProvider extends ChangeNotifier {
       'changeGroupAvatar': 'Đổi ảnh nhóm',
       'groupAvatarTitle': 'Chọn ảnh đại diện nhóm',
       'groupNameLabel': 'Tên nhóm',
+      'renameGroup': 'Đổi tên nhóm',
       'groupRenamedNotice': '%s đã đổi tên nhóm từ "%s" thành "%s"',
       'onlyAdminCanRename': 'Chỉ quản trị viên mới đổi được tên và ảnh nhóm',
       'groupMemberAddedNotice': '%s đã thêm %s vào nhóm',
@@ -564,7 +565,8 @@ class LanguageProvider extends ChangeNotifier {
       'viewOnGithub': 'Xem trên GitHub',
       'whatsNew': 'Có gì mới trong bản cập nhật này?',
       'winrmSettings': 'Khởi động từ xa qua WinRM (Remote Launch)',
-      'winrmEnableDesc': 'Cho phép nút Buzz gửi lệnh khởi động ứng dụng qua WinRM khi đối phương đang offline',
+      'winrmEnableDesc':
+          'Cho phép nút Buzz gửi lệnh khởi động ứng dụng qua WinRM khi đối phương đang offline',
       'winrmDefaultUser': 'Tài khoản WinRM mặc định',
       'winrmDefaultPass': 'Mật khẩu WinRM mặc định',
       'winrmPort': 'Cổng WinRM',
@@ -574,8 +576,10 @@ class LanguageProvider extends ChangeNotifier {
       'winrmTesting': 'Đang kiểm tra kết nối WinRM...',
       'winrmTestSuccess': 'Kết nối WinRM thành công!',
       'winrmTestFailed': 'Kết nối WinRM thất bại',
-      'winrmLaunchingApp': 'Đang gửi lệnh WinRM để mở ứng dụng trên máy đối phương...',
-      'winrmLaunchSuccess': 'Đã gửi lệnh mở ứng dụng từ xa qua WinRM thành công!',
+      'winrmLaunchingApp':
+          'Đang gửi lệnh WinRM để mở ứng dụng trên máy đối phương...',
+      'winrmLaunchSuccess':
+          'Đã gửi lệnh mở ứng dụng từ xa qua WinRM thành công!',
       'winrmAlreadyRunning': 'Ứng dụng đã đang chạy trên máy đối phương.',
       'winrmLaunchFailed': 'Gửi lệnh mở ứng dụng thất bại',
       'winrmAutoBuzzed': '🔔 Đã tự động gửi Buzz sau khi đối phương online!',
@@ -583,12 +587,14 @@ class LanguageProvider extends ChangeNotifier {
       'winrmUseCustomConfig': 'Sử dụng cấu hình WinRM riêng cho máy này',
       'winrmUseDefaultConfig': 'Sử dụng cấu hình WinRM mặc định toàn cục',
       'winrmCustomAppPath': 'Đường dẫn file .exe tùy chỉnh (tùy chọn)',
-      'winrmCustomAppPathHint': 'Để trống để ứng dụng tự động dò tìm đường dẫn cài đặt',
+      'winrmCustomAppPathHint':
+          'Để trống để ứng dụng tự động dò tìm đường dẫn cài đặt',
       'winrmConfigure': 'Cấu hình WinRM',
       'winrmNotConfigured': 'Chưa cấu hình tài khoản WinRM trong Cài đặt.',
       'winrmNoIp': 'Không tìm thấy địa chỉ IP của thiết bị.',
       'winrmDisabledToast': 'Tính năng WinRM chưa được bật trong Cài đặt.',
-      'buzzOfflineTooltip': 'Gửi lệnh WinRM khởi động ứng dụng từ xa (Máy đang offline)',
+      'buzzOfflineTooltip':
+          'Gửi lệnh WinRM khởi động ứng dụng từ xa (Máy đang offline)',
     },
     'en': {
       'appName': 'JA LAN Messenger',
@@ -804,6 +810,7 @@ class LanguageProvider extends ChangeNotifier {
       'changeGroupAvatar': 'Change Group Avatar',
       'groupAvatarTitle': 'Choose Group Avatar',
       'groupNameLabel': 'Group name',
+      'renameGroup': 'Rename Group',
       'groupRenamedNotice': '%s renamed the group from "%s" to "%s"',
       'onlyAdminCanRename':
           'Only admins can rename the group or change its photo',
@@ -1004,7 +1011,8 @@ class LanguageProvider extends ChangeNotifier {
       'viewOnGithub': 'View on GitHub',
       'whatsNew': "What's new in this update?",
       'winrmSettings': 'WinRM Remote Launch',
-      'winrmEnableDesc': 'Allow Buzz button to remotely launch the app via WinRM when peer is offline',
+      'winrmEnableDesc':
+          'Allow Buzz button to remotely launch the app via WinRM when peer is offline',
       'winrmDefaultUser': 'Default WinRM Username',
       'winrmDefaultPass': 'Default WinRM Password',
       'winrmPort': 'WinRM Port',
@@ -1014,8 +1022,10 @@ class LanguageProvider extends ChangeNotifier {
       'winrmTesting': 'Testing WinRM connection...',
       'winrmTestSuccess': 'WinRM connection successful!',
       'winrmTestFailed': 'WinRM connection failed',
-      'winrmLaunchingApp': 'Sending WinRM command to start app on remote device...',
-      'winrmLaunchSuccess': 'Remote app launch command sent successfully via WinRM!',
+      'winrmLaunchingApp':
+          'Sending WinRM command to start app on remote device...',
+      'winrmLaunchSuccess':
+          'Remote app launch command sent successfully via WinRM!',
       'winrmAlreadyRunning': 'The app is already running on the remote device.',
       'winrmLaunchFailed': 'Failed to launch remote app',
       'winrmAutoBuzzed': '🔔 Automatically sent Buzz after peer came online!',
@@ -1232,6 +1242,7 @@ class LanguageProvider extends ChangeNotifier {
       'changeGroupAvatar': '更换群组头像',
       'groupAvatarTitle': '选择群组头像',
       'groupNameLabel': '群组名称',
+      'renameGroup': '修改群名称',
       'groupRenamedNotice': '%s 已将群组名称从 "%s" 改为 "%s"',
       'onlyAdminCanRename': '只有管理员可以修改群组名称和头像',
       'groupMemberAddedNotice': '%s 已将 %s 加入群组',

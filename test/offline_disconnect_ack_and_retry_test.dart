@@ -141,14 +141,18 @@ void main() {
 
         // Packet resent over the wire
         expect(server.sentPackets, isNotEmpty);
-        expect(server.sentPackets.last.raw, contains('Testing unconfirmed message'));
+        expect(
+          server.sentPackets.last.raw,
+          contains('Testing unconfirmed message'),
+        );
         expect(msg.status, MessageStatus.sent);
 
         // Step 6: Recipient sends ACK (headerRecv)
         server.onAck?.call('172.21.174.103:6475', msg.id);
         expect(msg.status, MessageStatus.delivered);
         expect(
-          coordinator.pendingOfflineMessageIds[peer.id]?.contains(msg.id) ?? false,
+          coordinator.pendingOfflineMessageIds[peer.id]?.contains(msg.id) ??
+              false,
           isFalse,
         );
       },
@@ -176,7 +180,9 @@ void main() {
         coordinator.dispose();
         coordinator = MessengerCoordinator(
           tcpServer: server,
-          knownDevices: KnownDevicesRegistry('${tempDir.path}/known_devices.json'),
+          knownDevices: KnownDevicesRegistry(
+            '${tempDir.path}/known_devices.json',
+          ),
         );
         await coordinator.historyLoaded;
 
