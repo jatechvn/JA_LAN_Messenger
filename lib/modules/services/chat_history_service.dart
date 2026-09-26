@@ -31,6 +31,9 @@ class ChatHistoryService {
     }
   }
 
+  Set<String> aliasesFor(String conversationId) =>
+      Set.of(_aliases[conversationId] ?? const {});
+
   Future<void> _enqueue(Future<void> Function() action) {
     final next = _writes.then((_) => action());
     _writes = next.catchError((Object _) {});

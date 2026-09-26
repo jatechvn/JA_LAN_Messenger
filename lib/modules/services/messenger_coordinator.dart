@@ -28,6 +28,7 @@ import 'network_preferences.dart';
 import 'chat_history_service.dart';
 import 'clipboard_image.dart';
 import 'ota_update_service.dart';
+import 'winrm_launcher_service.dart';
 import '../utils/avatar_utils.dart';
 
 class ToastData {
@@ -60,6 +61,69 @@ class ToastData {
         }
         return '$base ${args.join(' ')}'.trim();
     }
+  }
+}
+
+/// Mục tiêu chờ tự động gửi Buzz sau khi đối phương khởi động app qua WinRM
+class PendingBuzzTarget {
+  final String peerId;
+  final String canonicalIdentity;
+  final String? hostname;
+  final String? accountName;
+  final String targetIp;
+  final DateTime createdAt;
+
+  const PendingBuzzTarget({
+    required this.peerId,
+    required this.canonicalIdentity,
+    this.hostname,
+    this.accountName,
+    required this.targetIp,
+    required this.createdAt,
+  });
+
+  /// Kiểm tra xem một peer vừa handshake có thực sự khớp với máy đích đã gửi lệnh WinRM không
+  bool matches(PeerModel peer, String senderIp) {
+    // 1. Phải khớp canonicalIdentity
+    if (peer.canonicalIdentity != canonicalIdentity) {
+      return false;
+    }
+
+    // 2. Nếu máy đích có hostname: Tên máy (hostname) của peer bắt buộc phải trùng khớp
+    final targetHost = hostname?.trim().toLowerCase();
+    final peerHost = peer.hostname?.trim().toLowerCase();
+    if (targetHost == null ||
+        targetHost.isEmpty ||
+        targetHost == '???' ||
+        targetHost == 'localhost') {
+      return false;
+    }
+    if (peerHost != targetHost) {
+      return false;
+    }
+
+    // 3. Nếu máy đích có accountName: Tên tài khoản người dùng phải trùng khớp
+    final targetAccount = accountName?.trim().toLowerCase();
+    final peerAccount = peer.accountName?.trim().toLowerCase();
+    if (targetAccount != null &&
+        targetAccount.isNotEmpty &&
+        targetAccount != '???') {
+      if (peerAccount != targetAccount) {
+        return false;
+      }
+    }
+
+    // 4. IP kiểm tra: senderIp hoặc peer.ip hoặc knownIps phải chứa targetIp mà lệnh WinRM đã gọi tới
+    // Ngăn chặn trường hợp địa chỉ IP được cấp lại (DHCP reuse) cho một thiết bị khác trên mạng LAN
+    final isMatchingIp =
+        (senderIp == targetIp) ||
+        (peer.ip == targetIp) ||
+        peer.knownIps.contains(targetIp);
+    if (!isMatchingIp) {
+      return false;
+    }
+
+    return true;
   }
 }
 
@@ -105,6 +169,24 @@ class MessengerCoordinator extends ChangeNotifier {
   @visibleForTesting
   Map<String, Set<String>> get pendingOfflineMessageIds =>
       _pendingOfflineMessageIds;
+
+  // Khởi động từ xa qua WinRM & Rung chuông tự động
+  WinrmLauncherService winrmLauncher = const WinrmLauncherService();
+  final List<PendingBuzzTarget> _pendingBuzzTargets = [];
+
+  @visibleForTesting
+  set winrmLauncherForTesting(WinrmLauncherService launcher) {
+    winrmLauncher = launcher;
+  }
+
+  @visibleForTesting
+  Set<String> get pendingBuzzPeersForTesting =>
+      _pendingBuzzTargets.map((t) => t.canonicalIdentity).toSet();
+
+  @visibleForTesting
+  List<PendingBuzzTarget> get pendingBuzzTargetsForTesting =>
+      List.unmodifiable(_pendingBuzzTargets);
+
   PeerModel? _selectedPeer;
   String _searchQuery = '';
 
@@ -261,6 +343,20 @@ class MessengerCoordinator extends ChangeNotifier {
     _aiPeer.statusDescription = 'Sẵn sàng • ${prefs.aiSelectedModel}';
     _aiPeer.isPinned = prefs.isPeerPinned('__AI_ASSISTANT__');
     _allUsersPeer.isPinned = prefs.isPeerPinned('__ALL_USERS__');
+
+    _tcpServer.onDisconnected = handlePeerDisconnected;
+    _tcpServer.onActivity = handlePeerActivity;
+    _tcpServer.onUserStatus = handlePeerStatus;
+    _tcpServer.onHandshake = handlePeerHandshake;
+    _tcpServer.onMessage = handleIncomingMessage;
+    _tcpServer.onGroup = handleGroupPacket;
+    _tcpServer.onGroupMessage = handleGroupMessage;
+    _tcpServer.onAck = _handleMessageAck;
+    _tcpServer.onBuzz = handleIncomingBuzz;
+    _tcpServer.onTyping = _handleIncomingTyping;
+    _tcpServer.onRead = _handleIncomingReadReceipt;
+    _tcpServer.onRevoke = _handleIncomingRevoke;
+    _tcpServer.onReaction = handleIncomingReaction;
 
     aiQueueManager.onQueueChanged = () {
       if (_disposed) return;
@@ -771,10 +867,55 @@ class MessengerCoordinator extends ChangeNotifier {
     if (!keyA.startsWith('endpoint:') && !keyB.startsWith('endpoint:')) {
       return keyA == keyB;
     }
-    // A history-only endpoint can acquire its first verified identity. Never
-    // use IP overlap to merge two known, conflicting accounts/hosts.
-    return a.id == b.id &&
-        (!_peerSessions.identities.containsKey(a.id) || keyA == keyB);
+
+    // Nếu a.id == b.id và không có xung đột danh tính đã lưu
+    if (a.id == b.id) {
+      final savedId = _peerSessions.identities[a.id];
+      if (savedId != null && !keyB.startsWith('endpoint:') && savedId != keyB) {
+        return false;
+      }
+      return true;
+    }
+
+    // Trích xuất tập hợp các IP đã biết cho peer
+    Set<String> extractIps(PeerModel p) {
+      final set = <String>{if (p.ip.isNotEmpty) p.ip, ...p.knownIps};
+      final rawId = p.id.startsWith('endpoint:') ? p.id.substring(9) : p.id;
+      final hostPart = rawId.contains(':') ? rawId.split(':').first : rawId;
+      if (InternetAddress.tryParse(hostPart) != null) {
+        set.add(hostPart);
+      }
+      set.removeWhere((ip) => ip.isEmpty || ip == '0.0.0.0');
+      return set;
+    }
+
+    final ipsA = extractIps(a);
+    final ipsB = extractIps(b);
+    if (senderIp != null && senderIp.isNotEmpty) {
+      ipsB.add(senderIp);
+    }
+
+    final commonIps = ipsA.intersection(ipsB);
+    if (commonIps.isNotEmpty) {
+      // Đối với loopback localhost, nếu cổng khác nhau rõ ràng thì là 2 tiến trình mock khác nhau
+      final onlyLoopback = commonIps.every(
+        (ip) => ip == '127.0.0.1' || ip == '::1' || ip == 'localhost',
+      );
+      if (onlyLoopback && a.port > 0 && b.port > 0 && a.port != b.port) {
+        return false;
+      }
+
+      final idA =
+          PeerSessionRegistry.identity(a) ?? _peerSessions.identities[a.id];
+      final idB =
+          PeerSessionRegistry.identity(b) ?? _peerSessions.identities[b.id];
+      if (idA != null && idB != null && idA != idB) {
+        return false; // Hai máy khác nhau có identity đã xác thực khác nhau
+      }
+      return true;
+    }
+
+    return false;
   }
 
   /// Kiểm tra một peer có đang được chọn làm cuộc hội thoại hiện tại không
@@ -895,13 +1036,34 @@ class MessengerCoordinator extends ChangeNotifier {
         uniqueMap[key] = p;
       } else {
         PeerModel winner;
-        // Giữ nguyên peer đang được chọn nếu có để UI không bị nhảy
-        if (identical(existing, _selectedPeer)) {
+        // Ưu tiên trạng thái online và đồng bộ sang _selectedPeer nếu có
+        if (existing.status == PeerStatus.offline &&
+            p.status != PeerStatus.offline) {
+          if (identical(existing, _selectedPeer)) {
+            existing.status = p.status;
+            existing.statusDescription = p.statusDescription;
+            existing.ip = p.ip;
+            existing.port = p.port;
+            existing.lastSeen = p.lastSeen;
+            winner = existing;
+          } else {
+            winner = p;
+          }
+        } else if (p.status == PeerStatus.offline &&
+            existing.status != PeerStatus.offline) {
+          if (identical(p, _selectedPeer)) {
+            p.status = existing.status;
+            p.statusDescription = existing.statusDescription;
+            p.ip = existing.ip;
+            p.port = existing.port;
+            p.lastSeen = existing.lastSeen;
+            winner = p;
+          } else {
+            winner = existing;
+          }
+        } else if (identical(existing, _selectedPeer)) {
           winner = existing;
         } else if (identical(p, _selectedPeer)) {
-          winner = p;
-        } else if (existing.status == PeerStatus.offline &&
-            p.status != PeerStatus.offline) {
           winner = p;
         } else if ((p.status == PeerStatus.offline) ==
                 (existing.status == PeerStatus.offline) &&
@@ -988,7 +1150,31 @@ class MessengerCoordinator extends ChangeNotifier {
 
   List<MessageModel> get currentMessages {
     if (_selectedPeer == null) return const [];
-    return _conversations[_selectedPeer!.id] ?? const [];
+    final direct = _conversations[_selectedPeer!.id];
+    if (direct != null && direct.isNotEmpty) return direct;
+
+    if (!_selectedPeer!.isGroup &&
+        !_selectedPeer!.isAllUsers &&
+        !_selectedPeer!.isAiAssistant) {
+      for (final alias in chatHistory.aliasesFor(_selectedPeer!.id)) {
+        final list = _conversations[alias];
+        if (list != null && list.isNotEmpty) {
+          _conversations[_selectedPeer!.id] = list;
+          return list;
+        }
+      }
+      for (final entry in _peers.entries) {
+        if (identical(entry.value, _selectedPeer) &&
+            entry.key != _selectedPeer!.id) {
+          final list = _conversations[entry.key];
+          if (list != null && list.isNotEmpty) {
+            _conversations[_selectedPeer!.id] = list;
+            return list;
+          }
+        }
+      }
+    }
+    return direct ?? const [];
   }
 
   List<FileTransferTask> get fileTasks => _fileEngine.tasks;
@@ -1224,25 +1410,7 @@ class MessengerCoordinator extends ChangeNotifier {
     _tcpServer.helloBuilder = _buildHello;
     _tcpServer.passwordProvider = () =>
         security.isEncryptionEnabled ? security.password : '';
-    _tcpServer.onUserStatus = (id, message) {
-      final peer = _incomingPeer(id);
-      if (_disposed || peer == null) return;
-      peer.status = switch (message['data']) {
-        '1' => PeerStatus.online,
-        '2' => PeerStatus.busy,
-        '3' => PeerStatus.away,
-        _ => PeerStatus.offline,
-      };
-      peer.statusDescription = message['text'] as String;
-      final session = _peerSessions.sessions[id];
-      if (session != null) {
-        session.remote.status = peer.status;
-        session.remote.statusDescription = peer.statusDescription;
-        _refreshLogicalPeer(peer);
-      }
-      peer.lastSeen = DateTime.now();
-      notifyListeners();
-    };
+    _tcpServer.onUserStatus = handlePeerStatus;
     _tcpServer.onAvatarUpdate = (id, avatarPayload) {
       final peer = _incomingPeer(id);
       if (_disposed || peer == null) return;
@@ -1255,9 +1423,7 @@ class MessengerCoordinator extends ChangeNotifier {
       notifyListeners();
     };
     _tcpServer.onDisconnected = handlePeerDisconnected;
-    _tcpServer.onActivity = (id) {
-      _incomingPeer(id)?.lastSeen = DateTime.now();
-    };
+    _tcpServer.onActivity = handlePeerActivity;
     _tcpServer.onHandshake = handlePeerHandshake;
     _tcpServer.onMessage = handleIncomingMessage;
     _tcpServer.onGroup = handleGroupPacket;
@@ -1696,7 +1862,58 @@ class MessengerCoordinator extends ChangeNotifier {
     // Tự động gửi lại các tin nhắn tồn đọng trong Outbox cho peer này nếu có
     unawaited(flushPendingOutgoingMessagesForPeer(peer));
 
+    // Tự động kích hoạt rung chuông Buzz nếu trước đó vừa gửi lệnh mở app từ xa
+    _triggerPendingBuzzIfNeeded(peer, senderIp);
+
     notifyListeners();
+  }
+
+  /// Tự động gửi lại rung chuông Buzz cho peer nếu nằm trong danh sách chờ sau WinRM
+  void _triggerPendingBuzzIfNeeded(PeerModel peer, String senderIp) {
+    if (!AppPreferences().winrmAutoBuzzOnConnect) return;
+
+    final matchingIndex = _pendingBuzzTargets.indexWhere(
+      (t) => t.matches(peer, senderIp),
+    );
+    if (matchingIndex == -1) return;
+
+    final sent = _sendToPeer(
+      peer.id,
+      ProtocolBeebeep.packet(
+        ProtocolBeebeep.headerBuzz,
+        '22',
+        text: '*',
+        flags: 1,
+      ),
+    );
+
+    // Chỉ hoàn thành và ghi nhận tin nhắn khi gói tin thực sự được gửi thành công
+    if (sent) {
+      _pendingBuzzTargets.removeAt(matchingIndex);
+      final autoBuzzText =
+          '🔔 ${languageProvider?.tr('winrmAutoBuzzed') ?? 'Đã tự động gửi Buzz sau khi đối phương online!'}';
+      final autoBuzzMsg = MessageModel(
+        id: 'buzz-auto-${DateTime.now().microsecondsSinceEpoch}',
+        senderId: 'me',
+        senderName: localUsername,
+        recipientId: peer.id,
+        text: autoBuzzText,
+        isMine: true,
+        status: MessageStatus.delivered,
+      );
+      final msgs = _conversations.putIfAbsent(peer.id, () => []);
+      msgs.add(autoBuzzMsg);
+      chatHistory.scheduleSave(peer.id, msgs);
+      peer.lastMessage = autoBuzzText;
+      peer.lastMessageTime = autoBuzzMsg.timestamp;
+      showToast('winrmAutoBuzzed', []);
+      notifyListeners();
+    }
+  }
+
+  @visibleForTesting
+  void triggerPendingBuzzIfNeededForTesting(PeerModel peer, String senderIp) {
+    _triggerPendingBuzzIfNeeded(peer, senderIp);
   }
 
   @visibleForTesting
@@ -1855,6 +2072,9 @@ class MessengerCoordinator extends ChangeNotifier {
         }
         _conversations[convId] = msgs;
         for (final m in msgs) {
+          // Older builds incorrectly persisted local Buzz/WinRM notices in
+          // the text outbox. Retain history, but retire those retry targets.
+          if (m.id.startsWith('buzz-')) m.pendingRecipients = null;
           if (!_isRetryableText(m)) continue;
           if (m.isMine && m.status == MessageStatus.sending) {
             m.status = MessageStatus.failed;
@@ -2374,7 +2594,13 @@ class MessengerCoordinator extends ChangeNotifier {
     return null;
   }
 
+  @visibleForTesting
+  bool Function(String endpoint, List<int> packet)? sendToPeerForTesting;
+
   bool _sendToPeer(String endpoint, List<int> packet) {
+    if (sendToPeerForTesting != null) {
+      return sendToPeerForTesting!(endpoint, packet);
+    }
     final peer = _peers[endpoint];
     if (peer != null) {
       final sessions = _peerSessions.forConversation(peer.id);
@@ -2453,13 +2679,90 @@ class MessengerCoordinator extends ChangeNotifier {
   }
 
   @visibleForTesting
+  void handlePeerStatus(String endpoint, Map<String, dynamic> message) {
+    final session = _peerSessions.sessions[endpoint];
+    if (_disposed || session == null || !session.available) return;
+    final status = switch (message['data']) {
+      '0' => PeerStatus.offline,
+      '1' => PeerStatus.online,
+      '2' => PeerStatus.busy,
+      '3' => PeerStatus.away,
+      _ => null,
+    };
+    if (status == null) return;
+    session.remote.status = status;
+    session.remote.statusDescription = message['text'] as String? ?? '';
+    final peer = _peers[session.conversationId];
+    if (peer == null) return;
+    peer.lastSeen = DateTime.now();
+    _refreshLogicalPeer(peer);
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void handlePeerActivity(String endpoint) {
+    final session = _peerSessions.sessions[endpoint];
+    if (_disposed || session == null || !session.available) return;
+    final peer = _peers[session.conversationId];
+    if (peer == null) return;
+    peer.lastSeen = DateTime.now();
+    final previous = peer.status;
+    // Traffic confirms transport activity, not a change in advertised presence.
+    _refreshLogicalPeer(peer);
+    if (previous != peer.status) notifyListeners();
+  }
+
+  @visibleForTesting
   void handlePeerDisconnected(String endpoint) {
     final session = _peerSessions.sessions[endpoint];
-    if (session == null || _disposed) return;
-    session.available = false;
-    final peer = _peers[session.conversationId];
-    if (peer != null) _refreshLogicalPeer(peer);
+    if (_disposed) return;
+    if (session != null) {
+      session.available = false;
+    }
+    final peer = session != null
+        ? _peers[session.conversationId]
+        : _findPeerByIpOrId(endpoint);
+    if (peer != null) {
+      _refreshLogicalPeer(peer);
+      if (peer.status == PeerStatus.offline) {
+        _failUnackedMessagesForPeer(peer);
+      }
+    }
     notifyListeners();
+  }
+
+  void _failUnackedMessagesForPeer(PeerModel peer) {
+    final candidateKeys = <String>{
+      peer.id,
+      peer.ip,
+      '${peer.ip}:${peer.port}',
+      peer.canonicalIdentity,
+      ...peer.knownIps,
+      for (final ip in peer.knownIps) '$ip:${peer.port}',
+      ..._peers.entries
+          .where((e) => identical(e.value, peer))
+          .map((e) => e.key),
+      ...chatHistory.aliasesFor(peer.id),
+      if (_peerHashes[peer.id] case final String hash) 'hash:$hash',
+    };
+
+    var changed = false;
+    for (final key in candidateKeys) {
+      final list = _conversations[key];
+      if (list == null) continue;
+      for (final msg in list) {
+        if (msg.isMine &&
+            _isRetryableText(msg) &&
+            (msg.status == MessageStatus.sending ||
+                msg.status == MessageStatus.sent)) {
+          msg.status = MessageStatus.failed;
+          recordPendingOfflineMessage(peer.id, msg.id);
+          chatHistory.scheduleSave(key, list);
+          changed = true;
+        }
+      }
+    }
+    if (changed) notifyListeners();
   }
 
   /// Tách thông tin trích dẫn nếu tin nhắn mạng chứa format trích dẫn
@@ -2493,16 +2796,48 @@ class MessengerCoordinator extends ChangeNotifier {
   }) {
     final decryptedText = text;
 
-    final senderPeer =
+    var senderPeer =
         _incomingPeer(senderIp) ??
+        _findPeerByIpOrId(senderIp) ??
         PeerModel(
           id: senderIp,
           name: senderIp,
-          ip: senderIp,
-          port: defaultListenerPort,
-          knownIps: {senderIp},
+          ip: senderIp.contains(':') ? senderIp.split(':').first : senderIp,
+          port: senderIp.contains(':')
+              ? int.tryParse(senderIp.split(':').last) ?? defaultListenerPort
+              : defaultListenerPort,
+          knownIps: {
+            senderIp.contains(':') ? senderIp.split(':').first : senderIp,
+          },
         );
+
+    // Tìm tất cả peer trùng lặp tương ứng cùng một máy trạm vật lý
+    final matchingPeers = _peers.values.where((p) {
+      if (p.isGroup || p.isAllUsers || p.isAiAssistant) return false;
+      return _isSamePhysicalPeer(p, senderPeer, senderIp: senderIp);
+    }).toSet();
+
+    if (matchingPeers.isNotEmpty) {
+      final primaryPeer =
+          (_selectedPeer != null && matchingPeers.contains(_selectedPeer))
+          ? _selectedPeer!
+          : matchingPeers.firstWhere(
+              (p) => p.status != PeerStatus.offline,
+              orElse: () => matchingPeers.first,
+            );
+      if (primaryPeer.id != senderPeer.id) {
+        _mergeConversations(primaryPeer.id, senderPeer.id);
+        _peers[senderPeer.id] = primaryPeer;
+        senderPeer = primaryPeer;
+      }
+    }
     _peers[senderPeer.id] = senderPeer;
+    senderPeer.lastSeen = DateTime.now();
+    if (_peerSessions.forConversation(senderPeer.id).isNotEmpty) {
+      _refreshLogicalPeer(senderPeer);
+    } else if (senderPeer.status == PeerStatus.offline) {
+      senderPeer.status = PeerStatus.online;
+    }
 
     // Khi nhận tin nhắn, xóa trạng thái đang gõ phím của người này
     _typingPeers.remove(senderPeer.id);
@@ -2660,16 +2995,38 @@ class MessengerCoordinator extends ChangeNotifier {
   void _handleMessageAck(String senderIp, String messageId) {
     final peer = _incomingPeer(senderIp);
     final convId = peer?.id ?? senderIp;
-    final list = _conversations[convId];
-    if (list != null) {
-      for (final msg in list) {
+
+    void processFound(
+      String targetConvId,
+      List<MessageModel> list,
+      MessageModel msg,
+    ) {
+      if (msg.status != MessageStatus.read) {
+        msg.status = MessageStatus.delivered;
+        chatHistory.scheduleSave(targetConvId, list);
+      }
+      for (final key in _pendingOfflineMessageIds.keys.toList()) {
+        _removePendingOfflineMessage(key, messageId);
+      }
+      msg.pendingRecipients?.clear();
+      notifyListeners();
+    }
+
+    final directList = _conversations[convId];
+    if (directList != null) {
+      for (final msg in directList) {
         if (msg.id == messageId && msg.isMine) {
-          if (msg.status != MessageStatus.read) {
-            msg.status = MessageStatus.delivered;
-            chatHistory.scheduleSave(convId, list);
-          }
-          notifyListeners();
-          break;
+          processFound(convId, directList, msg);
+          return;
+        }
+      }
+    }
+
+    for (final entry in _conversations.entries) {
+      for (final msg in entry.value) {
+        if (msg.id == messageId && msg.isMine) {
+          processFound(entry.key, entry.value, msg);
+          return;
         }
       }
     }
@@ -3300,6 +3657,7 @@ class MessengerCoordinator extends ChangeNotifier {
           !_tcpServer.isConnected(p.id) &&
           now.difference(p.lastSeen).inSeconds > 45) {
         p.status = PeerStatus.offline;
+        _failUnackedMessagesForPeer(p);
         changed = true;
       }
     }
@@ -3343,6 +3701,15 @@ class MessengerCoordinator extends ChangeNotifier {
     return count;
   }
 
+  int _chatFocusRequestId = 0;
+  int get chatFocusRequestId => _chatFocusRequestId;
+
+  /// Yêu cầu focus con trỏ vào ô nhập tin nhắn
+  void requestChatInputFocus() {
+    _chatFocusRequestId++;
+    notifyListeners();
+  }
+
   /// Chọn một cuộc trò chuyện
   void selectPeer(PeerModel? peer) {
     _selectedPeer = peer;
@@ -3355,6 +3722,7 @@ class MessengerCoordinator extends ChangeNotifier {
       }
       // Giữ mốc tin chưa đọc cho dải phân cách, rồi xóa badge ngay khi mở hội thoại.
       markConversationAsRead(peer.id);
+      _chatFocusRequestId++;
     }
     notifyListeners();
   }
@@ -3498,10 +3866,22 @@ class MessengerCoordinator extends ChangeNotifier {
       return anySuccess;
     } else {
       // Gửi qua TCP tới peer cá nhân
-      final success = _sendToPeer(
-        _selectedPeer!.id,
-        ProtocolBeebeep.buildChatPacket(messageId: msgId, text: networkPayload),
-      );
+      final isOffline =
+          _selectedPeer!.status == PeerStatus.offline ||
+          (_peerSessions.forConversation(_selectedPeer!.id).isNotEmpty &&
+              !_peerSessions
+                  .forConversation(_selectedPeer!.id)
+                  .any((s) => s.available));
+      var success = false;
+      if (!isOffline) {
+        success = _sendToPeer(
+          _selectedPeer!.id,
+          ProtocolBeebeep.buildChatPacket(
+            messageId: msgId,
+            text: networkPayload,
+          ),
+        );
+      }
       if (msg.status == MessageStatus.sending) {
         msg.status = success ? MessageStatus.sent : MessageStatus.failed;
       }
@@ -3533,6 +3913,9 @@ class MessengerCoordinator extends ChangeNotifier {
 
   bool _isRetryableText(MessageModel msg) =>
       msg.isMine &&
+      // Buzz uses its own protocol packet. These IDs identify local UI notices,
+      // not chat messages; sending them produces an invalid non-numeric wire ID.
+      !msg.id.startsWith('buzz-') &&
       !msg.isRevoked &&
       msg.fileAttachment == null &&
       msg.recipientId != '__AI_ASSISTANT__';
@@ -3557,6 +3940,12 @@ class MessengerCoordinator extends ChangeNotifier {
       peer.ip,
       '${peer.ip}:${peer.port}',
       peer.canonicalIdentity,
+      ...peer.knownIps,
+      for (final ip in peer.knownIps) '$ip:${peer.port}',
+      ..._peers.entries
+          .where((e) => identical(e.value, peer))
+          .map((e) => e.key),
+      ...chatHistory.aliasesFor(peer.id),
       if (_peerHashes[peer.id] case final String hash) 'hash:$hash',
     };
 
@@ -3572,11 +3961,19 @@ class MessengerCoordinator extends ChangeNotifier {
           (_peers[convId] == null || identical(_peers[convId], peer));
       if (isDirectChat) {
         for (final msg in convEntry.value) {
-          if (msg.isMine &&
+          final isPending =
+              msg.pendingRecipients?.any(candidateKeys.contains) == true ||
+              _pendingOfflineMessageIds.entries.any(
+                (e) =>
+                    candidateKeys.contains(e.key) && e.value.contains(msg.id),
+              );
+          final needsRetry =
+              msg.isMine &&
               _isRetryableText(msg) &&
               (msg.status == MessageStatus.failed ||
-                  msg.status == MessageStatus.sending) &&
-              collectedMsgIds.add(msg.id)) {
+                  msg.status == MessageStatus.sending ||
+                  (msg.status == MessageStatus.sent && isPending));
+          if (needsRetry && collectedMsgIds.add(msg.id)) {
             messagesToRetry.add((convId: convId, msg: msg));
           }
         }
@@ -3625,9 +4022,14 @@ class MessengerCoordinator extends ChangeNotifier {
         continue;
       }
       if (_outboxInFlight.contains('${msg.id}:${peer.id}')) continue;
-      if (!(msg.pendingRecipients?.any(candidateKeys.contains) ??
-          (msg.status == MessageStatus.failed ||
-              msg.status == MessageStatus.sending))) {
+      final isPending =
+          (msg.pendingRecipients?.any(candidateKeys.contains) ?? false) ||
+          _pendingOfflineMessageIds.entries.any(
+            (e) => candidateKeys.contains(e.key) && e.value.contains(msg.id),
+          );
+      if (!isPending &&
+          msg.status != MessageStatus.failed &&
+          msg.status != MessageStatus.sending) {
         continue;
       }
       final currentGroup = _groups[convId];
@@ -4380,11 +4782,12 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
     final conversationId = targetPeer.id;
     final targetName = targetPeer.displayName;
 
+    bool sentSuccess = false;
     if (targetPeer.isAllUsers) {
       for (final p in _peers.values.toSet().where(
         (p) => p.status != PeerStatus.offline,
       )) {
-        _sendToPeer(
+        final ok = _sendToPeer(
           p.id,
           ProtocolBeebeep.packet(
             ProtocolBeebeep.headerBuzz,
@@ -4393,12 +4796,13 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
             flags: 1,
           ),
         );
+        if (ok) sentSuccess = true;
       }
     } else if (targetPeer.isGroup) {
       for (final memberId in targetPeer.memberIds) {
         final p = _peers[memberId];
         if (p != null && p.status != PeerStatus.offline) {
-          _sendToPeer(
+          final ok = _sendToPeer(
             p.id,
             ProtocolBeebeep.packet(
               ProtocolBeebeep.headerBuzz,
@@ -4407,10 +4811,45 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
               flags: 1,
             ),
           );
+          if (ok) sentSuccess = true;
         }
       }
     } else {
-      _sendToPeer(
+      // Chat cá nhân 1-1:
+      // Nếu trạng thái hiển thị hiện tại là offline, trước tiên thăm dò kết nối TCP tới port ứng dụng (6475)
+      // để nếu ứng dụng bên đối phương thực tế đang chạy thì lập tức nhận diện online và gửi Buzz bình thường,
+      // hoàn toàn không gọi lệnh WinRM hay hiển thị thông báo WinRM gây hiểu lầm.
+      if (targetPeer.status == PeerStatus.offline) {
+        final targetIp = targetPeer.ip.isNotEmpty
+            ? targetPeer.ip
+            : (targetPeer.knownIps.isNotEmpty ? targetPeer.knownIps.first : '');
+        if (targetIp.isNotEmpty) {
+          final port = targetPeer.port > 0
+              ? targetPeer.port
+              : defaultListenerPort;
+          final connected = await _tcpServer.connect(
+            targetIp,
+            port,
+            timeout: const Duration(milliseconds: 500),
+          );
+          if (connected) {
+            // HELLO may resolve a different owner of a reused endpoint. Only
+            // its handler may update the intended conversation's presence.
+            final session = _peerSessions.sessions['$targetIp:$port'];
+            if (session == null || session.conversationId != targetPeer.id) {
+              return;
+            }
+            _refreshLogicalPeer(targetPeer);
+          }
+        }
+      }
+
+      if (targetPeer.status == PeerStatus.offline) {
+        await _handleOfflineBuzz(targetPeer);
+        return;
+      }
+
+      sentSuccess = _sendToPeer(
         targetPeer.id,
         ProtocolBeebeep.packet(
           ProtocolBeebeep.headerBuzz,
@@ -4431,13 +4870,176 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
       recipientId: conversationId,
       text: sentText,
       isMine: true,
-      status: MessageStatus.delivered,
+      status: sentSuccess ? MessageStatus.delivered : MessageStatus.failed,
     );
     final messages = _conversations.putIfAbsent(conversationId, () => []);
     messages.add(message);
     chatHistory.scheduleSave(conversationId, messages);
     targetPeer.lastMessage = sentText;
     targetPeer.lastMessageTime = message.timestamp;
+    notifyListeners();
+  }
+
+  /// Xử lý gửi lệnh khởi động ứng dụng từ xa qua WinRM khi peer đang offline
+  Future<void> _handleOfflineBuzz(PeerModel targetPeer) async {
+    final conversationId = targetPeer.id;
+    final targetName = targetPeer.displayName;
+    final prefs = AppPreferences();
+
+    if (!prefs.winrmEnabled) {
+      final msgText =
+          '⚠️ ${languageProvider?.tr('winrmDisabledToast') ?? 'Tính năng WinRM chưa được bật trong Cài đặt.'}';
+      final message = MessageModel(
+        id: 'buzz-offline-disabled-${DateTime.now().microsecondsSinceEpoch}',
+        senderId: 'system',
+        senderName: 'System',
+        recipientId: conversationId,
+        text: msgText,
+        isMine: false,
+        status: MessageStatus.delivered,
+      );
+      final messages = _conversations.putIfAbsent(conversationId, () => []);
+      messages.add(message);
+      chatHistory.scheduleSave(conversationId, messages);
+      targetPeer.lastMessage = msgText;
+      targetPeer.lastMessageTime = message.timestamp;
+      showToast('winrmDisabledToast', []);
+      notifyListeners();
+      return;
+    }
+
+    final targetIp = targetPeer.ip.isNotEmpty
+        ? targetPeer.ip
+        : (targetPeer.knownIps.isNotEmpty ? targetPeer.knownIps.first : '');
+
+    if (targetIp.isEmpty) {
+      final msgText =
+          '⚠️ ${languageProvider?.tr('winrmNoIp') ?? 'Không tìm thấy địa chỉ IP của thiết bị.'}';
+      final message = MessageModel(
+        id: 'buzz-no-ip-${DateTime.now().microsecondsSinceEpoch}',
+        senderId: 'system',
+        senderName: 'System',
+        recipientId: conversationId,
+        text: msgText,
+        isMine: false,
+        status: MessageStatus.delivered,
+      );
+      final messages = _conversations.putIfAbsent(conversationId, () => []);
+      messages.add(message);
+      chatHistory.scheduleSave(conversationId, messages);
+      targetPeer.lastMessage = msgText;
+      targetPeer.lastMessageTime = message.timestamp;
+      showToast('winrmNoIp', []);
+      notifyListeners();
+      return;
+    }
+
+    final creds = prefs.resolveWinrmCredentials(targetPeer.canonicalIdentity);
+    if (creds.username.isEmpty) {
+      final msgText =
+          '⚠️ ${languageProvider?.tr('winrmNotConfigured') ?? 'Chưa cấu hình tài khoản WinRM trong Cài đặt.'}';
+      final message = MessageModel(
+        id: 'buzz-no-creds-${DateTime.now().microsecondsSinceEpoch}',
+        senderId: 'system',
+        senderName: 'System',
+        recipientId: conversationId,
+        text: msgText,
+        isMine: false,
+        status: MessageStatus.delivered,
+      );
+      final messages = _conversations.putIfAbsent(conversationId, () => []);
+      messages.add(message);
+      chatHistory.scheduleSave(conversationId, messages);
+      targetPeer.lastMessage = msgText;
+      targetPeer.lastMessageTime = message.timestamp;
+      showToast('winrmNotConfigured', []);
+      notifyListeners();
+      return;
+    }
+
+    // Ghi nhớ để tự động gửi Buzz ngay khi peer online (kiểm tra chặt chẽ danh tính và IP)
+    if (prefs.winrmAutoBuzzOnConnect) {
+      _pendingBuzzTargets.removeWhere(
+        (t) => t.canonicalIdentity == targetPeer.canonicalIdentity,
+      );
+      _pendingBuzzTargets.add(
+        PendingBuzzTarget(
+          peerId: targetPeer.id,
+          canonicalIdentity: targetPeer.canonicalIdentity,
+          hostname: targetPeer.hostname,
+          accountName: targetPeer.accountName,
+          targetIp: targetIp,
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+
+    // Hiển thị thông báo đang khởi chạy
+    final launchingText =
+        '🚀 ${languageProvider?.tr('winrmLaunchingApp') ?? 'Đang gửi lệnh WinRM để mở ứng dụng trên máy đối phương...'} ($targetName - $targetIp)';
+    final launchingMsg = MessageModel(
+      id: 'buzz-winrm-launching-${DateTime.now().microsecondsSinceEpoch}',
+      senderId: 'me',
+      senderName: localUsername,
+      recipientId: conversationId,
+      text: launchingText,
+      isMine: true,
+      status: MessageStatus.sent,
+    );
+    final messages = _conversations.putIfAbsent(conversationId, () => []);
+    messages.add(launchingMsg);
+    chatHistory.scheduleSave(conversationId, messages);
+    targetPeer.lastMessage = launchingText;
+    targetPeer.lastMessageTime = launchingMsg.timestamp;
+    notifyListeners();
+
+    // Thực thi lệnh WinRM bất đồng bộ
+    final result = await winrmLauncher.launchRemoteApp(
+      ip: targetIp,
+      port: creds.port,
+      username: creds.username,
+      password: creds.password,
+      customAppPath: creds.customAppPath,
+    );
+
+    if (result.success) {
+      final successText = '✅ ${result.message}';
+      final resultMsg = MessageModel(
+        id: 'buzz-winrm-ok-${DateTime.now().microsecondsSinceEpoch}',
+        senderId: 'system',
+        senderName: 'WinRM',
+        recipientId: conversationId,
+        text: successText,
+        isMine: false,
+        status: MessageStatus.delivered,
+      );
+      messages.add(resultMsg);
+      chatHistory.scheduleSave(conversationId, messages);
+      targetPeer.lastMessage = successText;
+      targetPeer.lastMessageTime = resultMsg.timestamp;
+      showToast('winrmLaunchSuccess', []);
+    } else {
+      // Xóa khỏi pending buzz nếu khởi động thất bại
+      _pendingBuzzTargets.removeWhere(
+        (t) => t.canonicalIdentity == targetPeer.canonicalIdentity,
+      );
+
+      final errorText = '❌ WinRM: ${result.message}';
+      final resultMsg = MessageModel(
+        id: 'buzz-winrm-err-${DateTime.now().microsecondsSinceEpoch}',
+        senderId: 'system',
+        senderName: 'WinRM',
+        recipientId: conversationId,
+        text: errorText,
+        isMine: false,
+        status: MessageStatus.failed,
+      );
+      messages.add(resultMsg);
+      chatHistory.scheduleSave(conversationId, messages);
+      targetPeer.lastMessage = errorText;
+      targetPeer.lastMessageTime = resultMsg.timestamp;
+      showToast('winrmLaunchFailed', [result.message]);
+    }
     notifyListeners();
   }
 

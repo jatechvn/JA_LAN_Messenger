@@ -500,7 +500,7 @@ class ProtocolBeebeep {
     final id = int.tryParse(parts[1]),
         length = int.tryParse(parts[2]),
         flags = int.tryParse(parts[3]);
-    final timestamp = DateTime.tryParse(parts[5]);
+    final timestamp = DateTime.tryParse(parts[5])?.toLocal();
     final text = parts.sublist(6).join(protocolFieldSeparator);
     if (id == null ||
         id <= 0 ||

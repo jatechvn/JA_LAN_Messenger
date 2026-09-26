@@ -1,7 +1,46 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
+import 'package:encrypt/encrypt.dart' as enc;
 import 'package:flutter/foundation.dart';
 import '../models/ai_config_model.dart';
+import 'windows_secret.dart';
+
+/// Cấu hình WinRM riêng cho từng máy/người dùng
+class WinrmPeerConfig {
+  final bool useCustom;
+  final String username;
+  final String password;
+  final int port;
+  final String? customAppPath;
+
+  const WinrmPeerConfig({
+    this.useCustom = false,
+    this.username = '',
+    this.password = '',
+    this.port = 5985,
+    this.customAppPath,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'useCustom': useCustom,
+    'username': username,
+    'password': AppPreferences.protectSecret(password),
+    'port': port,
+    if (customAppPath != null) 'customAppPath': customAppPath,
+  };
+
+  factory WinrmPeerConfig.fromJson(Map<String, dynamic> json) =>
+      WinrmPeerConfig(
+        useCustom: json['useCustom'] as bool? ?? false,
+        username: json['username'] as String? ?? '',
+        password: AppPreferences.unprotectSecret(
+          json['password'] as String? ?? '',
+        ),
+        port: json['port'] as int? ?? 5985,
+        customAppPath: json['customAppPath'] as String?,
+      );
+}
 
 /// Manages application-wide user preferences persisted in user_preferences.json.
 class AppPreferences extends ChangeNotifier {
@@ -9,6 +48,107 @@ class AppPreferences extends ChangeNotifier {
   factory AppPreferences() => _instance;
   AppPreferences._internal() {
     load();
+  }
+
+  static const String _secretPrefixV2 = 'enc:v2:';
+  static const String _secretPrefixV1 = 'enc:v1:';
+  static const List<int> _legacySecretKey = [
+    0x4A, 0x41, 0x5F, 0x4C, 0x41, 0x4E, 0x5F, 0x53, 0x45, 0x43, // 'JA_LAN_SEC'
+    0x32, 0x30, 0x32, 0x36, 0x5F, 0x57, 0x49, 0x4E, 0x52, 0x4D, // '2026_WINRM'
+  ];
+
+  static enc.Key? _cachedAesKey;
+
+  /// Tạo khóa AES 256-bit ràng buộc theo định danh người dùng và máy tính hiện tại
+  static enc.Key _deriveUserMachineKey() {
+    if (_cachedAesKey != null) return _cachedAesKey!;
+    final username = Platform.environment['USERNAME'] ?? 'user';
+    final userdomain = Platform.environment['USERDOMAIN'] ?? 'local';
+    final computer = Platform.environment['COMPUTERNAME'] ?? 'pc';
+    final userprofile = Platform.environment['USERPROFILE'] ?? '';
+
+    final entropy =
+        'JA_LAN_WINRM_V2:$username@$userdomain:$computer:$userprofile';
+    final digest = sha256.convert(utf8.encode(entropy));
+    _cachedAesKey = enc.Key(Uint8List.fromList(digest.bytes));
+    return _cachedAesKey!;
+  }
+
+  /// Mã hoá mật khẩu với AES-256-CBC và IV ngẫu nhiên sinh mới cho mỗi lần lưu
+  static String protectSecret(String secret) {
+    if (secret.isEmpty) return '';
+    if (Platform.isWindows) {
+      final protected = WindowsSecret.transform(
+        Uint8List.fromList(utf8.encode(secret)),
+        protect: true,
+      );
+      return 'enc:dpapi:${base64.encode(protected)}';
+    }
+    try {
+      final key = _deriveUserMachineKey();
+      final iv = enc.IV.fromSecureRandom(16);
+      final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc));
+      final encrypted = encrypter.encrypt(secret, iv: iv);
+      return '$_secretPrefixV2${iv.base64}:${encrypted.base64}';
+    } catch (_) {
+      final bytes = utf8.encode(secret);
+      final masked = List<int>.generate(
+        bytes.length,
+        (i) => bytes[i] ^ _legacySecretKey[i % _legacySecretKey.length],
+      );
+      return '$_secretPrefixV1${base64.encode(masked)}';
+    }
+  }
+
+  /// Giải mã mật khẩu, hỗ trợ chuẩn enc:v2: (AES-256), tương thích ngược enc:v1: và plain text
+  static String unprotectSecret(String? raw) {
+    if (raw == null || raw.isEmpty) return '';
+    if (raw.startsWith('enc:dpapi:')) {
+      if (!Platform.isWindows) {
+        throw StateError('This WinRM credential belongs to a Windows user');
+      }
+      return utf8.decode(
+        WindowsSecret.transform(
+          base64.decode(raw.substring('enc:dpapi:'.length)),
+          protect: false,
+        ),
+      );
+    }
+
+    // Chuẩn mã hóa AES-256-CBC với random IV
+    if (raw.startsWith(_secretPrefixV2)) {
+      try {
+        final payload = raw.substring(_secretPrefixV2.length);
+        final parts = payload.split(':');
+        if (parts.length == 2) {
+          final iv = enc.IV.fromBase64(parts[0]);
+          final encrypter = enc.Encrypter(
+            enc.AES(_deriveUserMachineKey(), mode: enc.AESMode.cbc),
+          );
+          return encrypter.decrypt64(parts[1], iv: iv);
+        }
+      } catch (_) {
+        return raw;
+      }
+    }
+
+    // Tương thích ngược enc:v1:
+    if (raw.startsWith(_secretPrefixV1)) {
+      try {
+        final b64 = raw.substring(_secretPrefixV1.length);
+        final masked = base64.decode(b64);
+        final bytes = List<int>.generate(
+          masked.length,
+          (i) => masked[i] ^ _legacySecretKey[i % _legacySecretKey.length],
+        );
+        return utf8.decode(bytes);
+      } catch (_) {
+        return raw;
+      }
+    }
+
+    // Tương thích plain text cũ
+    return raw;
   }
 
   File? _customFile;
@@ -69,6 +209,14 @@ class AppPreferences extends ChangeNotifier {
   String _otaPassword = 'user';
   DateTime? _otaLastCheckTime;
   String? _otaCachedUpdateVersion;
+
+  // Cấu hình WinRM khởi động ứng dụng từ xa
+  bool _winrmEnabled = true;
+  String _winrmDefaultUsername = 'FT';
+  String _winrmDefaultPassword = '123';
+  int _winrmDefaultPort = 5985;
+  bool _winrmAutoBuzzOnConnect = true;
+  Map<String, WinrmPeerConfig> _peerWinrmConfigs = {};
 
   // Cấu hình hiệu năng phần cứng (Hardware Graphic Tier)
   String _perfTierMode = 'auto'; // 'auto', 'ultra', 'balanced', 'lite'
@@ -132,6 +280,42 @@ class AppPreferences extends ChangeNotifier {
   String? get otaCachedUpdateVersion => _otaCachedUpdateVersion;
   String get perfTierMode => _perfTierMode;
 
+  bool get winrmEnabled => _winrmEnabled;
+  String get winrmDefaultUsername => _winrmDefaultUsername;
+  String get winrmDefaultPassword => _winrmDefaultPassword;
+  int get winrmDefaultPort => _winrmDefaultPort;
+  bool get winrmAutoBuzzOnConnect => _winrmAutoBuzzOnConnect;
+  Map<String, WinrmPeerConfig> get peerWinrmConfigs =>
+      Map.unmodifiable(_peerWinrmConfigs);
+
+  WinrmPeerConfig? getWinrmConfigForPeer(String peerKey) =>
+      _peerWinrmConfigs[peerKey];
+
+  ({String username, String password, int port, String? customAppPath})
+  resolveWinrmCredentials(String? peerKey) {
+    if (peerKey != null && _peerWinrmConfigs.containsKey(peerKey)) {
+      final config = _peerWinrmConfigs[peerKey]!;
+      if (config.useCustom) {
+        return (
+          username: config.username.isNotEmpty
+              ? config.username
+              : _winrmDefaultUsername,
+          password: config.password.isNotEmpty
+              ? config.password
+              : _winrmDefaultPassword,
+          port: config.port > 0 ? config.port : _winrmDefaultPort,
+          customAppPath: config.customAppPath,
+        );
+      }
+    }
+    return (
+      username: _winrmDefaultUsername,
+      password: _winrmDefaultPassword,
+      port: _winrmDefaultPort,
+      customAppPath: null,
+    );
+  }
+
   bool isPeerPinned(String key) => _pinnedKeys.contains(key);
 
   int _loadGeneration = 0;
@@ -181,6 +365,12 @@ class AppPreferences extends ChangeNotifier {
     _otaPassword = 'user';
     _otaLastCheckTime = null;
     _otaCachedUpdateVersion = null;
+    _winrmEnabled = true;
+    _winrmDefaultUsername = 'FT';
+    _winrmDefaultPassword = '123';
+    _winrmDefaultPort = 5985;
+    _winrmAutoBuzzOnConnect = true;
+    _peerWinrmConfigs = {};
   }
 
   void setCustomFileForTesting(File? file) {
@@ -373,6 +563,36 @@ class AppPreferences extends ChangeNotifier {
           if (data.containsKey('userAvatarBase64')) {
             _userAvatarBase64 = data['userAvatarBase64'] as String? ?? '';
           }
+          if (data.containsKey('winrmEnabled')) {
+            _winrmEnabled = data['winrmEnabled'] as bool? ?? true;
+          }
+          if (data.containsKey('winrmDefaultUsername')) {
+            _winrmDefaultUsername =
+                data['winrmDefaultUsername'] as String? ?? 'FT';
+          }
+          if (data.containsKey('winrmDefaultPassword')) {
+            _winrmDefaultPassword = unprotectSecret(
+              data['winrmDefaultPassword'] as String? ?? '123',
+            );
+          }
+          if (data.containsKey('winrmDefaultPort')) {
+            _winrmDefaultPort = data['winrmDefaultPort'] as int? ?? 5985;
+          }
+          if (data.containsKey('winrmAutoBuzzOnConnect')) {
+            _winrmAutoBuzzOnConnect =
+                data['winrmAutoBuzzOnConnect'] as bool? ?? true;
+          }
+          if (data.containsKey('peerWinrmConfigs') &&
+              data['peerWinrmConfigs'] is Map) {
+            final raw = data['peerWinrmConfigs'] as Map<String, dynamic>;
+            final map = <String, WinrmPeerConfig>{};
+            raw.forEach((k, v) {
+              if (v is Map) {
+                map[k] = WinrmPeerConfig.fromJson(Map<String, dynamic>.from(v));
+              }
+            });
+            _peerWinrmConfigs = map;
+          }
           notifyListeners();
         }
       }
@@ -559,6 +779,35 @@ class AppPreferences extends ChangeNotifier {
     await _save();
   }
 
+  Future<void> setWinrmGlobalSettings({
+    bool? enabled,
+    String? defaultUsername,
+    String? defaultPassword,
+    int? defaultPort,
+    bool? autoBuzzOnConnect,
+  }) async {
+    if (enabled != null) _winrmEnabled = enabled;
+    if (defaultUsername != null) _winrmDefaultUsername = defaultUsername;
+    if (defaultPassword != null) _winrmDefaultPassword = defaultPassword;
+    if (defaultPort != null) _winrmDefaultPort = defaultPort;
+    if (autoBuzzOnConnect != null) _winrmAutoBuzzOnConnect = autoBuzzOnConnect;
+    notifyListeners();
+    await _save();
+  }
+
+  Future<void> setWinrmConfigForPeer(
+    String peerKey,
+    WinrmPeerConfig? config,
+  ) async {
+    if (config == null) {
+      _peerWinrmConfigs.remove(peerKey);
+    } else {
+      _peerWinrmConfigs[peerKey] = config;
+    }
+    notifyListeners();
+    await _save();
+  }
+
   Future<void> _save() async {
     _loadGeneration++;
     try {
@@ -625,6 +874,18 @@ class AppPreferences extends ChangeNotifier {
       data['userAvatarCustomPath'] = _userAvatarCustomPath;
       data['userAvatarColor'] = _userAvatarColor;
       data['userAvatarBase64'] = _userAvatarBase64;
+      data['winrmEnabled'] = _winrmEnabled;
+      data['winrmDefaultUsername'] = _winrmDefaultUsername;
+      data['winrmDefaultPassword'] = protectSecret(_winrmDefaultPassword);
+      data['winrmDefaultPort'] = _winrmDefaultPort;
+      data['winrmAutoBuzzOnConnect'] = _winrmAutoBuzzOnConnect;
+      if (_peerWinrmConfigs.isNotEmpty) {
+        data['peerWinrmConfigs'] = _peerWinrmConfigs.map(
+          (k, v) => MapEntry(k, v.toJson()),
+        );
+      } else {
+        data.remove('peerWinrmConfigs');
+      }
       await file.writeAsString(jsonEncode(data), flush: true);
     } catch (e) {
       debugPrint('[AppPreferences] Save error: $e');

@@ -103,6 +103,18 @@ class _SettingsDialogState extends State<SettingsDialog>
   late bool _localBuzzShakeWindow;
   late bool _localBuzzBringToFront;
 
+  // WinRM Remote Launch mirrors
+  late bool _localWinrmEnabled;
+  late TextEditingController _winrmUsernameController;
+  late TextEditingController _winrmPasswordController;
+  late TextEditingController _winrmPortController;
+  late bool _localWinrmAutoBuzzOnConnect;
+  bool _obscureWinrmPassword = true;
+  late TextEditingController _winrmTestIpController;
+  bool _isTestingWinrmConnection = false;
+  String? _winrmConnectionTestResult;
+  bool? _winrmConnectionTestSuccess;
+
   // IME mirrors
   late String _localImeMode;
   late bool _localImeAutoBypassExternal;
@@ -177,6 +189,20 @@ class _SettingsDialogState extends State<SettingsDialog>
     _localBuzzFlashScreen = prefs.buzzFlashScreen;
     _localBuzzShakeWindow = prefs.buzzShakeWindow;
     _localBuzzBringToFront = prefs.buzzBringToFront;
+
+    _localWinrmEnabled = prefs.winrmEnabled;
+    _winrmUsernameController = TextEditingController(
+      text: prefs.winrmDefaultUsername,
+    );
+    _winrmPasswordController = TextEditingController(
+      text: prefs.winrmDefaultPassword,
+    );
+    _winrmPortController = TextEditingController(
+      text: prefs.winrmDefaultPort.toString(),
+    );
+    _localWinrmAutoBuzzOnConnect = prefs.winrmAutoBuzzOnConnect;
+    _winrmTestIpController = TextEditingController();
+
     _localImeMode = prefs.imeMode;
     _localImeAutoBypassExternal = prefs.imeAutoBypassExternal;
 
@@ -231,6 +257,10 @@ class _SettingsDialogState extends State<SettingsDialog>
     _otaServerPathController.dispose();
     _otaUsernameController.dispose();
     _otaPasswordController.dispose();
+    _winrmUsernameController.dispose();
+    _winrmPasswordController.dispose();
+    _winrmPortController.dispose();
+    _winrmTestIpController.dispose();
     super.dispose();
   }
 
@@ -256,6 +286,14 @@ class _SettingsDialogState extends State<SettingsDialog>
       _localBuzzFlashScreen = true;
       _localBuzzShakeWindow = true;
       _localBuzzBringToFront = true;
+      _localWinrmEnabled = true;
+      _winrmUsernameController.text = 'user';
+      _winrmPasswordController.text = 'user';
+      _winrmPortController.text = '5985';
+      _localWinrmAutoBuzzOnConnect = true;
+      _winrmTestIpController.text = '';
+      _winrmConnectionTestResult = null;
+      _winrmConnectionTestSuccess = null;
       _localImeMode = 'auto';
       _localImeAutoBypassExternal = true;
       _aiConnectionTestResult = null;
@@ -358,6 +396,60 @@ class _SettingsDialogState extends State<SettingsDialog>
     }
   }
 
+  Future<void> _testWinrmConnection() async {
+    final ip = _winrmTestIpController.text.trim();
+    if (ip.isEmpty) {
+      setState(() {
+        _winrmConnectionTestSuccess = false;
+        _winrmConnectionTestResult =
+            'Vui lòng nhập địa chỉ IP máy cần kiểm tra.';
+      });
+      return;
+    }
+
+    final user = _winrmUsernameController.text.trim();
+    if (user.isEmpty) {
+      setState(() {
+        _winrmConnectionTestSuccess = false;
+        _winrmConnectionTestResult = 'Vui lòng nhập tên tài khoản WinRM.';
+      });
+      return;
+    }
+
+    final pass = _winrmPasswordController.text;
+    final port = int.tryParse(_winrmPortController.text.trim()) ?? 5985;
+
+    setState(() {
+      _isTestingWinrmConnection = true;
+      _winrmConnectionTestResult = null;
+      _winrmConnectionTestSuccess = null;
+    });
+
+    try {
+      final coordinator = context.read<MessengerCoordinator>();
+      final result = await coordinator.winrmLauncher.testConnection(
+        ip: ip,
+        port: port,
+        username: user,
+        password: pass,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _isTestingWinrmConnection = false;
+        _winrmConnectionTestSuccess = result.success;
+        _winrmConnectionTestResult = result.message;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isTestingWinrmConnection = false;
+        _winrmConnectionTestSuccess = false;
+        _winrmConnectionTestResult = 'Lỗi kiểm tra: $e';
+      });
+    }
+  }
+
   Future<void> _saveSettings() async {
     if (_isSaving) return;
     _isSaving = true;
@@ -389,6 +481,13 @@ class _SettingsDialogState extends State<SettingsDialog>
       flashScreen: _localBuzzFlashScreen,
       shakeWindow: _localBuzzShakeWindow,
       bringToFront: _localBuzzBringToFront,
+    );
+    await prefs.setWinrmGlobalSettings(
+      enabled: _localWinrmEnabled,
+      defaultUsername: _winrmUsernameController.text.trim(),
+      defaultPassword: _winrmPasswordController.text,
+      defaultPort: int.tryParse(_winrmPortController.text.trim()) ?? 5985,
+      autoBuzzOnConnect: _localWinrmAutoBuzzOnConnect,
     );
     await prefs.setImeSettings(
       mode: _localImeMode,
@@ -525,6 +624,57 @@ class _SettingsDialogState extends State<SettingsDialog>
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOtaIntervalChip({
+    required String value,
+    required String label,
+    required IconData icon,
+    required ThemeProvider theme,
+    required bool isDark,
+  }) {
+    final isSelected = _localOtaCheckInterval == value;
+    final color = isSelected
+        ? theme.colors.accentBlue
+        : (isDark ? Colors.white70 : Colors.black87);
+
+    return InkWell(
+      key: ValueKey('ota-interval-chip-$value'),
+      onTap: () {
+        setState(() => _localOtaCheckInterval = value);
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? theme.colors.accentBlue.withValues(alpha: 0.15)
+              : (isDark ? Colors.white : Colors.black).withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected
+                ? theme.colors.accentBlue
+                : (isDark ? Colors.white : Colors.black).withValues(alpha: 0.1),
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                color: color,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1311,6 +1461,284 @@ class _SettingsDialogState extends State<SettingsDialog>
             activeTrackColor: theme.colors.accentBlue,
             onChanged: (val) => setState(() => _localBuzzBringToFront = val),
           ),
+          const SizedBox(height: 16),
+          // 4.6. WinRM Remote Launch Settings
+          Row(
+            children: [
+              Icon(
+                Icons.settings_remote_rounded,
+                size: 16,
+                color: theme.colors.accentCyan,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  lang.tr('winrmSettings'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colors.accentCyan,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              lang.tr('winrmSettings'),
+              style: const TextStyle(fontSize: 12.5),
+            ),
+            subtitle: Text(
+              lang.tr('winrmEnableDesc'),
+              style: const TextStyle(fontSize: 11),
+            ),
+            value: _localWinrmEnabled,
+            activeTrackColor: theme.colors.accentBlue,
+            onChanged: (val) => setState(() => _localWinrmEnabled = val),
+          ),
+          if (_localWinrmEnabled) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: (theme.isDark ? Colors.white : Colors.black).withValues(
+                  alpha: theme.isDark ? 0.04 : 0.02,
+                ),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: (theme.isDark ? Colors.white : Colors.black)
+                      .withValues(alpha: 0.08),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _winrmUsernameController,
+                          style: const TextStyle(fontSize: 12.5),
+                          decoration: InputDecoration(
+                            labelText: lang.tr('winrmDefaultUser'),
+                            isDense: true,
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Icon(
+                              Icons.person_outline_rounded,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: _winrmPasswordController,
+                          obscureText: _obscureWinrmPassword,
+                          style: const TextStyle(fontSize: 12.5),
+                          decoration: InputDecoration(
+                            labelText: lang.tr('winrmDefaultPass'),
+                            isDense: true,
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Icon(
+                              Icons.lock_outline_rounded,
+                              size: 16,
+                            ),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscureWinrmPassword
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                size: 16,
+                              ),
+                              onPressed: () => setState(
+                                () => _obscureWinrmPassword =
+                                    !_obscureWinrmPassword,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 140,
+                        child: TextField(
+                          controller: _winrmPortController,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(fontSize: 12.5),
+                          decoration: InputDecoration(
+                            labelText: lang.tr('winrmPort'),
+                            isDense: true,
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Icon(
+                              Icons.numbers_rounded,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => setState(
+                            () => _localWinrmAutoBuzzOnConnect =
+                                !_localWinrmAutoBuzzOnConnect,
+                          ),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Row(
+                            children: [
+                              Checkbox(
+                                value: _localWinrmAutoBuzzOnConnect,
+                                activeColor: theme.colors.accentBlue,
+                                onChanged: (val) => setState(
+                                  () => _localWinrmAutoBuzzOnConnect =
+                                      val ?? true,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  lang.tr('winrmAutoBuzz'),
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 10),
+                  Text(
+                    lang.tr('winrmTestConnection'),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: theme.isDark ? Colors.white70 : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _winrmTestIpController,
+                          style: const TextStyle(fontSize: 12.5),
+                          decoration: InputDecoration(
+                            hintText: lang.tr('winrmTestIpHint'),
+                            isDense: true,
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Icon(
+                              Icons.computer_rounded,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: theme.colors.accentBlue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: _isTestingWinrmConnection
+                            ? null
+                            : _testWinrmConnection,
+                        icon: _isTestingWinrmConnection
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.network_check_rounded, size: 16),
+                        label: Text(
+                          _isTestingWinrmConnection
+                              ? lang.tr('winrmTesting')
+                              : lang.tr('winrmTestConnection'),
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_winrmConnectionTestResult != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color:
+                            (_winrmConnectionTestSuccess == true
+                                    ? Colors.green
+                                    : Colors.red)
+                                .withValues(alpha: theme.isDark ? 0.20 : 0.08),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color:
+                              (_winrmConnectionTestSuccess == true
+                                      ? Colors.green
+                                      : Colors.red)
+                                  .withValues(alpha: 0.5),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _winrmConnectionTestSuccess == true
+                                ? Icons.check_circle_outline_rounded
+                                : Icons.error_outline_rounded,
+                            size: 16,
+                            color: _winrmConnectionTestSuccess == true
+                                ? Colors.green
+                                : Colors.red,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _winrmConnectionTestResult!,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: _winrmConnectionTestSuccess == true
+                                    ? (theme.isDark
+                                          ? Colors.greenAccent
+                                          : Colors.green.shade800)
+                                    : (theme.isDark
+                                          ? Colors.redAccent
+                                          : Colors.red.shade800),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           // 4.8. Built-in Input Method (IME) Settings
           Row(
@@ -2528,60 +2956,42 @@ class _SettingsDialogState extends State<SettingsDialog>
             ],
           ),
           const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: (isDark ? Colors.white : Colors.black).withValues(
-                alpha: isDark ? 0.05 : 0.04,
+
+          // Quick selection buttons (nút chọn nhanh thay vì droplist)
+          Wrap(
+            key: const ValueKey('ota-interval-dropdown'),
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildOtaIntervalChip(
+                value: 'daily',
+                label: lang.tr('intervalDaily'),
+                icon: Icons.today_rounded,
+                theme: theme,
+                isDark: isDark,
               ),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: (isDark ? Colors.white : Colors.black).withValues(
-                  alpha: 0.08,
-                ),
+              _buildOtaIntervalChip(
+                value: 'weekly',
+                label: lang.tr('intervalWeekly'),
+                icon: Icons.date_range_rounded,
+                theme: theme,
+                isDark: isDark,
               ),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                key: const ValueKey('ota-interval-dropdown'),
-                value: _localOtaCheckInterval,
-                isExpanded: true,
-                dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                items: [
-                  DropdownMenuItem(
-                    value: 'daily',
-                    child: Text(
-                      lang.tr('intervalDaily'),
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                  DropdownMenuItem(
-                    value: 'weekly',
-                    child: Text(
-                      lang.tr('intervalWeekly'),
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                  DropdownMenuItem(
-                    value: 'monthly',
-                    child: Text(
-                      lang.tr('intervalMonthly'),
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                  DropdownMenuItem(
-                    value: 'off',
-                    child: Text(
-                      lang.tr('intervalOff'),
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
-                onChanged: (val) {
-                  if (val != null) setState(() => _localOtaCheckInterval = val);
-                },
+              _buildOtaIntervalChip(
+                value: 'monthly',
+                label: lang.tr('intervalMonthly'),
+                icon: Icons.calendar_month_rounded,
+                theme: theme,
+                isDark: isDark,
               ),
-            ),
+              _buildOtaIntervalChip(
+                value: 'off',
+                label: lang.tr('intervalOff'),
+                icon: Icons.cancel_outlined,
+                theme: theme,
+                isDark: isDark,
+              ),
+            ],
           ),
 
           const SizedBox(height: 12),

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:ja_lan_messenger/modules/models/peer_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ja_lan_messenger/modules/models/message_model.dart';
 import 'package:ja_lan_messenger/modules/network/protocol_beebeep.dart';
@@ -7,6 +8,20 @@ import 'package:ja_lan_messenger/modules/services/chat_history_service.dart';
 import 'package:ja_lan_messenger/modules/services/known_devices_registry.dart';
 import 'package:ja_lan_messenger/modules/services/messenger_coordinator.dart';
 import 'group_sync_and_ui_test.dart' show RecordingServer, UnusedSocket, decode;
+
+class _ReconnectServer extends RecordingServer {
+  void Function()? connected;
+  @override
+  Future<bool> connect(
+    String ip,
+    int port, {
+    String? sourceAddress,
+    Duration timeout = const Duration(seconds: 2),
+  }) async {
+    connected?.call();
+    return true;
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -79,6 +94,104 @@ void main() {
       await c.sendMessage('fallback Bee');
       expect(server.sent.last.endpoint, '192.0.2.1:6475');
       expect(peer.isBeebeep, isTrue);
+    },
+  );
+
+  test('persisted Buzz notices never enter chat retry on reconnect', () async {
+    hello('192.0.2.1');
+    final peer = c.peersMap['192.0.2.1:6475']!;
+    final notices = [
+      for (final id in ['buzz-sent-123', 'buzz-winrm-launching-456'])
+        MessageModel(
+          id: id,
+          senderId: 'me',
+          senderName: 'Me',
+          recipientId: peer.id,
+          text: 'local notice',
+          isMine: true,
+          status: MessageStatus.failed,
+          pendingRecipients: {peer.id},
+        ),
+    ];
+    c.conversationsMap[peer.id] = notices;
+    await c.chatHistory.saveImmediately(peer.id, notices);
+    await restart();
+    hello('192.0.2.1');
+    final restored = c.peersMap['192.0.2.1:6475']!;
+    server.sent.clear();
+    await c.flushPendingOutgoingMessagesForPeer(restored);
+    expect(
+      server.sent.where(
+        (p) => p.message['header'] == ProtocolBeebeep.headerChat,
+      ),
+      isEmpty,
+    );
+    expect(
+      c.conversationsMap[peer.id]!.every((m) => !c.canRetryMessage(m)),
+      isTrue,
+    );
+    expect(c.pendingOfflineMessageIds[peer.id] ?? {}, isEmpty);
+  });
+
+  test(
+    'traffic cannot override advertised offline or revive a closed session',
+    () {
+      hello('192.0.2.1');
+      final peer = c.peersMap['192.0.2.1:6475']!;
+      c.handlePeerStatus(peer.id, {'data': '0', 'text': ''});
+      expect(peer.status, PeerStatus.offline);
+      for (var i = 0; i < 3; i++) {
+        server.onActivity!(peer.id);
+        expect(peer.status, PeerStatus.offline);
+      }
+      c.handlePeerStatus(peer.id, {'data': '3', 'text': 'away'});
+      server.onActivity!(peer.id);
+      expect(peer.status, PeerStatus.away);
+      c.handlePeerStatus(peer.id, {'data': 'invalid', 'text': ''});
+      expect(peer.status, PeerStatus.away);
+      c.handlePeerDisconnected(peer.id);
+      server.onActivity!(peer.id);
+      c.handlePeerStatus(peer.id, {'data': '1', 'text': ''});
+      expect(peer.status, PeerStatus.offline);
+    },
+  );
+
+  test('secondary session activity does not replace preferred JA presence', () {
+    hello('192.0.2.1');
+    hello('192.0.2.1', port: 6477, bee: true);
+    final peer = c.peersMap['192.0.2.1:6475']!;
+    c.handlePeerStatus('192.0.2.1:6475', {'data': '2', 'text': 'busy'});
+    c.handlePeerStatus('192.0.2.1:6477', {'data': '0', 'text': ''});
+    server.onActivity!('192.0.2.1:6477');
+    expect(peer.status, PeerStatus.busy);
+  });
+
+  test(
+    'offline Buzz must not mark old owner online after reused-IP HELLO',
+    () async {
+      final reconnect = _ReconnectServer();
+      server = reconnect;
+      await restart();
+      hello('192.0.2.1');
+      final alice = c.peersMap['192.0.2.1:6475']!;
+      c.selectPeer(alice);
+      c.handlePeerDisconnected('192.0.2.1:6475');
+      expect(alice.status, PeerStatus.offline);
+      reconnect.connected = () =>
+          hello('192.0.2.1', account: 'bob', host: 'PC-B');
+      await c.sendBuzz();
+      expect(alice.status, PeerStatus.offline);
+      expect(
+        reconnect.sent.where(
+          (p) => p.message['header'] == ProtocolBeebeep.headerBuzz,
+        ),
+        isEmpty,
+      );
+      expect(
+        c.conversationsMap[alice.id]?.where((m) => m.id.startsWith('buzz-')) ??
+            [],
+        isEmpty,
+      );
     },
   );
 

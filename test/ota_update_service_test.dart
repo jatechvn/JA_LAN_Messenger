@@ -622,6 +622,27 @@ void main() {
         findsOneWidget,
       );
       expect(
+        find.byKey(const ValueKey('ota-interval-chip-daily')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('ota-interval-chip-weekly')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('ota-interval-chip-monthly')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('ota-interval-chip-off')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('ota-interval-chip-weekly')),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+      expect(
         find.byKey(const ValueKey('ota-test-connection-button')),
         findsOneWidget,
       );

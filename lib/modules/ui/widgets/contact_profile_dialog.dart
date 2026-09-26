@@ -5,6 +5,7 @@ import '../../models/peer_model.dart';
 import '../../theme/theme_provider.dart';
 import '../../localization/app_locale.dart';
 import '../../services/messenger_coordinator.dart';
+import '../../services/app_preferences.dart';
 import 'glass_dialog.dart';
 import 'glass_components.dart';
 import 'bounce_marquee_text.dart';
@@ -157,6 +158,7 @@ class ContactProfileDialog extends StatelessWidget {
       title: lang.tr('contactInfo'),
       icon: Icons.badge_rounded,
       width: 350,
+      scrollable: true,
       actions: [
         if (!peer.isAllUsers && !peer.isGroup && !peer.isAiAssistant) ...[
           if (onBuzz != null)
@@ -171,6 +173,21 @@ class ContactProfileDialog extends StatelessWidget {
                 onBuzz!();
               },
             ),
+          TextButton.icon(
+            icon: const Icon(Icons.settings_remote_rounded, size: 16),
+            label: Text(lang.tr('winrmConfigure')),
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colors.accentCyan,
+            ),
+            onPressed: () {
+              Navigator.of(context).pop();
+              showPeerWinrmConfigDialog(
+                context: context,
+                peer: peer,
+                lang: lang,
+              );
+            },
+          ),
           TextButton.icon(
             icon: Icon(
               peer.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
@@ -381,6 +398,44 @@ class ContactProfileDialog extends StatelessWidget {
               ],
             ),
           ),
+          if (!peer.isAllUsers && !peer.isGroup && !peer.isAiAssistant) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: theme.colors.accentCyan,
+                  side: BorderSide(
+                    color: theme.colors.accentCyan.withValues(alpha: 0.5),
+                    width: 0.8,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                icon: const Icon(Icons.settings_remote_rounded, size: 15),
+                label: Text(
+                  lang.tr('winrmContactConfig'),
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  showPeerWinrmConfigDialog(
+                    context: context,
+                    peer: peer,
+                    lang: lang,
+                  );
+                },
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -455,3 +510,358 @@ class ContactProfileDialog extends StatelessWidget {
     );
   }
 }
+
+/// Hộp thoại cấu hình WinRM riêng cho liên hệ / máy trạm
+void showPeerWinrmConfigDialog({
+  required BuildContext context,
+  required PeerModel peer,
+  required LanguageProvider lang,
+}) {
+  showGlassDialog(
+    context: context,
+    builder: (ctx) => _PeerWinrmConfigDialog(peer: peer, lang: lang),
+  );
+}
+
+class _PeerWinrmConfigDialog extends StatefulWidget {
+  final PeerModel peer;
+  final LanguageProvider lang;
+
+  const _PeerWinrmConfigDialog({required this.peer, required this.lang});
+
+  @override
+  State<_PeerWinrmConfigDialog> createState() => _PeerWinrmConfigDialogState();
+}
+
+class _PeerWinrmConfigDialogState extends State<_PeerWinrmConfigDialog> {
+  late bool _useCustom;
+  late TextEditingController _userController;
+  late TextEditingController _passController;
+  late TextEditingController _portController;
+  late TextEditingController _customPathController;
+  bool _obscurePassword = true;
+  bool _isTesting = false;
+  String? _testResult;
+  bool? _testSuccess;
+
+  @override
+  void initState() {
+    super.initState();
+    final prefs = AppPreferences();
+    final existing =
+        prefs.getWinrmConfigForPeer(widget.peer.canonicalIdentity) ??
+        prefs.getWinrmConfigForPeer(widget.peer.id);
+    _useCustom = existing?.useCustom ?? false;
+    _userController = TextEditingController(text: existing?.username ?? '');
+    _passController = TextEditingController(text: existing?.password ?? '');
+    _portController = TextEditingController(
+      text:
+          (existing != null && existing.port > 0)
+              ? existing.port.toString()
+              : prefs.winrmDefaultPort.toString(),
+    );
+    _customPathController = TextEditingController(
+      text: existing?.customAppPath ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _userController.dispose();
+    _passController.dispose();
+    _portController.dispose();
+    _customPathController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _testConnection() async {
+    final prefs = AppPreferences();
+    final user =
+        _userController.text.trim().isNotEmpty
+            ? _userController.text.trim()
+            : prefs.winrmDefaultUsername;
+    final pass =
+        _passController.text.isNotEmpty
+            ? _passController.text
+            : prefs.winrmDefaultPassword;
+    final port =
+        int.tryParse(_portController.text.trim()) ?? prefs.winrmDefaultPort;
+    final ip =
+        widget.peer.ip.isNotEmpty
+            ? widget.peer.ip
+            : (widget.peer.knownIps.isNotEmpty
+                ? widget.peer.knownIps.first
+                : '');
+
+    if (ip.isEmpty) {
+      setState(() {
+        _testSuccess = false;
+        _testResult = widget.lang.tr('winrmNoIp');
+      });
+      return;
+    }
+
+    setState(() {
+      _isTesting = true;
+      _testResult = null;
+      _testSuccess = null;
+    });
+
+    final coordinator = context.read<MessengerCoordinator>();
+    final result = await coordinator.winrmLauncher.testConnection(
+      ip: ip,
+      port: port,
+      username: user,
+      password: pass,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _isTesting = false;
+      _testSuccess = result.success;
+      _testResult = result.message;
+    });
+  }
+
+  Future<void> _save() async {
+    final prefs = AppPreferences();
+    if (!_useCustom) {
+      await prefs.setWinrmConfigForPeer(widget.peer.canonicalIdentity, null);
+      await prefs.setWinrmConfigForPeer(widget.peer.id, null);
+    } else {
+      final config = WinrmPeerConfig(
+        useCustom: true,
+        username: _userController.text.trim(),
+        password: _passController.text,
+        port: int.tryParse(_portController.text.trim()) ?? 5985,
+        customAppPath:
+            _customPathController.text.trim().isNotEmpty
+                ? _customPathController.text.trim()
+                : null,
+      );
+      await prefs.setWinrmConfigForPeer(widget.peer.canonicalIdentity, config);
+    }
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ThemeProvider.of(context);
+    final isDark = theme.isDark;
+    final lang = widget.lang;
+
+    return GlassDialog(
+      title: '${lang.tr('winrmConfigure')} - ${widget.peer.displayName}',
+      icon: Icons.settings_remote_rounded,
+      width: 440,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(lang.tr('cancel')),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: theme.colors.accentBlue,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: _save,
+          child: Text(lang.tr('save')),
+        ),
+      ],
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                lang.tr('winrmUseCustomConfig'),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Text(
+                _useCustom
+                    ? lang.tr('winrmUseCustomConfig')
+                    : lang.tr('winrmUseDefaultConfig'),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? Colors.white60 : Colors.black54,
+                ),
+              ),
+              value: _useCustom,
+              activeTrackColor: theme.colors.accentBlue,
+              onChanged: (val) => setState(() => _useCustom = val),
+            ),
+            const SizedBox(height: 8),
+            if (_useCustom) ...[
+              TextField(
+                controller: _userController,
+                style: const TextStyle(fontSize: 12.5),
+                decoration: InputDecoration(
+                  labelText: lang.tr('winrmDefaultUser'),
+                  hintText: AppPreferences().winrmDefaultUsername,
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(
+                    Icons.person_outline_rounded,
+                    size: 16,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _passController,
+                obscureText: _obscurePassword,
+                style: const TextStyle(fontSize: 12.5),
+                decoration: InputDecoration(
+                  labelText: lang.tr('winrmDefaultPass'),
+                  hintText: '••••••••',
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock_outline_rounded, size: 16),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      size: 16,
+                    ),
+                    onPressed:
+                        () => setState(
+                          () => _obscurePassword = !_obscurePassword,
+                        ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _portController,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(fontSize: 12.5),
+                decoration: InputDecoration(
+                  labelText: lang.tr('winrmPort'),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.numbers_rounded, size: 16),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _customPathController,
+                style: const TextStyle(fontSize: 12.5),
+                decoration: InputDecoration(
+                  labelText: lang.tr('winrmCustomAppPath'),
+                  hintText: lang.tr('winrmCustomAppPathHint'),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.folder_open_rounded, size: 16),
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'IP: ${widget.peer.ip.isNotEmpty ? widget.peer.ip : (widget.peer.knownIps.isNotEmpty ? widget.peer.knownIps.first : '—')}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontFamily: 'Consolas',
+                      color: isDark ? Colors.white70 : Colors.black87,
+                    ),
+                  ),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colors.accentCyan,
+                    foregroundColor: Colors.black87,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: _isTesting ? null : _testConnection,
+                  icon:
+                      _isTesting
+                          ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.black87,
+                            ),
+                          )
+                          : const Icon(Icons.network_check_rounded, size: 15),
+                  label: Text(
+                    _isTesting
+                        ? lang.tr('winrmTesting')
+                        : lang.tr('winrmTestConnection'),
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (_testResult != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: (_testSuccess == true ? Colors.green : Colors.red)
+                      .withValues(alpha: isDark ? 0.20 : 0.08),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: (_testSuccess == true ? Colors.green : Colors.red)
+                        .withValues(alpha: 0.5),
+                    width: 0.8,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _testSuccess == true
+                          ? Icons.check_circle_outline_rounded
+                          : Icons.error_outline_rounded,
+                      size: 16,
+                      color: _testSuccess == true ? Colors.green : Colors.red,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _testResult!,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color:
+                              _testSuccess == true
+                                  ? (isDark
+                                      ? Colors.greenAccent
+                                      : Colors.green.shade800)
+                                  : (isDark
+                                      ? Colors.redAccent
+                                      : Colors.red.shade800),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+

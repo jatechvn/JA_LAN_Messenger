@@ -106,16 +106,24 @@ void main() {
         // Allow frames and post frame callbacks to settle (jumping to bottom)
         await tester.pumpAndSettle();
 
-        // At the bottom of the chat list, only the scroll to top button should be present
-        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
+        // At the bottom of the chat list, both buttons should be hidden
+        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsNothing);
         expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
+
+        // Manually drag/scroll upwards into the middle of the chat history
+        await tester.drag(find.byType(ListView).first, const Offset(0, 400));
+        await tester.pumpAndSettle();
+
+        // In the middle after manual scroll, both scroll up and scroll down are visible
+        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
+        expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
 
         // Tap scroll to top
         await tester.tap(find.byIcon(Icons.keyboard_arrow_up_rounded));
         await tester.pumpAndSettle();
 
-        // Now at the top, only scroll to bottom button should be present
-        expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
+        // Now at the top, both buttons are hidden!
+        expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
         expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsNothing);
 
         // Simulate an incoming message while at the top (scrolled up)
@@ -139,6 +147,7 @@ void main() {
           find.text(lang.tr('newMessagesCount').replaceFirst('%d', '1')),
           findsOneWidget,
         );
+        expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
 
         // Tap the new message badge to scroll to bottom
         await tester.tap(
@@ -146,12 +155,12 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // After jumping to bottom, badge is gone and scroll to top button is back
+        // After jumping to bottom, badge is gone and both buttons are hidden at bottom
         expect(
           find.text(lang.tr('newMessagesCount').replaceFirst('%d', '1')),
           findsNothing,
         );
-        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
+        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsNothing);
         expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
       },
     );
@@ -218,12 +227,16 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // In Peer A, scroll up to top
+        // In Peer A, drag up into middle and tap scroll to top
+        await tester.drag(find.byType(ListView).first, const Offset(0, 400));
+        await tester.pumpAndSettle();
+        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
         await tester.tap(find.byIcon(Icons.keyboard_arrow_up_rounded));
         await tester.pumpAndSettle();
 
-        // Now at the top of Peer A
-        expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
+        // Now at the top of Peer A, both buttons hidden
+        expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
+        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsNothing);
 
         // Now switch to Peer B (all read)
         coordinator.selectPeer(peerB);
@@ -231,7 +244,8 @@ void main() {
         await tester.pump(const Duration(milliseconds: 600));
 
         // In Peer B (all read), it must jump to the bottom (latest message) automatically!
-        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
+        // At bottom, both buttons are hidden
+        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsNothing);
         expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
       },
     );
@@ -374,12 +388,13 @@ void main() {
         await tester.pumpAndSettle();
         await tester.pump(const Duration(milliseconds: 600));
 
-        // After jumping to bottom, the unread badge is gone and scroll to top button is active
+        // After jumping to bottom, the unread badge is gone and both buttons are hidden at bottom
         expect(
           find.text(lang.tr('newMessagesCount').replaceFirst('%d', '31')),
           findsNothing,
         );
-        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
+        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsNothing);
+        expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
       },
     );
 
@@ -515,8 +530,8 @@ void main() {
         await tester.pumpAndSettle();
         await tester.pump(const Duration(milliseconds: 600));
 
-        // Chat B has no unread messages, opens at bottom
-        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
+        // Chat B has no unread messages, opens at bottom (both buttons hidden)
+        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsNothing);
         expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
 
         // Switch to Chat C (20 unread)
@@ -656,8 +671,8 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Scroll up to top of history
-        await tester.tap(find.byIcon(Icons.keyboard_arrow_up_rounded));
+        // Scroll up to top of history via drag
+        await tester.drag(find.byType(ListView).first, const Offset(0, 5000));
         await tester.pumpAndSettle();
 
         final scrollableState = tester.state<ScrollableState>(
@@ -673,6 +688,119 @@ void main() {
 
         // Position should remain at top (not auto-scrolled down)
         expect(scrollableState.position.pixels, lessThanOrEqualTo(50.0));
+      },
+    );
+
+    testWidgets(
+      'Manual scroll buttons auto-hide after 2.5s of inactivity in the middle',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() => tester.view.resetPhysicalSize());
+
+        final theme = ThemeProvider();
+        final lang = LanguageProvider();
+        final coordinator = MessengerCoordinator();
+        addTearDown(() => coordinator.dispose());
+
+        final peer = coordinator.allUsersPeer;
+        coordinator.selectPeer(peer);
+
+        final testMessages = List.generate(
+          50,
+          (i) => MessageModel(
+            id: 'msg_idle_$i',
+            senderId: 'remote_user',
+            senderName: 'Remote User',
+            recipientId: peer.id,
+            text: 'Test message $i to enable scrolling',
+            timestamp: DateTime.now().add(Duration(seconds: i)),
+            isMine: false,
+            status: MessageStatus.read,
+          ),
+        );
+        coordinator.conversationsMap[peer.id] = testMessages;
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: theme),
+              ChangeNotifierProvider.value(value: lang),
+              ChangeNotifierProvider.value(value: coordinator),
+            ],
+            child: const MaterialApp(home: Scaffold(body: ChatViewPanel())),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // At bottom: buttons hidden
+        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsNothing);
+        expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
+
+        // Drag to middle
+        await tester.drag(find.byType(ListView).first, const Offset(0, 400));
+        await tester.pumpAndSettle();
+        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
+        expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
+
+        // After 2.6 seconds of inactivity: buttons hide
+        await tester.pump(const Duration(milliseconds: 2600));
+        await tester.pumpAndSettle();
+
+        expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsNothing);
+        expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'Selecting peer or group automatically focuses message input field ready for typing',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() => tester.view.resetPhysicalSize());
+
+        final theme = ThemeProvider();
+        final lang = LanguageProvider();
+        final coordinator = MessengerCoordinator();
+        addTearDown(() => coordinator.dispose());
+
+        final peerA = PeerModel(
+          id: 'peer_focus_a',
+          name: 'User A',
+          ip: '10.0.0.1',
+        );
+        final peerB = PeerModel(
+          id: 'peer_focus_b',
+          name: 'User B',
+          ip: '10.0.0.2',
+        );
+
+        coordinator.selectPeer(peerA);
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: theme),
+              ChangeNotifierProvider.value(value: lang),
+              ChangeNotifierProvider.value(value: coordinator),
+            ],
+            child: const MaterialApp(home: Scaffold(body: ChatViewPanel())),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        final textFieldFinder = find.byType(TextField);
+        expect(textFieldFinder, findsOneWidget);
+        final textField = tester.widget<TextField>(textFieldFinder);
+        expect(textField.focusNode?.hasFocus, isTrue);
+
+        // Switch to Peer B
+        coordinator.selectPeer(peerB);
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(textField.focusNode?.hasFocus, isTrue);
       },
     );
   });

@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.4.1
+# Hướng dẫn sử dụng JA LAN Messenger v1.5.0
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.4.1_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.5.0_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -29,9 +29,11 @@
 - Khi khởi động, ứng dụng tự động phát sóng gói tin UDP Discovery trên cổng `36475` để tìm các máy tính khác trong cùng dải mạng LAN.
 - **Thêm máy thủ công:** Nếu máy đồng nghiệp ở lớp mạng (subnet) khác hoặc kết nối qua VPN, nhấn nút biểu tượng `+` (Thêm IP) trên danh bạ và nhập địa chỉ IPv4 của máy đó.
 
-### 2.2. Trò chuyện & Truyền tập tin tốc độ cao
+### 2.2. Trò chuyện, Rung chuông & Khởi chạy từ xa qua WinRM
 - **Nhắn tin tức thì:** Gõ tin nhắn và bấm `Enter` để gửi (`Shift + Enter` để xuống dòng).
-- **Rung chuông (Nudge):** Nhấn nút biểu tượng chuông để gửi tín hiệu chú ý tức thì tới máy đối phương.
+- **Rung chuông (Buzz / Nudge):**
+  - Khi đối phương đang **Online**: Nhấn nút chuông để rung chuông thông thường tức thì.
+  - Khi đối phương đang **Offline**: Nút Buzz tự động kích hoạt khởi chạy ứng dụng từ xa trên máy đối phương thông qua dịch vụ WinRM (mặc định user/pass: `FT`/`123`, mật khẩu lưu trữ mã hóa AES-256 an toàn và có thể cấu hình riêng cho từng đồng nghiệp). Khi ứng dụng trên máy đối phương bật lên và bắt tay mạng thành công, hệ thống sẽ tự động rung chuông ngay.
 - **Đính kèm tập tin lớn:** Nhấn biểu tượng kẹp giấy hoặc dán (`Ctrl + V`) ảnh/tệp từ Clipboard. File được stream trực tiếp qua kết nối TCP cổng `6476` với tốc độ tối đa của switch mạng mà không ngốn RAM.
 
 ### 2.3. Trích dẫn & Ghim tin nhắn (Quote & Pin)
@@ -59,8 +61,8 @@
 - **Lưu trữ lịch sử an toàn:** Cơ chế ghi đĩa nguyên tử (atomic file write) bảo vệ lịch sử trò chuyện không bị hỏng file hay mất dữ liệu khi tắt máy đột ngột.
 
 ### 2.7. Tự động cập nhật OTA qua mạng nội bộ (Over-The-Air Update)
-- **Tự động quét bản mới:** Tích hợp kiểm tra cập nhật qua thư mục mạng chia sẻ nội bộ (SMB/UNC, ví dụ: `\\10.81.141.226\temp\...\JA_LAN_Messenger`).
-- **Chu kỳ linh hoạt:** Trong **Cài đặt > Tab Cập nhật OTA**, bạn có thể chọn tần suất: *Hàng ngày, Hàng tuần, Hàng tháng, hoặc Tắt*.
+- **Tự động quét bản mới:** Tích hợp kiểm tra cập nhật qua thư mục mạng chia sẻ nội bộ (SMB/UNC, ví dụ: `\\10.81.141.226\temp\FBT\JA_PROJECT\JA_Update\JA_LAN_Messenger`).
+- **Nút chọn nhanh chu kỳ (Quick Selection Buttons):** Trong **Cài đặt > Tab Cập nhật OTA**, bạn có thể chọn nhanh tần suất bằng các nút trực quan 1-chạm: *Hàng ngày, Hàng tuần, Hàng tháng, hoặc Tắt*.
 - **Cấu hình độc lập:** Có thể cấu hình trực tiếp trong app hoặc qua file `update_config.json` đặt cạnh ứng dụng.
 - **Cập nhật 1-chạm:** Khi có bản cập nhật mới, thanh tiêu đề hiển thị huy hiệu xanh lá `vX.Y.Z`. Bấm vào để mở hộp thoại xem Release Notes và bấm "Cập nhật ngay" để tự động tải, giải nén và khởi động lại phiên bản mới.
 

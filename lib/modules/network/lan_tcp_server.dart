@@ -102,16 +102,23 @@ class LanTcpServer {
           final local = '${socket.address.address}:$_port';
           final preferOutgoing = local.compareTo(endpoint!) < 0;
           if (outgoing != preferOutgoing) {
+            session.closeCategory = 'duplicate_rejected';
             session.close();
             return;
           }
         }
         _sessions[endpoint!] = session;
+        if (previous != null) previous.closeCategory = 'session_replaced';
         previous?.close();
+        Logger(
+          'Diagnostics',
+        ).info('peer_connected endpoint=$endpoint outgoing=$outgoing');
         onHandshake?.call(remoteIp, hello, socket);
       },
       onMessage: (message) {
-        if (endpoint == null) return;
+        if (endpoint == null || !identical(_sessions[endpoint], session)) {
+          return;
+        }
         onActivity?.call(endpoint!);
         final header = message['header'] as String,
             text = message['text'] as String;
@@ -175,9 +182,11 @@ class LanTcpServer {
         }
       },
       onClosed: () {
-        Logger(
-          'Diagnostics',
-        ).info('peer_disconnected error=${session.error != null}');
+        Logger('Diagnostics').info(
+          'peer_disconnected endpoint=${endpoint ?? remoteIp} '
+          'outgoing=$outgoing active=${identical(_sessions[endpoint], session)} '
+          'reason=${session.closeCategory} error=${session.error != null}',
+        );
         _allSessions.remove(session);
         if (endpoint != null && identical(_sessions[endpoint], session)) {
           _sessions.remove(endpoint);

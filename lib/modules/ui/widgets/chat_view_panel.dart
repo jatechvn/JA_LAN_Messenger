@@ -4,6 +4,8 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -70,15 +72,59 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
   String? _activeUnreadSeparatorMessageId;
   final GlobalKey _unreadSeparatorKey = GlobalKey();
 
+  // Manual scroll detection & focus handling
+  int _lastHandledFocusRequestId = -1;
+  bool _isManualScrolling = false;
+  bool _isProgrammaticScroll = false;
+  Timer? _manualScrollHideTimer;
+
+  Timer? _focusTimer;
+
+  void _requestInputFocus() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_inputFocusNode.canRequestFocus) {
+        _inputFocusNode.requestFocus();
+      }
+    });
+    _focusTimer?.cancel();
+    _focusTimer = Timer(const Duration(milliseconds: 60), () {
+      if (mounted &&
+          _inputFocusNode.canRequestFocus &&
+          !_inputFocusNode.hasFocus) {
+        _inputFocusNode.requestFocus();
+      }
+    });
+  }
+
+  void _onManualScrollTriggered() {
+    if (!mounted || _isProgrammaticScroll) return;
+    _manualScrollHideTimer?.cancel();
+    if (!_isManualScrolling) {
+      _isManualScrolling = true;
+    }
+    _updateScrollState();
+
+    _manualScrollHideTimer = Timer(const Duration(milliseconds: 2500), () {
+      if (mounted) {
+        _isManualScrolling = false;
+        _updateScrollState();
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _inputFocusNode = FocusNode();
     _scrollController.addListener(_onScroll);
+    _requestInputFocus();
   }
 
   @override
   void dispose() {
+    _focusTimer?.cancel();
+    _manualScrollHideTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     _typingDebounceTimer?.cancel();
     _highlightTimer?.cancel();
@@ -99,12 +145,21 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
     final current = pos.pixels;
 
     final hasScrollableContent = max > 50.0;
-    final isAtTop = current <= 40.0;
-    final isAtBottom = (max - current) <= 40.0;
+    final isAtTop = current <= 50.0;
+    final isAtBottom = (max - current) <= 50.0;
     final isNearBottom = (max - current) <= 140.0;
 
-    final showScrollToTop = hasScrollableContent && !isAtTop;
-    final showScrollToBottom = hasScrollableContent && !isAtBottom;
+    // Both buttons hide when sát đầu (isAtTop) or sát cuối (isAtBottom)!
+    // They only appear when the user is scrolling manually in the middle of the chat history,
+    // or if there is an unread badge below and not at bottom.
+    final isMiddle = !isAtTop && !isAtBottom;
+
+    final showScrollToTop =
+        hasScrollableContent && _isManualScrolling && isMiddle;
+    final showScrollToBottom =
+        hasScrollableContent &&
+        ((_isManualScrolling && isMiddle) ||
+            (_unreadBelowCount > 0 && !isAtBottom));
     final newUnreadCount = isAtBottom ? 0 : _unreadBelowCount;
 
     if (isAtBottom && _unreadBelowCount > 0) {
@@ -134,16 +189,31 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
   }
 
   void _scrollToTop({bool smooth = true}) {
+    _isProgrammaticScroll = true;
+    _manualScrollHideTimer?.cancel();
+    _isManualScrolling = false;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
+      if (!_scrollController.hasClients) {
+        _isProgrammaticScroll = false;
+        return;
+      }
       if (smooth) {
-        _scrollController.animateTo(
-          0.0,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOutCubic,
-        );
+        _scrollController
+            .animateTo(
+              0.0,
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+            )
+            .then((_) {
+              if (mounted) {
+                _isProgrammaticScroll = false;
+                _updateScrollState();
+              }
+            });
       } else {
         _scrollController.jumpTo(0.0);
+        _isProgrammaticScroll = false;
+        _updateScrollState();
       }
     });
   }
@@ -154,6 +224,10 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
       final pos = _scrollController.position;
       final isNearBottom = (pos.maxScrollExtent - pos.pixels) <= 140.0;
       if (!force && !isNearBottom) return;
+
+      _isProgrammaticScroll = true;
+      _manualScrollHideTimer?.cancel();
+      _isManualScrolling = false;
 
       if (smooth) {
         _scrollController
@@ -168,6 +242,7 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
                 if ((p.maxScrollExtent - p.pixels) > 5.0) {
                   _scrollController.jumpTo(p.maxScrollExtent);
                 }
+                _isProgrammaticScroll = false;
                 _updateScrollState();
               }
             });
@@ -178,7 +253,14 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
   }
 
   void _performJumpToBottom({int remainingAttempts = 6}) {
-    if (!mounted || !_scrollController.hasClients) return;
+    if (!mounted || !_scrollController.hasClients) {
+      _isProgrammaticScroll = false;
+      return;
+    }
+    _isProgrammaticScroll = true;
+    _manualScrollHideTimer?.cancel();
+    _isManualScrolling = false;
+
     final pos = _scrollController.position;
     final diff = pos.maxScrollExtent - pos.pixels;
     if (diff.abs() > 2.0 && remainingAttempts > 0) {
@@ -190,6 +272,7 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
       if (diff.abs() > 2.0) {
         _scrollController.jumpTo(pos.maxScrollExtent);
       }
+      _isProgrammaticScroll = false;
       _updateScrollState();
     }
   }
@@ -205,11 +288,19 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
     final targetOffset =
         targetFraction * _scrollController.position.maxScrollExtent;
 
-    _scrollController.animateTo(
-      targetOffset,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOutCubic,
-    );
+    _isProgrammaticScroll = true;
+    _scrollController
+        .animateTo(
+          targetOffset,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOutCubic,
+        )
+        .then((_) {
+          if (mounted) {
+            _isProgrammaticScroll = false;
+            _updateScrollState();
+          }
+        });
 
     setState(() {
       _highlightedMessageId = messageId;
@@ -358,6 +449,11 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
       return const _EmptyChatView();
     }
 
+    if (coordinator.chatFocusRequestId != _lastHandledFocusRequestId) {
+      _lastHandledFocusRequestId = coordinator.chatFocusRequestId;
+      _requestInputFocus();
+    }
+
     final messages = coordinator.currentMessages;
     final isPeerTyping =
         (!peer.isAllUsers &&
@@ -369,6 +465,9 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
     final isPeerChanged = _lastPeerId != peer.id;
     if (isPeerChanged) {
       _lastPeerId = peer.id;
+      _isManualScrolling = false;
+      _manualScrollHideTimer?.cancel();
+      _requestInputFocus();
       _stagedAttachments.clear();
       _replyingToMessage = null;
       _currentPinnedIndex = 0;
@@ -412,13 +511,24 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
     } else if (_pendingJumpToUnread &&
         _activeUnreadSeparatorMessageId != null) {
       _pendingJumpToUnread = false;
+      _isProgrammaticScroll = true;
+      _isManualScrolling = false;
       final targetId = _activeUnreadSeparatorMessageId!;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_scrollController.hasClients) return;
+        if (!mounted || !_scrollController.hasClients) {
+          _isProgrammaticScroll = false;
+          return;
+        }
         final index = messages.indexWhere((m) => m.id == targetId);
-        if (index == -1) return;
+        if (index == -1) {
+          _isProgrammaticScroll = false;
+          return;
+        }
         final total = messages.length;
-        if (total == 0) return;
+        if (total == 0) {
+          _isProgrammaticScroll = false;
+          return;
+        }
 
         // Frame 1: Approximate jump to target area to materialize widgets in ListView viewport
         final targetFraction = (index / total).clamp(0.0, 1.0);
@@ -428,7 +538,10 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
 
         // Frame 2: Ensure pixel-perfect visible alignment with unread separator at ~8% from top
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
+          if (!mounted) {
+            _isProgrammaticScroll = false;
+            return;
+          }
           final ctx = _unreadSeparatorKey.currentContext;
           if (ctx != null) {
             Scrollable.ensureVisible(
@@ -436,9 +549,16 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
               alignment: 0.08,
               duration: const Duration(milliseconds: 80),
               curve: Curves.easeOutQuad,
-            );
+            ).then((_) {
+              if (mounted) {
+                _isProgrammaticScroll = false;
+                _updateScrollState();
+              }
+            });
+          } else {
+            _isProgrammaticScroll = false;
+            _updateScrollState();
           }
-          _updateScrollState();
         });
       });
     }
@@ -536,80 +656,115 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      NotificationListener<ScrollNotification>(
-                        onNotification: (notification) {
-                          _updateScrollState();
-                          return false;
+                      Listener(
+                        onPointerSignal: (pointerSignal) {
+                          if (pointerSignal is PointerScrollEvent &&
+                              pointerSignal.scrollDelta.dy.abs() > 0.1) {
+                            _onManualScrollTriggered();
+                          }
                         },
-                        child: messages.isEmpty && !isPeerTyping
-                            ? _NoMessagesState(
-                                peerName: peer.effectiveDisplayName(lang),
-                              )
-                            : ListView.builder(
-                                controller: _scrollController,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                                itemCount: totalItems,
-                                itemBuilder: (context, index) {
-                                  if (index < messages.length) {
-                                    final msg = messages[index];
-                                    final isFirstUnread =
-                                        msg.id ==
-                                        _activeUnreadSeparatorMessageId;
-                                    final bubble = _MessageBubble(
-                                      message: msg,
-                                      isHighlighted:
-                                          msg.id == _highlightedMessageId,
-                                      onReply: (m) {
-                                        setState(() {
-                                          _replyingToMessage = m;
-                                        });
-                                        _inputFocusNode.requestFocus();
-                                      },
-                                      onScrollToMessage: (id) =>
-                                          _scrollToMessage(id, messages),
-                                    );
-
-                                    if (isFirstUnread) {
-                                      return Column(
-                                        key: _unreadSeparatorKey,
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.stretch,
-                                        children: [
-                                          const _UnreadSeparatorBanner(),
-                                          bubble,
-                                        ],
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: (notification) {
+                            if (!_isProgrammaticScroll) {
+                              if (notification is UserScrollNotification &&
+                                  notification.direction !=
+                                      ScrollDirection.idle) {
+                                _onManualScrollTriggered();
+                              } else if (notification
+                                      is ScrollUpdateNotification &&
+                                  notification.dragDetails != null) {
+                                _onManualScrollTriggered();
+                              } else if (notification
+                                      is ScrollStartNotification &&
+                                  notification.dragDetails != null) {
+                                _onManualScrollTriggered();
+                              }
+                            }
+                            _updateScrollState();
+                            return false;
+                          },
+                          child: messages.isEmpty && !isPeerTyping
+                              ? _NoMessagesState(
+                                  peerName: peer.effectiveDisplayName(lang),
+                                )
+                              : ListView.builder(
+                                  controller: _scrollController,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  itemCount: totalItems,
+                                  itemBuilder: (context, index) {
+                                    if (index < messages.length) {
+                                      final msg = messages[index];
+                                      final isFirstUnread =
+                                          msg.id ==
+                                          _activeUnreadSeparatorMessageId;
+                                      final bubble = _MessageBubble(
+                                        message: msg,
+                                        isHighlighted:
+                                            msg.id == _highlightedMessageId,
+                                        onReply: (m) {
+                                          setState(() {
+                                            _replyingToMessage = m;
+                                          });
+                                          _inputFocusNode.requestFocus();
+                                        },
+                                        onScrollToMessage: (id) =>
+                                            _scrollToMessage(id, messages),
                                       );
+
+                                      if (isFirstUnread) {
+                                        return Column(
+                                          key: _unreadSeparatorKey,
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            const _UnreadSeparatorBanner(),
+                                            bubble,
+                                          ],
+                                        );
+                                      }
+                                      return bubble;
+                                    } else {
+                                      return _TypingIndicatorBubble(peer: peer);
                                     }
-                                    return bubble;
-                                  } else {
-                                    return _TypingIndicatorBubble(peer: peer);
-                                  }
-                                },
-                              ),
+                                  },
+                                ),
+                        ),
                       ),
-                      if (_hasScrollableContent &&
-                          (_showScrollToTop || _showScrollToBottom))
-                        Positioned(
-                          right: 18,
-                          bottom: 12,
-                          child: _ChatScrollControls(
-                            showScrollToTop: _showScrollToTop,
-                            showScrollToBottom: _showScrollToBottom,
-                            unreadBelowCount: _unreadBelowCount,
-                            onScrollToTop: () => _scrollToTop(smooth: true),
-                            onScrollToBottom: () {
-                              setState(() {
-                                _unreadBelowCount = 0;
-                              });
-                              coordinator.markConversationAsRead(peer.id);
-                              _scrollToBottom(force: true, smooth: true);
-                            },
+                      Positioned(
+                        right: 18,
+                        bottom: 12,
+                        child: AnimatedOpacity(
+                          opacity:
+                              (_hasScrollableContent &&
+                                  (_showScrollToTop || _showScrollToBottom))
+                              ? 1.0
+                              : 0.0,
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeOutCubic,
+                          child: IgnorePointer(
+                            ignoring:
+                                !(_hasScrollableContent &&
+                                    (_showScrollToTop || _showScrollToBottom)),
+                            child: _ChatScrollControls(
+                              showScrollToTop: _showScrollToTop,
+                              showScrollToBottom: _showScrollToBottom,
+                              unreadBelowCount: _unreadBelowCount,
+                              onScrollToTop: () => _scrollToTop(smooth: true),
+                              onScrollToBottom: () {
+                                setState(() {
+                                  _unreadBelowCount = 0;
+                                });
+                                coordinator.markConversationAsRead(peer.id);
+                                _scrollToBottom(force: true, smooth: true);
+                              },
+                            ),
                           ),
                         ),
+                      ),
                     ],
                   ),
                 ),
@@ -1236,7 +1391,11 @@ class _ChatHeader extends StatelessWidget {
             ] else ...[
               _BuzzActionButton(
                 onPressed: onBuzz,
-                tooltip: lang.tr('nudge'),
+                tooltip: (!peer.isAllUsers &&
+                        !peer.isGroup &&
+                        peer.status == PeerStatus.offline)
+                    ? lang.tr('buzzOfflineTooltip')
+                    : lang.tr('nudge'),
                 size: 34,
                 defaultColor: theme.colors.accentAmber,
               ),
@@ -2196,8 +2355,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
           )
         : null;
 
+    final localTime = message.timestamp.toLocal();
     final timeStr =
-        '${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}';
+        '${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}';
 
     final attachment = message.fileAttachment;
     final file = attachment?.localPath != null
@@ -3705,6 +3865,10 @@ class _ChatInputDockState extends State<_ChatInputDock> {
     final coordinator = context.watch<MessengerCoordinator>();
     final isAiChat = coordinator.selectedPeer?.isAiAssistant == true;
     final isAiBusy = isAiChat && coordinator.isAiActive;
+    final isTargetOffline = coordinator.selectedPeer != null &&
+        !coordinator.selectedPeer!.isAllUsers &&
+        !coordinator.selectedPeer!.isGroup &&
+        coordinator.selectedPeer!.status == PeerStatus.offline;
 
     final dockOpacity = theme.isDark
         ? (0.35 + theme.cardOpacity * 0.55).clamp(0.35, 0.96)
@@ -4137,7 +4301,9 @@ class _ChatInputDockState extends State<_ChatInputDock> {
                           const SizedBox(width: 2),
                           _BuzzActionButton(
                             onPressed: widget.onBuzz,
-                            tooltip: lang.tr('nudge'),
+                            tooltip: isTargetOffline
+                                ? lang.tr('buzzOfflineTooltip')
+                                : lang.tr('nudge'),
                             size: 32,
                             defaultColor: theme.isDark
                                 ? Colors.white70

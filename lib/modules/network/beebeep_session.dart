@@ -25,6 +25,9 @@ class BeebeepSession {
   Timer? _timer;
   DateTime _lastRead = DateTime.now();
   String? error;
+  // Controlled diagnostic category only; never persist payloads or raw errors.
+  String closeCategory = 'local_close';
+  String _readStage = 'frame';
   int? peerPort;
   bool get isReady => _authenticated && !_closed;
 
@@ -42,12 +45,19 @@ class BeebeepSession {
     socket.setOption(SocketOption.tcpNoDelay, true);
     socket.listen(
       _read,
-      onError: (Object e) => close(e.toString()),
-      onDone: close,
+      onError: (Object e) {
+        closeCategory = 'socket_error';
+        close(e.toString());
+      },
+      onDone: () {
+        if (!_closed) closeCategory = 'remote_eof';
+        close();
+      },
     );
     if (outgoing) _sendHello();
     _timer = Timer.periodic(const Duration(seconds: 7), (_) {
       if (DateTime.now().difference(_lastRead).inSeconds > 28) {
+        closeCategory = 'read_timeout';
         close('BeeBEEP connection timeout');
       } else if (isReady && onData == null) {
         send(
@@ -115,6 +125,7 @@ class BeebeepSession {
       socket.add(frame(crypt(payload, _key, encrypt: true), hello: false));
       return true;
     } catch (e) {
+      closeCategory = 'send_error';
       close(e.toString());
       return false;
     }
@@ -125,6 +136,7 @@ class BeebeepSession {
     _buffer.addAll(bytes);
     try {
       while (!_closed) {
+        _readStage = 'frame';
         final prefix = _authenticated ? 4 : 2;
         if (_buffer.length < prefix + 4) return;
         final view = ByteData.sublistView(
@@ -141,15 +153,19 @@ class BeebeepSession {
         if (_buffer.length < size + prefix) return;
         final cipher = _buffer.sublist(prefix + 4, prefix + size);
         _buffer.removeRange(0, prefix + size);
+        _readStage = 'decrypt';
         final plain = crypt(cipher, _key, encrypt: false);
         if (_authenticated && onData != null) {
           _lastRead = DateTime.now();
+          _readStage = 'data_callback';
           onData!(plain);
           continue;
         }
+        _readStage = 'utf8';
         final payload = utf8.decode(plain);
         _lastRead = DateTime.now();
         if (!_authenticated) {
+          _readStage = 'hello';
           final hello = ProtocolBeebeep.parseHelloPacket(payload);
           if (hello == null ||
               (hello['protocolVersion'] as int) < 90 ||
@@ -164,14 +180,17 @@ class BeebeepSession {
               'Unsupported or unauthenticated BeeBEEP HELLO',
             );
           }
+          _readStage = 'key_exchange';
           final nextKey = _keys.derive(hello['publicKey'] as String);
           _sendHello();
           _key = nextKey;
           _authenticated = true;
           peerPort = hello['port'] as int;
+          _readStage = 'hello_callback';
           onHello(hello);
           if (!ready.isCompleted) ready.complete(true);
         } else {
+          _readStage = 'message';
           final message = ProtocolBeebeep.parseMessage(payload);
           if (message == null) {
             throw const FormatException('Invalid BeeBEEP message');
@@ -185,11 +204,13 @@ class BeebeepSession {
               ),
             );
           } else {
+            _readStage = 'message_callback';
             onMessage(message);
           }
         }
       }
     } catch (e) {
+      closeCategory = '${_readStage}_error';
       close(e.toString());
     }
   }

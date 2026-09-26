@@ -1,6 +1,6 @@
 # JA LAN Messenger
 
-[![Version](https://img.shields.io/badge/version-1.4.1-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](CHANGELOG.md)
 [![Flutter Version](https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter)](https://flutter.dev)
 [![Dart Version](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com/windows)
@@ -13,6 +13,8 @@ A modern, ultra-lightweight, high-performance **Peer-to-Peer (P2P) Office LAN Me
 
 ## ⚡ Key Highlights
 
+- **Remote WinRM App Launch & Auto-Buzz**: Automatically launches the peer's desktop application remotely via Windows Remote Management (WinRM) into an interactive session (`SessionId > 0`) when ringing (Buzz) an offline peer, with automatic auto-buzz delivery upon peer startup.
+- **AES-256 Protected WinRM Credentials**: End-to-end device-bound AES-256 encrypted credential storage with per-peer override and secure in-memory execution via temporary scripts.
 - **Serverless Decentralized P2P with Offline Outbox Auto-Retry**: Zero central server setup required. Instant plug-and-play communication in local networks with automatic outbox queuing and sequential history catch-up whenever offline peers reconnect.
 - **Personal & Group Avatar Synchronization**: Custom image upload, rich preset icons, and color paletting with automatic ultra-lightweight Base64 LAN thumbnail synchronization across peers.
 - **System Tray Icon Badge Counter**: Real-time unread message counter badge painted directly onto the Windows system tray icon via native Win32 GDI rendering.

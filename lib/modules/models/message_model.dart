@@ -89,7 +89,7 @@ class MessageModel {
     this.sourceSession,
     this.fileAttachment,
     this.isRevoked = false,
-    this.revokedAt,
+    DateTime? revokedAt,
     this.thinkingContent,
     this.isThinkingExpanded = true,
     this.aiModelTag,
@@ -99,7 +99,8 @@ class MessageModel {
     this.replyToText,
     this.isPinned = false,
     Map<String, List<String>>? reactions,
-  }) : timestamp = timestamp ?? DateTime.now(),
+  }) : timestamp = (timestamp ?? DateTime.now()).toLocal(),
+       revokedAt = revokedAt?.toLocal(),
        reactions = reactions ?? {};
 
   bool get hasAttachment => fileAttachment != null && !isRevoked;
@@ -177,10 +178,11 @@ class MessageModel {
     }
 
     final ts = json['timestamp'] != null
-        ? DateTime.tryParse(json['timestamp'] as String) ?? DateTime.now()
+        ? DateTime.tryParse(json['timestamp'] as String)?.toLocal() ??
+            DateTime.now()
         : DateTime.now();
     final revAt = json['revokedAt'] != null
-        ? DateTime.tryParse(json['revokedAt'] as String)
+        ? DateTime.tryParse(json['revokedAt'] as String)?.toLocal()
         : null;
 
     final attachmentJson = json['fileAttachment'] as Map<String, dynamic>?;

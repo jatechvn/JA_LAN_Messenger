@@ -561,6 +561,7 @@ class _CompactPeerItemTileState extends State<_CompactPeerItemTile> {
           ),
         ),
         child: InkWell(
+          canRequestFocus: false,
           onTap: widget.onTap,
           borderRadius: BorderRadius.circular(10),
           child: Padding(

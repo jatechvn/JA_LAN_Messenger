@@ -601,6 +601,7 @@ class _PinnedAllUsersTile extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
+        canRequestFocus: false,
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Container(
@@ -772,6 +773,7 @@ class _GroupListTile extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
+          canRequestFocus: false,
           onTap: onTap,
           borderRadius: BorderRadius.circular(10),
           child: Padding(
@@ -904,13 +906,16 @@ class _GroupListTile extends StatelessWidget {
   }
 
   static String _formatTime(DateTime dt) {
+    final localDt = dt.toLocal();
     final now = DateTime.now();
-    if (now.year == dt.year && now.month == dt.month && now.day == dt.day) {
-      final h = dt.hour.toString().padLeft(2, '0');
-      final m = dt.minute.toString().padLeft(2, '0');
+    if (now.year == localDt.year &&
+        now.month == localDt.month &&
+        now.day == localDt.day) {
+      final h = localDt.hour.toString().padLeft(2, '0');
+      final m = localDt.minute.toString().padLeft(2, '0');
       return '$h:$m';
     }
-    return '${dt.day}/${dt.month}';
+    return '${localDt.day}/${localDt.month}';
   }
 }
 
@@ -951,6 +956,7 @@ class _PeerListTile extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
+          canRequestFocus: false,
           onTap: onTap,
           onSecondaryTapDown: (details) =>
               _showContextMenu(context, details.globalPosition),
