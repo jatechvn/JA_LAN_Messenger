@@ -12,6 +12,7 @@ import '../models/peer_model.dart';
 import '../services/messenger_coordinator.dart';
 import '../services/app_preferences.dart';
 import '../services/tray_badge_service.dart';
+import '../services/tray_window_toggle.dart';
 import '../constants.dart';
 import '../build_info.dart';
 import 'widgets/compact_sidebar.dart';
@@ -38,6 +39,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
     with WindowListener, TrayListener {
   MainViewTab _activeTab = MainViewTab.chats;
   bool _showDetailsPanel = false;
+  final _trayWindowToggle = TrayWindowToggle();
 
   @override
   void initState() {
@@ -182,14 +184,10 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
 
   @override
   void onTrayIconMouseDown() async {
-    final isVisible = await windowManager.isVisible();
-    if (isVisible) {
-      await windowManager.restore();
-      await windowManager.focus();
-    } else {
-      await windowManager.show();
-      await windowManager.restore();
-      await windowManager.focus();
+    try {
+      await _trayWindowToggle.toggle();
+    } catch (e) {
+      debugPrint('[Tray] onTrayIconMouseDown error: $e');
     }
   }
 

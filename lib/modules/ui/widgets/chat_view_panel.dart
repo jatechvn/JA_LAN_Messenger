@@ -29,6 +29,8 @@ import 'group_mention_picker.dart';
 import '../../ime/ime_service.dart';
 import 'pinyin_candidate_bar.dart';
 import 'ime_toggle_button.dart';
+import '../../services/message_entity_detector.dart';
+import '../../services/quick_action_helper.dart';
 
 class ChatViewPanel extends StatefulWidget {
   final bool isDetailsOpen;
@@ -831,6 +833,7 @@ class _ChatHeader extends StatelessWidget {
     final isGroupTyping = peer.isGroup && coordinator.isGroupTyping(peer.id);
 
     final isAi = peer.isAiAssistant;
+    final isHeaderCompact = isCompact || isDetailsOpen;
     final selectedAiModel = AppPreferences().aiSelectedModel;
     final currentModelInfo = AiModelInfo.findById(selectedAiModel);
     final isThinkingOn = AppPreferences().aiThinkingEnabled;
@@ -860,8 +863,9 @@ class _ChatHeader extends StatelessWidget {
       effectiveSubtitle =
           '${coordinator.groupMembers(peer.id).length} ${lang.tr('groupMembersCount')}';
     } else {
-      effectiveSubtitle =
-          'IP: ${peer.ip}:${peer.port} ${peer.workgroup.isNotEmpty ? "• ${peer.workgroup}" : ""}';
+      effectiveSubtitle = isHeaderCompact
+          ? 'IP: ${peer.ip}'
+          : 'IP: ${peer.ip}:${peer.port} ${peer.workgroup.isNotEmpty ? "• ${peer.workgroup}" : ""}';
     }
 
     final effectiveOpacity = (theme.cardOpacity * (theme.isDark ? 0.95 : 0.85))
@@ -870,9 +874,12 @@ class _ChatHeader extends StatelessWidget {
     final headerBg = (theme.isDark ? const Color(0xFF0F172A) : Colors.white)
         .withValues(alpha: effectiveOpacity);
 
+    final btnSize = isHeaderCompact ? 30.0 : 34.0;
+    final btnGap = isHeaderCompact ? 2.0 : 4.0;
+
     Widget content = Container(
       height: 54,
-      padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 16),
+      padding: EdgeInsets.symmetric(horizontal: isHeaderCompact ? 10 : 16),
       decoration: BoxDecoration(
         color: headerBg,
         border: Border(
@@ -911,7 +918,7 @@ class _ChatHeader extends StatelessWidget {
                     peer: peer,
                     size: 34,
                     showStatus:
-                        isCompact && !peer.isAllUsers && !peer.isGroup && !isAi,
+                        isHeaderCompact && !peer.isAllUsers && !peer.isGroup && !isAi,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -942,7 +949,7 @@ class _ChatHeader extends StatelessWidget {
                           Row(
                             children: [
                               Flexible(
-                                child: isCompact
+                                child: isHeaderCompact
                                     ? BounceMarqueeText(
                                         text: effectiveName,
                                         style: TextStyle(
@@ -996,7 +1003,7 @@ class _ChatHeader extends StatelessWidget {
                                   ),
                                 ),
                               ],
-                              if (!isCompact &&
+                              if (!isHeaderCompact &&
                                   !peer.isGroup &&
                                   !peer.isAllUsers &&
                                   !isAi) ...[
@@ -1372,7 +1379,7 @@ class _ChatHeader extends StatelessWidget {
                 icon: Icons.cleaning_services_rounded,
                 tooltip: lang.tr('clearAiChat'),
                 color: theme.colors.accentRose,
-                size: 34,
+                size: btnSize,
                 onPressed: () {
                   showGlassDialog(
                     context: context,
@@ -1413,11 +1420,11 @@ class _ChatHeader extends StatelessWidget {
                         peer.status == PeerStatus.offline)
                     ? lang.tr('buzzOfflineTooltip')
                     : lang.tr('nudge'),
-                size: 34,
+                size: btnSize,
                 defaultColor: theme.colors.accentAmber,
               ),
             ],
-            const SizedBox(width: 4),
+            SizedBox(width: btnGap),
             GlassIconButton(
               icon: peer.isPinned
                   ? Icons.push_pin_rounded
@@ -1428,18 +1435,18 @@ class _ChatHeader extends StatelessWidget {
               color: peer.isPinned
                   ? theme.colors.accentAmber
                   : (theme.isDark ? Colors.white70 : Colors.black87),
-              size: 34,
+              size: btnSize,
               onPressed: () => coordinator.togglePinPeer(peer.id),
             ),
             if (onToggleDetails != null && !isAi) ...[
-              const SizedBox(width: 4),
+              SizedBox(width: btnGap),
               GlassIconButton(
                 icon: Icons.dock_rounded,
                 tooltip: lang.tr('toggleDetails'),
                 color: isDetailsOpen
                     ? theme.colors.accentBlue
                     : (theme.isDark ? Colors.white70 : Colors.black87),
-                size: 34,
+                size: btnSize,
                 onPressed: onToggleDetails,
               ),
             ],
@@ -2014,6 +2021,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
   ) async {
     const emojis = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉'];
     final isPinned = widget.message.isPinned;
+    final entities = MessageEntityDetector.extractEntities(widget.message.text);
     final value = await showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(
@@ -2150,10 +2158,99 @@ class _MessageBubbleState extends State<_MessageBubble> {
               ],
             ),
           ),
+        if (entities.isNotEmpty) ...[
+          const PopupMenuDivider(height: 1),
+          for (int i = 0; i < entities.length; i++) ...[
+            PopupMenuItem<String>(
+              value: 'entity_open_$i',
+              height: 34,
+              child: Row(
+                children: [
+                  Icon(
+                    entities[i].type == MessageEntityType.url
+                        ? Icons.language_rounded
+                        : (entities[i].type == MessageEntityType.phone
+                            ? Icons.phone_rounded
+                            : (entities[i].type == MessageEntityType.email
+                                ? Icons.mail_outline_rounded
+                                : Icons.folder_open_rounded)),
+                    size: 15,
+                    color: Theme.of(context).primaryColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      entities[i].type == MessageEntityType.url
+                          ? '${lang.tr('openLink')}: ${entities[i].label}'
+                          : (entities[i].type == MessageEntityType.phone
+                              ? '${lang.tr('callPhone')}: ${entities[i].value}'
+                              : (entities[i].type == MessageEntityType.email
+                                  ? '${lang.tr('sendEmail')}: ${entities[i].value}'
+                                  : '${lang.tr('openPath')}: ${entities[i].label}')),
+                      style: const TextStyle(fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'entity_copy_$i',
+              height: 34,
+              child: Row(
+                children: [
+                  const Icon(Icons.copy_rounded, size: 15),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      entities[i].type == MessageEntityType.url
+                          ? lang.tr('copyLink')
+                          : (entities[i].type == MessageEntityType.phone
+                              ? lang.tr('copyPhone')
+                              : (entities[i].type == MessageEntityType.email
+                                  ? lang.tr('copyEmail')
+                                  : lang.tr('copyPath'))),
+                      style: const TextStyle(fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ],
     );
 
     if (!context.mounted) return;
+
+    if (value != null && value.startsWith('entity_')) {
+      final parts = value.split('_');
+      final action = parts[1];
+      final idx = int.tryParse(parts[2]) ?? 0;
+      if (idx < entities.length) {
+        final ent = entities[idx];
+        if (action == 'open') {
+          await QuickActionHelper.handleEntityClick(context, ent, lang: lang);
+        } else if (action == 'copy') {
+          final toastMsg = ent.type == MessageEntityType.url
+              ? lang.tr('linkCopiedToast')
+              : (ent.type == MessageEntityType.phone
+                  ? lang.tr('phoneCopiedToast')
+                  : (ent.type == MessageEntityType.email
+                      ? lang.tr('emailCopiedToast')
+                      : lang.tr('pathCopiedToast')));
+          await QuickActionHelper.copyToClipboard(
+            context,
+            ent.value,
+            message: toastMsg,
+          );
+        }
+      }
+      return;
+    }
 
     if (value == 'retry') {
       coordinator.retrySendMessage(widget.message);
@@ -2737,6 +2834,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
     final isAi = message.aiModelTag != null;
     final canCopy = message.text.isNotEmpty;
     final canRegenerate = isAi && !isMine && !message.isStreaming;
+    final detectedEntities = MessageEntityDetector.extractEntities(message.text);
 
     final Color bubbleBg;
     if (isMine) {
@@ -2980,6 +3078,15 @@ class _MessageBubbleState extends State<_MessageBubble> {
                           ),
                         ],
 
+                        // Smart Quick Action Chips (URLs, Phones, Emails, Paths)
+                        if (detectedEntities.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          _MessageQuickActionChips(
+                            entities: detectedEntities,
+                            isMine: isMine,
+                          ),
+                        ],
+
                         const SizedBox(height: 3),
                         // Timestamp & Delivery/Read Status
                         Row(
@@ -3162,6 +3269,152 @@ class _MessageBubbleState extends State<_MessageBubble> {
           ),
         );
       },
+    );
+  }
+}
+
+class _MessageQuickActionChips extends StatelessWidget {
+  final List<MessageEntity> entities;
+  final bool isMine;
+
+  const _MessageQuickActionChips({
+    required this.entities,
+    required this.isMine,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ThemeProvider.of(context);
+    final lang = context.watch<LanguageProvider>();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 2),
+      child: Wrap(
+        spacing: 5,
+        runSpacing: 4,
+        children: entities.map((entity) {
+          final IconData icon;
+          final String actionTooltip;
+          final String copyTooltip;
+          final String copiedToast;
+
+          switch (entity.type) {
+            case MessageEntityType.url:
+              icon = Icons.language_rounded;
+              actionTooltip = '${lang.tr('openLink')}: ${entity.value}';
+              copyTooltip = lang.tr('copyLink');
+              copiedToast = lang.tr('linkCopiedToast');
+              break;
+            case MessageEntityType.phone:
+              icon = Icons.phone_rounded;
+              actionTooltip = '${lang.tr('callPhone')}: ${entity.value}';
+              copyTooltip = lang.tr('copyPhone');
+              copiedToast = lang.tr('phoneCopiedToast');
+              break;
+            case MessageEntityType.email:
+              icon = Icons.mail_outline_rounded;
+              actionTooltip = '${lang.tr('sendEmail')}: ${entity.value}';
+              copyTooltip = lang.tr('copyEmail');
+              copiedToast = lang.tr('emailCopiedToast');
+              break;
+            case MessageEntityType.path:
+              icon = Icons.folder_open_rounded;
+              actionTooltip = '${lang.tr('openPath')}: ${entity.value}';
+              copyTooltip = lang.tr('copyPath');
+              copiedToast = lang.tr('pathCopiedToast');
+              break;
+          }
+
+          final chipBg = isMine
+              ? Colors.white.withValues(alpha: 0.16)
+              : (theme.isDark
+                  ? const Color(0xFF334155).withValues(alpha: 0.70)
+                  : const Color(0xFFF1F5F9));
+          final chipBorder = isMine
+              ? Colors.white.withValues(alpha: 0.28)
+              : (theme.isDark
+                  ? const Color(0x33FFFFFF)
+                  : Colors.black.withValues(alpha: 0.08));
+          final textColor = isMine
+              ? Colors.white
+              : (theme.isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155));
+          final iconColor = isMine
+              ? Colors.cyanAccent.shade100
+              : theme.colors.accentBlue;
+
+          return Material(
+            color: Colors.transparent,
+            child: Container(
+              decoration: BoxDecoration(
+                color: chipBg,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: chipBorder, width: 0.8),
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => QuickActionHelper.handleEntityClick(
+                  context,
+                  entity,
+                  lang: lang,
+                ),
+                onSecondaryTap: () => QuickActionHelper.copyToClipboard(
+                  context,
+                  entity.value,
+                  message: copiedToast,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Tooltip(
+                        message: actionTooltip,
+                        child: Icon(icon, size: 12.5, color: iconColor),
+                      ),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Tooltip(
+                          message: actionTooltip,
+                          child: Text(
+                            entity.label,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: textColor,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Tooltip(
+                        message: copyTooltip,
+                        child: InkResponse(
+                          radius: 12,
+                          onTap: () => QuickActionHelper.copyToClipboard(
+                            context,
+                            entity.value,
+                            message: copiedToast,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Icon(
+                              Icons.copy_rounded,
+                              size: 11,
+                              color: textColor.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 }

@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.5.1
+# Hướng dẫn sử dụng JA LAN Messenger v1.6.0
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.5.1_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.6.0_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -99,6 +99,15 @@
 - **Tự động gửi bù (Auto-Retry):** Ngay khi máy người nhận bật lên và kết nối vào mạng LAN, ứng dụng sẽ tự động kích hoạt gửi bù toàn bộ tin nhắn tồn đọng theo đúng thứ tự thời gian mà không cần bạn phải thao tác lại.
 - **Thao tác Thử lại trực quan (Manual Retry):** Bấm trực tiếp vào biểu tượng cảnh báo lỗi màu đỏ cam trên tin nhắn, hoặc nhấp chuột phải chọn **"Thử lại"** (`Retry`) để kích hoạt gửi lại bất kỳ lúc nào.
 - **Hỗ trợ Chat nhóm:** Tin nhắn gửi vào nhóm khi có thành viên ngoại tuyến sẽ được lưu riêng và tự động gửi bù cho thành viên đó ngay khi họ online trở lại.
+
+### 2.15. Toggle Khay Hệ Thống & Tiện Ích Thông Minh Bong Bóng Chat
+- **Ẩn / Hiện ứng dụng 1-chạm (System Tray Toggle):** Nhấp chuột trái vào biểu tượng khay hệ thống (System Tray) để toggle nhanh cửa sổ: tự động ẩn vào khay nếu đang ở tiền cảnh, hoặc khôi phục và đưa lên trước màn hình nếu đang thu nhỏ hay nằm dưới các cửa sổ khác.
+- **Bôi đen lựa chọn & Sao chép linh hoạt (Selectable Chat Text):** Bạn có thể dùng chuột bôi đen bất kỳ đoạn chữ nào trong tin nhắn để sao chép (Ctrl+C hoặc menu chuột phải), không bị bắt buộc phải copy toàn bộ tin nhắn.
+- **Tự động nhận diện thực thể thông minh (Entity Detection):** Hệ thống tự động phát hiện các liên kết web (`https://...`, `www...`), số điện thoại, email và đường dẫn mạng LAN (`\\server\share\...`) / file ổ đĩa (`C:\...`) có chứa khoảng trắng.
+- **Thanh tiện ích nhanh Bento Glassmorphic (Smart Action Chips):** Các nút chip bo tròn kính mờ hiển thị ngay dưới tin nhắn:
+  - **Chuột trái:** Thực thi hành động tương ứng (Mở web bằng trình duyệt mặc định, mở Explorer chọn file/thư mục, soạn email, gọi điện).
+  - **Chuột phải hoặc bấm icon copy:** Sao chép nhanh giá trị vào Clipboard kèm thông báo nổi.
+- **Thu gọn tiêu đề thông minh khi mở Thông tin hội thoại (Responsive Header):** Khi mở bảng bên phải, tiêu đề tự động thu gọn, chuyển chấm trạng thái online/offline lên Avatar và bật cuộn chữ marquee mượt mà cho nickname dài, tránh bị cắt ngắn tên đối phương.
 
 ---
 

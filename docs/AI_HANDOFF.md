@@ -1,5 +1,15 @@
 # Handoff: nickname and native keyboard crash (2026-09-21)
 
+## Quick-action walkthrough verification (2026-09-28)
+- Follow-up tray fix: user reports click always raises window. Removed callback-time focus dependency; visible/non-minimized now hides, hidden/minimized shows (window_manager.show restores minimized windows) and focuses. A TrayWindowToggle busy guard prevents overlapping async actions and resets after errors. This deliberately also hides visible windows behind another app.
+- Added four method-channel mock tests: hide/show cycle without focus query, minimized restore, overlapping clicks, recovery after plugin error. All 4 passed; targeted analyzer and formatting clean. No build/native tray validation; unrelated detector/header compile errors reported below remain out of scope.
+- Verification only; preserved dirty application sources. Reviewed tray/header/entity/Markdown/locale walkthrough against current files.
+- Blocking syntax errors: raw string quote delimiters at message_entity_detector.dart:67/73/79; declarations inside widget collection at chat_view_panel.dart:1374.
+- dart analyze lib test: 46 diagnostics (36 errors, 3 warnings, 7 info). Direct Flutter detector test, after approved SDK lockfile access, failed to compile; zero cases passed.
+- Security concern: QuickActionHelper forwards message-derived links to cmd.exe start with runInShell=true in fallback. Remove shell interpretation and validate URI schemes. No message-derived commands executed in this review.
+- Local-path regex excludes spaces, contradicting the supplied Program Files test. URL extraction passes lack overlap tracking. Duplicate copyPath localization keys in VI/EN/ZH. Behavioral tests blocked by compilation.
+- No source fix, build, deployment or native Windows UI/LAN verification. Next: authorized fixes, analyzer and detector/widget tests, then native tray/header/Explorer QA.
+
 ## Nickname
 - Confirmed profile updates previously changed memory only.
 - AppPreferences now persists localNickname; coordinator restores it after startup preferences load.

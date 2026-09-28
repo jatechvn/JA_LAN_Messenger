@@ -1,6 +1,6 @@
 # JA LAN Messenger
 
-[![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](CHANGELOG.md)
 [![Flutter Version](https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter)](https://flutter.dev)
 [![Dart Version](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com/windows)
@@ -12,6 +12,11 @@ A modern, ultra-lightweight, high-performance **Peer-to-Peer (P2P) Office LAN Me
 ---
 
 ## ⚡ Key Highlights
+
+- **Smart Chat Bubble Entity Detection & Quick Action Chips**: Automatically extracts URLs, Phone numbers (excluding IPs/dates), RFC emails, and UNC LAN shares (`\\server\share\...`) / local drive paths (`C:\...`). Renders Bento Glassmorphic interactive action chips right under messages with 1-click execution and copy.
+- **Selectable & Interactive Chat Text**: Full markdown selectable text support (`selectable: true`) allowing users to highlight and copy partial text, plus direct link tapping to open browsers, emails, or phone callers.
+- **System Tray 1-Click Toggle**: Left-clicking the Windows system tray icon intelligently toggles between minimizing/hiding the app to the tray and restoring/focusing it to the foreground.
+- **Responsive Chat Header Adaptation**: Dynamically collapses the chat top bar when opening Conversation Info, placing status dots directly on the avatar, hiding standalone status badges (saving ~85px horizontal space), and enabling smooth nickname marquee scrolling.
 
 - **Remote WinRM App Launch & Auto-Buzz**: Automatically launches the peer's desktop application remotely via Windows Remote Management (WinRM) into an interactive session (`SessionId > 0`) when ringing (Buzz) an offline peer, with automatic auto-buzz delivery upon peer startup.
 - **AES-256 Protected WinRM Credentials**: End-to-end device-bound AES-256 encrypted credential storage with per-peer override and secure in-memory execution via temporary scripts.

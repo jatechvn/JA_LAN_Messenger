@@ -5,6 +5,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
 import '../../theme/theme_provider.dart';
 import '../../localization/app_locale.dart';
+import '../../services/quick_action_helper.dart';
 import 'package:provider/provider.dart';
 
 /// Widget chuyên biệt để render nội dung tin nhắn dạng Markdown chuẩn
@@ -94,6 +95,17 @@ class MarkdownMessageView extends StatelessWidget {
           ),
           codeblockDecoration:
               const BoxDecoration(), // Được tùy biến qua CodeBlockBuilder
+          a: style.copyWith(
+            color: isMine
+                ? Colors.cyanAccent.shade100
+                : (isDark ? const Color(0xFF38BDF8) : theme.colors.accentBlue),
+            decoration: TextDecoration.underline,
+            decorationColor: isMine
+                ? Colors.cyanAccent.shade100.withValues(alpha: 0.6)
+                : (isDark
+                    ? const Color(0xFF38BDF8).withValues(alpha: 0.6)
+                    : theme.colors.accentBlue.withValues(alpha: 0.6)),
+          ),
           tableHead: style.copyWith(fontWeight: FontWeight.bold),
           tableBody: style,
           tableBorder: TableBorder.all(
@@ -106,8 +118,16 @@ class MarkdownMessageView extends StatelessWidget {
 
     return MarkdownBody(
       data: renderedText,
-      selectable: false,
+      selectable: true,
+      extensionSet: md.ExtensionSet.gitHubFlavored,
       styleSheet: markdownStyle,
+      onTapLink: (text, href, title) {
+        QuickActionHelper.handleActionUrl(
+          context,
+          href,
+          lang: context.read<LanguageProvider>(),
+        );
+      },
       builders: {'pre': CodeBlockBuilder(isDark: isDark)},
     );
   }
