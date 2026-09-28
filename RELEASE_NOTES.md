@@ -1,27 +1,26 @@
-TAG=v1.6.0
-TITLE=JA LAN Messenger v1.6.0 — System Tray Toggle, Smart Entity Detection & Responsive Chat Header
+TAG=v1.6.1
+TITLE=JA LAN Messenger v1.6.1 — Animated Sprite Stickers, Clipboard Image Copy & Multilingual IP Scan Progress
 BODY=
-## JA LAN Messenger v1.6.0 — System Tray Toggle, Smart Entity Detection & Responsive Chat Header
+## JA LAN Messenger v1.6.1 — Animated Sprite Stickers, Clipboard Image Copy & Multilingual IP Scan Progress
 
-- **Ẩn / Hiện Cửa Sổ Thông Minh qua Khay Hệ Thống (System Tray 1-Click Toggle)**:
-  - Nhấp chuột trái vào System Tray Icon để toggle tức thì: thu nhỏ/ẩn app vào khay hệ thống nếu đang ở tiền cảnh, hoặc khôi phục (`restore()`) và đưa lên đầu màn hình (`focus()`) nếu đang bị ẩn/minimize/nằm sau cửa sổ khác.
-- **Tự động Nhận diện Thực thể Thông minh & Tiện ích Nhanh (Smart Entity Detection & Quick Action Chips)**:
-  - Tự động nhận diện URLs (`https://`, `http://`, `www.`, các domain phổ biến).
-  - Tự động nhận diện Số điện thoại di động, cố định VN và quốc tế (loại trừ triệt để địa chỉ IP và ngày tháng).
-  - Tự động nhận diện Địa chỉ Email chuẩn RFC.
-  - Tự động nhận diện Đường dẫn UNC mạng nội bộ (`\\server\share\...`) và file/ổ đĩa Windows (`C:\...`, `D:\...`) hỗ trợ đầy đủ các đường dẫn có khoảng trắng (như `C:\Program Files\...`).
-  - Hiển thị dải chip bo tròn kính mờ Bento Glassmorphic ngay dưới tin nhắn: 1-click chuột trái để mở/thao tác (mở trình duyệt, mở Explorer `/select,`, soạn mail, gọi điện) và 1-click chuột phải/nút icon để sao chép.
-- **Bôi đen Lựa chọn & Sao chép Linh hoạt trên Bong bóng Chat (Selectable Text)**:
-  - Bật `selectable: true` trong `MarkdownMessageView` cho phép người dùng bôi đen và sao chép từng đoạn chữ tùy chọn trong tin nhắn.
-  - Tích hợp GitHub Flavored Markdown (GFM) và hỗ trợ click trực tiếp vào link/đường dẫn trong nội dung chat.
-- **Tích hợp Menu Chuột phải Tin nhắn (`_showMessageMenu`)**:
-  - Bổ sung các lệnh mở và sao chép riêng biệt cho từng thực thể tìm thấy trong tin nhắn.
-- **Thu gọn Linh hoạt Tiêu đề Chat khi mở Conversation Info (Responsive Header Adaptation)**:
-  - Tự động chuyển tiêu đề sang phong cách thu gọn khi mở bảng thông tin bên phải (`isDetailsOpen`).
-  - Gắn chấm tròn trạng thái online/offline trực tiếp vào Avatar và ẩn thẻ StatusBadge rời (tiết kiệm ~85px chiều ngang).
-  - Sử dụng `BounceMarqueeText` cho nickname cuộn chữ mượt mà khi tên dài, loại bỏ hoàn toàn việc bị cắt ngắn thành `SG - M...`.
-- **Bảo mật Thực thi Lệnh Shell**: Loại bỏ hoàn toàn fallback qua `cmd.exe /c start` với cờ `runInShell: true` trong `QuickActionHelper`. Trên Windows sử dụng trực tiếp lệnh an toàn `Process.run('explorer.exe', [...])` qua ShellExecute của hệ điều hành, chống tuyệt đối nguy cơ command injection.
-- **Đồng bộ toàn diện phiên bản**: Cập nhật `v1.6.0+12` vào toàn bộ mã nguồn, metadata Windows Runner, tài liệu hướng dẫn và bộ cài đặt.
+- **Tích hợp Nhãn dán Động (Animated Sprite Stickers - Zalo Style)**:
+  - Tự động nhận diện và nạp các bộ nhãn dán trong thư mục `assets/sticker/` thông qua `StickerService`.
+  - Hỗ trợ ảnh Sprite Sheet động kèm file tọa độ JSON (`spritesheet.json`, `frames.json`) và bộ ảnh từng frame rời.
+  - Xây dựng hộp thoại chọn nhãn dán (`StickerPickerDialog`) với tab chuyển bộ sticker, xem trước animation thời gian thực và thanh chọn nhanh ngay cạnh ô nhập liệu.
+  - Giao thức P2P truyền tải nhãn dán tức thì giữa các máy trạm trong mạng LAN, hiển thị nhãn dán động mượt mà với `SpriteStickerWidget`.
+  - Hỗ trợ hiển thị preview tin nhắn cuối cùng (`[Nhãn dán] / [Sticker] / [贴图]`) trên danh bạ liên hệ và kênh All Users.
+- **Sao chép Ảnh Tin nhắn vào Clipboard (Copy Chat Image to Clipboard)**:
+  - Bổ sung tùy chọn "Sao chép ảnh" (Copy Image) trực tiếp trên menu ngữ cảnh chuột phải của bong bóng hình ảnh trong khung trò chuyện.
+  - Tích hợp chuẩn Pasteboard Windows, trích xuất dữ liệu nhị phân ảnh và dán trực tiếp vào các ứng dụng văn phòng (Word, Excel, Zalo, Paint...).
+  - Thông báo Toast phản hồi trực quan khi sao chép thành công hoặc thất bại.
+- **Đa ngôn ngữ hóa Toàn diện Tiến độ Quét IP Mạng (Network Scan Status Localization)**:
+  - Khắc phục triệt để lỗi hiển thị cứng chuỗi Tiếng Việt khi ứng dụng đang chạy ở ngôn ngữ Tiếng Anh (EN) hoặc Tiếng Trung (ZH).
+  - Tách rời các chỉ số kỹ thuật mạng (`sweepDone`, `sweepTotal`, `sweepSent`, `arpCount`, `errorMessage`) ra khỏi chuỗi hiển thị trong `DiscoveryScanState`.
+  - Nâng cấp hàm dịch `LanguageProvider.tr` hỗ trợ cả tham số vị trí `{0}`, `{1}` lẫn `%s` và `%d`.
+  - Bản địa hóa toàn bộ các trạng thái: Quét subnet UDP/TCP, phát sóng đa tầng NIC, đối soát bảng ARP, chuẩn bị quét, dừng quét, hoàn tất quét và báo cáo lỗi trên cả 3 ngôn ngữ (VI, EN, ZH).
+  - Cơ chế Double-Guard Regex Fallback tự động phân tích chuỗi trạng thái nếu số liệu chưa kịp truyền, bảo đảm không bao giờ để lọt chuỗi Tiếng Việt thô sang giao diện EN/ZH.
+- **Đồng bộ toàn diện phiên bản**: Cập nhật `v1.6.1+13` vào toàn bộ mã nguồn, metadata Windows Runner, tài liệu hướng dẫn và bộ cài đặt.
 
 ### Cài đặt
 Chạy file `install.bat` để cài đặt ứng dụng vào Windows (có shortcut Desktop & Start Menu, đăng ký Control Panel), hoặc chạy trực tiếp `ja_lan_messenger.exe` để sử dụng dạng portable. Xem file `USERGUIDE.md` đính kèm để biết thêm chi tiết.
+

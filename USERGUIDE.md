@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.6.0
+# Hướng dẫn sử dụng JA LAN Messenger v1.6.1
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.6.0_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.6.1_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -108,6 +108,17 @@
   - **Chuột trái:** Thực thi hành động tương ứng (Mở web bằng trình duyệt mặc định, mở Explorer chọn file/thư mục, soạn email, gọi điện).
   - **Chuột phải hoặc bấm icon copy:** Sao chép nhanh giá trị vào Clipboard kèm thông báo nổi.
 - **Thu gọn tiêu đề thông minh khi mở Thông tin hội thoại (Responsive Header):** Khi mở bảng bên phải, tiêu đề tự động thu gọn, chuyển chấm trạng thái online/offline lên Avatar và bật cuộn chữ marquee mượt mà cho nickname dài, tránh bị cắt ngắn tên đối phương.
+
+### 2.16. Bộ Nhãn Dán Động (Stickers Sprite) & Sao Chép Ảnh Tin Nhắn
+- **Nhãn dán động Zalo (Animated Sprite Stickers):**
+  - Nhấp vào biểu tượng mặt cười (Stickers) cạnh ô nhập liệu để mở bảng chọn nhãn dán.
+  - Tự động nạp toàn bộ các bộ sticker đặt trong thư mục `assets/sticker/` (hỗ trợ ảnh Sprite Sheet động với file tọa độ JSON hoặc bộ frame rời).
+  - Nhấp chọn nhãn dán để gửi ngay lập tức qua mạng LAN tới đối phương. Nhãn dán phát chuyển động animation mượt mà trên khung trò chuyện.
+  - Tin nhắn cuối cùng trên danh bạ liên hệ tự động hiển thị nhãn `[Nhãn dán]` / `[Sticker]` / `[贴图]` tương ứng ngôn ngữ đang chọn.
+- **Sao chép ảnh trong tin nhắn vào Clipboard (Copy Image):**
+  - Nhấp chuột phải vào bất kỳ hình ảnh nào trong bong bóng chat và chọn **"Sao chép ảnh"** (`Copy Image`). Dữ liệu ảnh sẽ được lưu ngay vào Clipboard hệ điều hành để dán (`Ctrl + V`) sang Word, Excel, Paint, Zalo mà không cần lưu file ra ổ đĩa.
+- **Đa ngôn ngữ tiến độ quét IP mạng (Network IP Sweep Localization):**
+  - Thanh trạng thái quét mạng hiển thị đầy đủ tiến độ (UDP/TCP, đa card mạng NIC, đối soát ARP) chuẩn xác theo ngôn ngữ bạn chọn (Tiếng Việt, English, 简体中文).
 
 ---
 

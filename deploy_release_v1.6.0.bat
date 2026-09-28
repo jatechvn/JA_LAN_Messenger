@@ -3,14 +3,14 @@ chcp 65001 >nul
 setlocal EnableExtensions DisableDelayedExpansion
 cd /d "%~dp0"
 
-title Release JA LAN Messenger v1.6.0 & Deploy to LAN OTA
+title Release JA LAN Messenger v1.6.0 ^& Deploy to LAN OTA
 echo ===============================================================================
-echo     JA LAN MESSENGER - RELEASE v1.6.0 & DEPLOY TO LAN OTA SERVER
+echo     JA LAN MESSENGER - RELEASE v1.6.0 ^^& DEPLOY TO LAN OTA SERVER
 echo ===============================================================================
 echo.
 
 :: 1. Bien dich ung dung va dong goi vao dist/
-echo [1/4] Bien dich ung dung Flutter Windows Desktop & dong goi vao dist/...
+echo [1/4] Bien dich ung dung Flutter Windows Desktop ^^& dong goi vao dist/...
 call "%~dp0build.bat"
 if errorlevel 1 (
     echo.
@@ -82,7 +82,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "        sha256 = $hash; " ^
     "        releaseNotes = $notes; " ^
     "        releaseDate = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss'); " ^
-    "    } | ConvertTo-Json -Indent 2; " ^
+    "    } | ConvertTo-Json; " ^
     "    $targetDir = '%REMOTE_DIR%'; " ^
     "    if (Test-Path -LiteralPath $targetDir) { " ^
     "        [System.IO.File]::WriteAllText((Join-Path $targetDir 'version.json'), $json, [System.Text.Encoding]::UTF8); " ^

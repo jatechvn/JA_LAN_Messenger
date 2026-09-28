@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -5,11 +6,12 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../theme/theme_provider.dart';
 import '../../localization/app_locale.dart';
+import '../../services/image_clipboard_helper.dart';
 
 /// Bento Glassmorphic Image Preview / Lightbox.
 /// Supports theme-adaptive backdrop blur (luminous frosted white in Light mode,
-/// deep glass in Dark mode), tap-on-empty-space dismissal, and Esc shortcut.
-class GlassImageLightbox extends StatelessWidget {
+/// deep glass in Dark mode), tap-on-empty-space dismissal, Esc shortcut, and 1-click Copy Image.
+class GlassImageLightbox extends StatefulWidget {
   final String filePath;
   final String fileName;
   final VoidCallback? onOpenFolder;
@@ -21,13 +23,42 @@ class GlassImageLightbox extends StatelessWidget {
     this.onOpenFolder,
   });
 
+  @override
+  State<GlassImageLightbox> createState() => _GlassImageLightboxState();
+}
+
+class _GlassImageLightboxState extends State<GlassImageLightbox> {
+  bool _isCopied = false;
+  Timer? _copyResetTimer;
+
+  @override
+  void dispose() {
+    _copyResetTimer?.cancel();
+    super.dispose();
+  }
+
   void _defaultOpenFolder() {
     if (Platform.isWindows) {
-      Process.run('explorer.exe', ['/select,', filePath]);
+      Process.run('explorer.exe', ['/select,', widget.filePath]);
     } else if (Platform.isMacOS) {
-      Process.run('open', ['-R', filePath]);
+      Process.run('open', ['-R', widget.filePath]);
     } else if (Platform.isLinux) {
-      Process.run('xdg-open', [File(filePath).parent.path]);
+      Process.run('xdg-open', [File(widget.filePath).parent.path]);
+    }
+  }
+
+  Future<void> _handleCopyImage(LanguageProvider lang) async {
+    final ok = await ImageClipboardHelper.copyImageToClipboard(
+      context,
+      filePath: widget.filePath,
+      lang: lang,
+    );
+    if (ok && mounted) {
+      setState(() => _isCopied = true);
+      _copyResetTimer?.cancel();
+      _copyResetTimer = Timer(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _isCopied = false);
+      });
     }
   }
 
@@ -51,10 +82,17 @@ class GlassImageLightbox extends StatelessWidget {
     return Focus(
       autofocus: true,
       onKeyEvent: (node, event) {
-        if (event is KeyDownEvent &&
-            event.logicalKey == LogicalKeyboardKey.escape) {
-          Navigator.of(context).pop();
-          return KeyEventResult.handled;
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.escape) {
+            Navigator.of(context).pop();
+            return KeyEventResult.handled;
+          }
+          final isCtrlOrCmd = HardwareKeyboard.instance.isControlPressed ||
+              HardwareKeyboard.instance.isMetaPressed;
+          if (isCtrlOrCmd && event.logicalKey == LogicalKeyboardKey.keyC) {
+            _handleCopyImage(lang);
+            return KeyEventResult.handled;
+          }
         }
         return KeyEventResult.ignored;
       },
@@ -93,6 +131,7 @@ class GlassImageLightbox extends StatelessWidget {
                                 onTap: () {
                                   // Tapping the image itself does NOT close
                                 },
+                                onSecondaryTap: () => _handleCopyImage(lang),
                                 child: Container(
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(12),
@@ -109,7 +148,7 @@ class GlassImageLightbox extends StatelessWidget {
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(12),
                                     child: Image.file(
-                                      File(filePath),
+                                      File(widget.filePath),
                                       fit: BoxFit.contain,
                                       errorBuilder:
                                           (
@@ -135,7 +174,7 @@ class GlassImageLightbox extends StatelessWidget {
                                                 ),
                                                 const SizedBox(height: 8),
                                                 Text(
-                                                  fileName,
+                                                  widget.fileName,
                                                   style: TextStyle(
                                                     color: isDark
                                                         ? Colors.white54
@@ -199,7 +238,7 @@ class GlassImageLightbox extends StatelessWidget {
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                fileName,
+                                widget.fileName,
                                 style: TextStyle(
                                   color: textColor,
                                   fontSize: 13,
@@ -208,6 +247,28 @@ class GlassImageLightbox extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            IconButton(
+                              icon: Icon(
+                                _isCopied
+                                    ? Icons.check_rounded
+                                    : Icons.copy_rounded,
+                                size: 18,
+                                color: _isCopied
+                                    ? Colors.greenAccent
+                                    : iconColor,
+                              ),
+                              tooltip: _isCopied
+                                  ? lang.tr('imageCopiedToast')
+                                  : lang.tr('copyImage'),
+                              splashRadius: 18,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              onPressed: () => _handleCopyImage(lang),
+                            ),
+                            const SizedBox(width: 4),
                             IconButton(
                               icon: Icon(
                                 Icons.folder_open_rounded,
@@ -221,7 +282,8 @@ class GlassImageLightbox extends StatelessWidget {
                                 minWidth: 32,
                                 minHeight: 32,
                               ),
-                              onPressed: onOpenFolder ?? _defaultOpenFolder,
+                              onPressed:
+                                  widget.onOpenFolder ?? _defaultOpenFolder,
                             ),
                             const SizedBox(width: 4),
                             IconButton(

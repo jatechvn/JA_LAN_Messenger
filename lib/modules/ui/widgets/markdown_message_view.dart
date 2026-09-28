@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -6,6 +7,8 @@ import 'package:markdown/markdown.dart' as md;
 import '../../theme/theme_provider.dart';
 import '../../localization/app_locale.dart';
 import '../../services/quick_action_helper.dart';
+import '../../services/image_clipboard_helper.dart';
+import 'glass_image_lightbox.dart';
 import 'package:provider/provider.dart';
 
 /// Widget chuyên biệt để render nội dung tin nhắn dạng Markdown chuẩn
@@ -129,6 +132,88 @@ class MarkdownMessageView extends StatelessWidget {
         );
       },
       builders: {'pre': CodeBlockBuilder(isDark: isDark)},
+      imageBuilder: (uri, title, alt) {
+        final lang = context.read<LanguageProvider>();
+        final isNetwork = uri.scheme == 'http' || uri.scheme == 'https';
+        final isFile = uri.scheme == 'file' || uri.scheme.isEmpty;
+        final filePath = isFile
+            ? (uri.scheme == 'file' ? uri.toFilePath() : uri.path)
+            : null;
+        final file = filePath != null ? File(filePath) : null;
+        final fileExists = file != null && file.existsSync();
+
+        Widget imgWidget;
+        if (isNetwork) {
+          imgWidget = Image.network(
+            uri.toString(),
+            errorBuilder: (_, __, ___) =>
+                const Icon(Icons.broken_image_rounded, size: 40),
+          );
+        } else if (fileExists) {
+          imgWidget = Image.file(
+            file,
+            errorBuilder: (_, __, ___) =>
+                const Icon(Icons.broken_image_rounded, size: 40),
+          );
+        } else {
+          imgWidget = const Icon(Icons.image_not_supported_rounded, size: 40);
+        }
+
+        return Stack(
+          alignment: Alignment.topRight,
+          children: [
+            InkWell(
+              onTap: fileExists
+                  ? () => showGlassImageLightbox(
+                        context: context,
+                        filePath: file.path,
+                        fileName: alt ?? file.uri.pathSegments.last,
+                      )
+                  : null,
+              borderRadius: BorderRadius.circular(8),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: imgWidget,
+              ),
+            ),
+            if (fileExists)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Tooltip(
+                  message: lang.tr('copyImage'),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => ImageClipboardHelper.copyImageToClipboard(
+                        context,
+                        filePath: file.path,
+                        lang: lang,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white30,
+                            width: 0.8,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.copy_rounded,
+                          size: 13,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

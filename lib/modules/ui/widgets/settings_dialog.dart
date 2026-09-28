@@ -277,7 +277,7 @@ class _SettingsDialogState extends State<SettingsDialog>
       _encryptionEnabled = false;
       _disabledAdapters.clear();
       _localCloseBehavior = 'ask';
-      _autoStartEnabled = false;
+      _autoStartEnabled = Platform.isWindows;
       _localAiEnabled = true;
       _aiServerUrlController.text = 'http://172.21.175.20:11434';
       _localAiSelectedModel = 'qwen3.5:4b';

@@ -61,6 +61,11 @@ if exist "%~dp0README.md" copy /y "%~dp0README.md" "%TARGET_DIR%\" >nul
 if exist "%~dp0CHANGELOG.md" copy /y "%~dp0CHANGELOG.md" "%TARGET_DIR%\" >nul
 if exist "%~dp0USERGUIDE.md" copy /y "%~dp0USERGUIDE.md" "%TARGET_DIR%\" >nul
 if exist "%~dp0LICENSE" copy /y "%~dp0LICENSE" "%TARGET_DIR%\" >nul
+if exist "%~dp0assets\sticker" (
+    echo       - Chep bo nhan dan sticker vao thu muc Release...
+    if not exist "%TARGET_DIR%\assets\sticker" mkdir "%TARGET_DIR%\assets\sticker"
+    xcopy /E /I /Y "%~dp0assets\sticker" "%TARGET_DIR%\assets\sticker" >nul
+)
 
 :: 4. Dong bo toan bo Release sang dist va tao goi zip chuan dart-build-pro
 echo [4/6] Dong bo sang dist va dong goi zip chuan phat hanh...

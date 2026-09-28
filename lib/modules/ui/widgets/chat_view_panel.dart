@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:window_manager/window_manager.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -31,6 +32,10 @@ import 'pinyin_candidate_bar.dart';
 import 'ime_toggle_button.dart';
 import '../../services/message_entity_detector.dart';
 import '../../services/quick_action_helper.dart';
+import '../../services/image_clipboard_helper.dart';
+import '../../services/sticker_service.dart';
+import 'sprite_sticker_widget.dart';
+import 'sticker_picker_popover.dart';
 
 class ChatViewPanel extends StatefulWidget {
   final bool isDetailsOpen;
@@ -50,7 +55,93 @@ class ChatViewPanel extends StatefulWidget {
   State<ChatViewPanel> createState() => _ChatViewPanelState();
 }
 
-class _ChatViewPanelState extends State<ChatViewPanel> {
+class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
+  final _readKeys = <MessageModel, GlobalKey>{};
+  final _visibleSince = <MessageModel, DateTime>{};
+  Timer? _readTimer;
+  bool _checkingRead = false;
+  int _readEpoch = 0;
+
+  void _resetReadExposure() {
+    _readEpoch++;
+    _visibleSince.clear();
+  }
+
+  @override
+  void onWindowBlur() => _resetReadExposure();
+  @override
+  void onWindowMinimize() => _resetReadExposure();
+
+  Future<void> _checkVisibleRead() async {
+    if (!mounted || _checkingRead) return;
+    _readKeys.removeWhere((_, key) => key.currentContext == null);
+    _visibleSince.removeWhere((m, _) => !_readKeys.containsKey(m));
+    if (_readKeys.isEmpty) return;
+    _checkingRead = true;
+    final epoch = _readEpoch;
+    try {
+      final active =
+          await windowManager.isFocused() &&
+          await windowManager.isVisible() &&
+          !await windowManager.isMinimized();
+      if (!mounted) return;
+      if (!active ||
+          epoch != _readEpoch ||
+          ModalRoute.of(context)?.isCurrent != true ||
+          !_scrollController.hasClients ||
+          _scrollController.position.isScrollingNotifier.value) {
+        _visibleSince.clear();
+        return;
+      }
+      final coordinator = context.read<MessengerCoordinator>();
+      final peer = coordinator.selectedPeer;
+      if (peer == null || peer.id != _lastPeerId) return;
+      final now = DateTime.now();
+      final read = <MessageModel>{};
+      for (final entry in _readKeys.entries) {
+        final box = entry.value.currentContext?.findRenderObject();
+        var visible = false;
+        if (box is RenderBox && box.attached && box.hasSize) {
+          final viewport = RenderAbstractViewport.maybeOf(box);
+          if (viewport != null &&
+              viewport is RenderBox &&
+              (viewport as RenderBox).hasSize) {
+            final viewportBox = viewport as RenderBox;
+            final bounds = box.localToGlobal(Offset.zero) & box.size;
+            final clip =
+                viewportBox.localToGlobal(Offset.zero) & viewportBox.size;
+            final intersection = bounds.intersect(clip);
+            if (!intersection.isEmpty &&
+                intersection.height >=
+                    math.min(bounds.height, clip.height) * 0.5) {
+              final hits = HitTestResult();
+              WidgetsBinding.instance.hitTestInView(
+                hits,
+                intersection.center,
+                View.of(context).viewId,
+              );
+              visible = hits.path.any((hit) => identical(hit.target, box));
+            }
+          }
+        }
+        if (!visible) {
+          _visibleSince.remove(entry.key);
+        } else {
+          final since = _visibleSince.putIfAbsent(entry.key, () => now);
+          if (now.difference(since) >= const Duration(milliseconds: 500)) {
+            read.add(entry.key);
+          }
+        }
+      }
+      if (read.isNotEmpty) coordinator.markMessagesAsRead(peer.id, read);
+    } catch (_) {
+      _visibleSince
+          .clear(); // Missing/failed native focus checks must not imply read.
+    } finally {
+      _checkingRead = false;
+    }
+  }
+
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   late final FocusNode _inputFocusNode;
@@ -62,6 +153,19 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
   int _prevMessageCount = 0;
   bool _prevPeerTyping = false;
   String? _lastPeerId;
+  final _savedScrollPositions =
+      <String, ({double offset, bool atBottom, String? separator})>{};
+
+  void _saveConversationScroll() {
+    final id = _lastPeerId;
+    if (id == null || !_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    _savedScrollPositions[id] = (
+      offset: position.pixels,
+      atBottom: position.maxScrollExtent - position.pixels <= 50,
+      separator: _activeUnreadSeparatorMessageId,
+    );
+  }
 
   // Scroll tracking state
   bool _hasScrollableContent = false;
@@ -120,11 +224,18 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
     super.initState();
     _inputFocusNode = FocusNode();
     _scrollController.addListener(_onScroll);
+    windowManager.addListener(this);
+    _readTimer = Timer.periodic(
+      const Duration(milliseconds: 100),
+      (_) => _checkVisibleRead(),
+    );
     _requestInputFocus();
   }
 
   @override
   void dispose() {
+    _readTimer?.cancel();
+    windowManager.removeListener(this);
     _focusTimer?.cancel();
     _manualScrollHideTimer?.cancel();
     _scrollController.removeListener(_onScroll);
@@ -137,6 +248,7 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
   }
 
   void _onScroll() {
+    _resetReadExposure();
     _updateScrollState();
   }
 
@@ -163,16 +275,6 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
         ((_isManualScrolling && isMiddle) ||
             (_unreadBelowCount > 0 && !isAtBottom));
     final newUnreadCount = isAtBottom ? 0 : _unreadBelowCount;
-
-    if (isAtBottom && _unreadBelowCount > 0) {
-      try {
-        final coord = context.read<MessengerCoordinator>();
-        final p = coord.selectedPeer;
-        if (p != null) {
-          coord.markConversationAsRead(p.id);
-        }
-      } catch (_) {}
-    }
 
     if (_hasScrollableContent != hasScrollableContent ||
         _showScrollToTop != showScrollToTop ||
@@ -221,8 +323,13 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
   }
 
   void _scrollToBottom({bool force = false, bool smooth = true}) {
+    final conversationId = _lastPeerId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
+      if (!mounted ||
+          _lastPeerId != conversationId ||
+          !_scrollController.hasClients) {
+        return;
+      }
       final pos = _scrollController.position;
       final isNearBottom = (pos.maxScrollExtent - pos.pixels) <= 140.0;
       if (!force && !isNearBottom) return;
@@ -239,7 +346,9 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
               curve: Curves.easeOutCubic,
             )
             .then((_) {
-              if (mounted && _scrollController.hasClients) {
+              if (mounted &&
+                  _lastPeerId == conversationId &&
+                  _scrollController.hasClients) {
                 final p = _scrollController.position;
                 if ((p.maxScrollExtent - p.pixels) > 5.0) {
                   _scrollController.jumpTo(p.maxScrollExtent);
@@ -255,6 +364,7 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
   }
 
   void _performJumpToBottom({int remainingAttempts = 6}) {
+    final conversationId = _lastPeerId;
     if (!mounted || !_scrollController.hasClients) {
       _isProgrammaticScroll = false;
       return;
@@ -268,6 +378,7 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
     if (diff.abs() > 2.0 && remainingAttempts > 0) {
       _scrollController.jumpTo(pos.maxScrollExtent);
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _lastPeerId != conversationId) return;
         _performJumpToBottom(remainingAttempts: remainingAttempts - 1);
       });
     } else {
@@ -374,10 +485,6 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
 
     _inputController.clear();
     final replying = _replyingToMessage;
-    final peer = coordinator.selectedPeer;
-    if (peer != null) {
-      coordinator.markConversationAsRead(peer.id);
-    }
 
     final filesToSend = List<File>.from(_stagedAttachments);
 
@@ -395,6 +502,29 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
       coordinator.sendMessage(text, replyTo: replying);
     }
 
+    _scrollToBottom(force: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _inputFocusNode.canRequestFocus) {
+        _inputFocusNode.requestFocus();
+      }
+    });
+  }
+
+  void _handleSendSticker(
+    StickerItem sticker,
+    MessengerCoordinator coordinator,
+  ) {
+    _typingDebounceTimer?.cancel();
+    coordinator.sendTypingStatus(false);
+    final replying = _replyingToMessage;
+    setState(() {
+      _replyingToMessage = null;
+      _unreadBelowCount = 0;
+      _activeUnreadSeparatorMessageId = null;
+      _isNearBottom = true;
+    });
+
+    coordinator.sendMessage(sticker.token, replyTo: replying);
     _scrollToBottom(force: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _inputFocusNode.canRequestFocus) {
@@ -448,6 +578,10 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
     final peer = coordinator.selectedPeer;
 
     if (peer == null) {
+      _saveConversationScroll();
+      _lastPeerId = null;
+      _resetReadExposure();
+      _readKeys.clear();
       return const _EmptyChatView();
     }
 
@@ -457,6 +591,14 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
     }
 
     final messages = coordinator.currentMessages;
+    if (_lastPeerId != peer.id) {
+      _resetReadExposure();
+      _readKeys.clear();
+    }
+    _readKeys.removeWhere(
+      (m, _) => !messages.contains(m) || m.status == MessageStatus.read,
+    );
+    _visibleSince.removeWhere((m, _) => !_readKeys.containsKey(m));
     final isPeerTyping =
         (!peer.isAllUsers &&
         ((!peer.isGroup && coordinator.isPeerTyping(peer.id)) ||
@@ -466,6 +608,7 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
     // Reset replying state & determine scroll target if active peer changed
     final isPeerChanged = _lastPeerId != peer.id;
     if (isPeerChanged) {
+      _saveConversationScroll();
       _lastPeerId = peer.id;
       _isManualScrolling = false;
       _manualScrollHideTimer?.cancel();
@@ -503,11 +646,41 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
         _pendingJumpToBottom = true;
         _pendingJumpToUnread = false;
       }
+
+      final saved = _savedScrollPositions[peer.id];
+      if (saved != null) {
+        _pendingJumpToUnread = false;
+        _pendingJumpToBottom = saved.atBottom;
+        _isNearBottom = saved.atBottom;
+        _activeUnreadSeparatorMessageId = saved.separator;
+        _unreadBelowCount = saved.atBottom
+            ? 0
+            : coordinator.countUnreadMessages(peer.id);
+        if (!saved.atBottom) {
+          _isProgrammaticScroll = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted ||
+                _lastPeerId != peer.id ||
+                !_scrollController.hasClients) {
+              return;
+            }
+            _scrollController.jumpTo(
+              saved.offset.clamp(
+                0.0,
+                _scrollController.position.maxScrollExtent,
+              ),
+            );
+            _isProgrammaticScroll = false;
+            _updateScrollState();
+          });
+        }
+      }
     }
 
     if (_pendingJumpToBottom) {
       _pendingJumpToBottom = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _lastPeerId != peer.id) return;
         _performJumpToBottom();
       });
     } else if (_pendingJumpToUnread &&
@@ -517,7 +690,9 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
       _isManualScrolling = false;
       final targetId = _activeUnreadSeparatorMessageId!;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_scrollController.hasClients) {
+        if (!mounted ||
+            _lastPeerId != peer.id ||
+            !_scrollController.hasClients) {
           _isProgrammaticScroll = false;
           return;
         }
@@ -540,7 +715,7 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
 
         // Frame 2: Ensure pixel-perfect visible alignment with unread separator at ~8% from top
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) {
+          if (!mounted || _lastPeerId != peer.id) {
             _isProgrammaticScroll = false;
             return;
           }
@@ -702,18 +877,29 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
                                       final isFirstUnread =
                                           msg.id ==
                                           _activeUnreadSeparatorMessageId;
-                                      final bubble = _MessageBubble(
-                                        message: msg,
-                                        isHighlighted:
-                                            msg.id == _highlightedMessageId,
-                                        onReply: (m) {
-                                          setState(() {
-                                            _replyingToMessage = m;
-                                          });
-                                          _inputFocusNode.requestFocus();
-                                        },
-                                        onScrollToMessage: (id) =>
-                                            _scrollToMessage(id, messages),
+                                      final bubble = Listener(
+                                        key:
+                                            !msg.isMine &&
+                                                msg.status != MessageStatus.read
+                                            ? _readKeys.putIfAbsent(
+                                                msg,
+                                                () => GlobalKey(),
+                                              )
+                                            : null,
+                                        behavior: HitTestBehavior.translucent,
+                                        child: _MessageBubble(
+                                          message: msg,
+                                          isHighlighted:
+                                              msg.id == _highlightedMessageId,
+                                          onReply: (m) {
+                                            setState(() {
+                                              _replyingToMessage = m;
+                                            });
+                                            _inputFocusNode.requestFocus();
+                                          },
+                                          onScrollToMessage: (id) =>
+                                              _scrollToMessage(id, messages),
+                                        ),
                                       );
 
                                       if (isFirstUnread) {
@@ -760,7 +946,6 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
                                 setState(() {
                                   _unreadBelowCount = 0;
                                 });
-                                coordinator.markConversationAsRead(peer.id);
                                 _scrollToBottom(force: true, smooth: true);
                               },
                             ),
@@ -791,6 +976,8 @@ class _ChatViewPanelState extends State<ChatViewPanel> {
                   onAttachFile: _handlePickFile,
                   onPasteClipboard: () => _handlePasteClipboard(coordinator),
                   onBuzz: () => coordinator.sendBuzz(),
+                  onSendSticker: (sticker) =>
+                      _handleSendSticker(sticker, coordinator),
                 ),
               ],
             ),
@@ -918,7 +1105,10 @@ class _ChatHeader extends StatelessWidget {
                     peer: peer,
                     size: 34,
                     showStatus:
-                        isHeaderCompact && !peer.isAllUsers && !peer.isGroup && !isAi,
+                        isHeaderCompact &&
+                        !peer.isAllUsers &&
+                        !peer.isGroup &&
+                        !isAi,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -1831,6 +2021,10 @@ class _QuoteCard extends StatelessWidget {
     final textColor = isMine
         ? Colors.white.withValues(alpha: 0.9)
         : (theme.isDark ? const Color(0xFFF8FAFC) : Colors.black87);
+    final lang = context.watch<LanguageProvider>();
+    final displaySnippet = StickerService.isSticker(snippet)
+        ? '[${lang.tr('stickers')}]'
+        : snippet;
 
     return InkWell(
       onTap: onTap,
@@ -1882,7 +2076,7 @@ class _QuoteCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        snippet,
+                        displaySnippet,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -1946,6 +2140,24 @@ class _MessageBubbleState extends State<_MessageBubble> {
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  Future<void> _copyImage(LanguageProvider lang) async {
+    final attachment = widget.message.fileAttachment;
+    final path = attachment?.localPath;
+    if (path == null) return;
+    final ok = await ImageClipboardHelper.copyImageToClipboard(
+      context,
+      filePath: path,
+      lang: lang,
+    );
+    if (ok && mounted) {
+      setState(() => _isCopied = true);
+      _copyTimer?.cancel();
+      _copyTimer = Timer(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _isCopied = false);
+      });
+    }
   }
 
   void _showQuickReactionPicker(
@@ -2022,6 +2234,18 @@ class _MessageBubbleState extends State<_MessageBubble> {
     const emojis = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉'];
     final isPinned = widget.message.isPinned;
     final entities = MessageEntityDetector.extractEntities(widget.message.text);
+    final attachment = widget.message.fileAttachment;
+    final file = attachment?.localPath != null
+        ? File(attachment!.localPath!)
+        : null;
+    final fileExists = file != null && file.existsSync();
+    final isImg =
+        attachment != null &&
+        MessengerCoordinator.isImageFile(attachment.fileName);
+    final isSticker = StickerService.isSticker(widget.message.text);
+    final stickerItem = isSticker
+        ? StickerService().findByToken(widget.message.text)
+        : null;
     final value = await showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(
@@ -2124,7 +2348,57 @@ class _MessageBubbleState extends State<_MessageBubble> {
               ],
             ),
           ),
-        if (widget.message.text.isNotEmpty)
+        if (isImg && fileExists) ...[
+          PopupMenuItem<String>(
+            value: 'copy_image',
+            height: 36,
+            child: Row(
+              children: [
+                const Icon(Icons.copy_rounded, size: 15),
+                const SizedBox(width: 8),
+                Text(
+                  lang.tr('copyImage'),
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ],
+            ),
+          ),
+          PopupMenuItem<String>(
+            value: 'open_folder',
+            height: 36,
+            child: Row(
+              children: [
+                const Icon(Icons.folder_open_rounded, size: 15),
+                const SizedBox(width: 8),
+                Text(
+                  lang.tr('openFolder'),
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (isSticker &&
+            stickerItem != null &&
+            stickerItem.isFromFile &&
+            File(stickerItem.previewPath).existsSync())
+          PopupMenuItem<String>(
+            value: 'copy_sticker',
+            height: 36,
+            child: Row(
+              children: [
+                const Icon(Icons.copy_rounded, size: 15),
+                const SizedBox(width: 8),
+                Text(
+                  lang.tr('copyImage'),
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ],
+            ),
+          ),
+        if (widget.message.text.isNotEmpty &&
+            (!isImg || widget.message.text != attachment.fileName) &&
+            !isSticker)
           PopupMenuItem<String>(
             value: 'copy',
             height: 36,
@@ -2170,10 +2444,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
                     entities[i].type == MessageEntityType.url
                         ? Icons.language_rounded
                         : (entities[i].type == MessageEntityType.phone
-                            ? Icons.phone_rounded
-                            : (entities[i].type == MessageEntityType.email
-                                ? Icons.mail_outline_rounded
-                                : Icons.folder_open_rounded)),
+                              ? Icons.phone_rounded
+                              : (entities[i].type == MessageEntityType.email
+                                    ? Icons.mail_outline_rounded
+                                    : Icons.folder_open_rounded)),
                     size: 15,
                     color: Theme.of(context).primaryColor,
                   ),
@@ -2183,10 +2457,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
                       entities[i].type == MessageEntityType.url
                           ? '${lang.tr('openLink')}: ${entities[i].label}'
                           : (entities[i].type == MessageEntityType.phone
-                              ? '${lang.tr('callPhone')}: ${entities[i].value}'
-                              : (entities[i].type == MessageEntityType.email
-                                  ? '${lang.tr('sendEmail')}: ${entities[i].value}'
-                                  : '${lang.tr('openPath')}: ${entities[i].label}')),
+                                ? '${lang.tr('callPhone')}: ${entities[i].value}'
+                                : (entities[i].type == MessageEntityType.email
+                                      ? '${lang.tr('sendEmail')}: ${entities[i].value}'
+                                      : '${lang.tr('openPath')}: ${entities[i].label}')),
                       style: const TextStyle(fontSize: 12),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -2207,10 +2481,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
                       entities[i].type == MessageEntityType.url
                           ? lang.tr('copyLink')
                           : (entities[i].type == MessageEntityType.phone
-                              ? lang.tr('copyPhone')
-                              : (entities[i].type == MessageEntityType.email
-                                  ? lang.tr('copyEmail')
-                                  : lang.tr('copyPath'))),
+                                ? lang.tr('copyPhone')
+                                : (entities[i].type == MessageEntityType.email
+                                      ? lang.tr('copyEmail')
+                                      : lang.tr('copyPath'))),
                       style: const TextStyle(fontSize: 12),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -2238,10 +2512,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
           final toastMsg = ent.type == MessageEntityType.url
               ? lang.tr('linkCopiedToast')
               : (ent.type == MessageEntityType.phone
-                  ? lang.tr('phoneCopiedToast')
-                  : (ent.type == MessageEntityType.email
-                      ? lang.tr('emailCopiedToast')
-                      : lang.tr('pathCopiedToast')));
+                    ? lang.tr('phoneCopiedToast')
+                    : (ent.type == MessageEntityType.email
+                          ? lang.tr('emailCopiedToast')
+                          : lang.tr('pathCopiedToast')));
           await QuickActionHelper.copyToClipboard(
             context,
             ent.value,
@@ -2252,7 +2526,29 @@ class _MessageBubbleState extends State<_MessageBubble> {
       return;
     }
 
-    if (value == 'retry') {
+    if (value == 'copy_image') {
+      await _copyImage(lang);
+      return;
+    } else if (value == 'copy_sticker' && stickerItem != null) {
+      await ImageClipboardHelper.copyImageToClipboard(
+        context,
+        filePath: stickerItem.previewPath,
+        lang: lang,
+      );
+      return;
+    } else if (value == 'open_folder') {
+      final path = widget.message.fileAttachment?.localPath;
+      if (path != null && File(path).existsSync()) {
+        if (Platform.isWindows) {
+          Process.run('explorer.exe', ['/select,', path]);
+        } else if (Platform.isMacOS) {
+          Process.run('open', ['-R', path]);
+        } else if (Platform.isLinux) {
+          Process.run('xdg-open', [File(path).parent.path]);
+        }
+      }
+      return;
+    } else if (value == 'retry') {
       coordinator.retrySendMessage(widget.message);
     } else if (value == 'reply') {
       widget.onReply?.call(widget.message);
@@ -2326,6 +2622,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
     MessengerCoordinator coordinator, {
     required bool canCopy,
     required bool canRegenerate,
+    VoidCallback? onCopy,
+    bool isImage = false,
   }) {
     final barBg = theme.isDark
         ? const Color(0xFF1E293B).withValues(alpha: 0.96)
@@ -2399,12 +2697,14 @@ class _MessageBubbleState extends State<_MessageBubble> {
               _HoverActionButton(
                 icon: _isCopied ? Icons.check_rounded : Icons.copy_rounded,
                 tooltip: _isCopied
-                    ? lang.tr('messageCopied')
-                    : lang.tr('copyMessage'),
+                    ? (isImage
+                          ? lang.tr('imageCopiedToast')
+                          : lang.tr('messageCopied'))
+                    : (isImage ? lang.tr('copyImage') : lang.tr('copyMessage')),
                 color: _isCopied
                     ? Colors.greenAccent
                     : (theme.isDark ? const Color(0xFFF8FAFC) : Colors.black87),
-                onTap: () => _copyMessage(lang),
+                onTap: onCopy ?? () => _copyMessage(lang),
               ),
             ],
             if (canRegenerate) ...[
@@ -2548,6 +2848,241 @@ class _MessageBubbleState extends State<_MessageBubble> {
     }
 
     final showHoverBar = !message.isRevoked;
+
+    // 1.8. Animated Sticker Message (Bubble-free 60 FPS Sprite Sheet)
+    final isSticker = StickerService.isSticker(message.text);
+    if (isSticker) {
+      final sticker = StickerService().findByToken(message.text);
+
+      Widget stickerWidget;
+      if (sticker != null) {
+        stickerWidget = SpriteStickerWidget(
+          filePath: sticker.isFromFile ? sticker.spritePath : null,
+          assetPath: !sticker.isFromFile ? sticker.spritePath : null,
+          size: 135,
+          autoPlay: true,
+          loop: true,
+        );
+      } else {
+        final parsed = StickerService.parseStickerToken(message.text);
+        final label = parsed != null
+            ? '${parsed.$1}/${parsed.$2}'
+            : message.text;
+        stickerWidget = Container(
+          width: 135,
+          height: 90,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: (theme.isDark ? Colors.white : Colors.black).withValues(
+              alpha: 0.06,
+            ),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: (theme.isDark ? Colors.white : Colors.black).withValues(
+                alpha: 0.1,
+              ),
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.sticky_note_2_outlined,
+                size: 28,
+                color: theme.isDark ? Colors.white54 : Colors.black45,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: theme.isDark ? Colors.white54 : Colors.black54,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        );
+      }
+
+      Widget stickerContent = Column(
+        crossAxisAlignment: isMine
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isGroupOrBroadcast) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 2),
+              child: Text(
+                message.senderName,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: PeerModel.generateColor(
+                    message.senderId.isNotEmpty
+                        ? message.senderId
+                        : message.senderName,
+                  ),
+                ),
+              ),
+            ),
+          ],
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              GestureDetector(
+                onSecondaryTapDown: (details) => _showMessageMenu(
+                  context,
+                  details.globalPosition,
+                  coordinator,
+                  lang,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Column(
+                    crossAxisAlignment: isMine
+                        ? CrossAxisAlignment.end
+                        : CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      stickerWidget,
+                      const SizedBox(height: 2),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(
+                            alpha: theme.isDark ? 0.35 : 0.20,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              timeStr,
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                color: Colors.white70,
+                              ),
+                            ),
+                            if (isMine) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                message.status == MessageStatus.read
+                                    ? Icons.done_all_rounded
+                                    : (message.status == MessageStatus.delivered
+                                          ? Icons.done_all_rounded
+                                          : (message.status ==
+                                                    MessageStatus.sent
+                                                ? Icons.done_rounded
+                                                : Icons.schedule_rounded)),
+                                size: 12,
+                                color: message.status == MessageStatus.read
+                                    ? const Color(0xFF67E8F9)
+                                    : Colors.white70,
+                              ),
+                              if (message.status == MessageStatus.read) ...[
+                                const SizedBox(width: 2),
+                                Text(
+                                  lang.tr('seen'),
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF67E8F9),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (showHoverBar)
+                Positioned(
+                  top: -6,
+                  right: isMine ? null : 6,
+                  left: isMine ? 6 : null,
+                  child: AnimatedOpacity(
+                    opacity: _isHovered ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 150),
+                    child: IgnorePointer(
+                      ignoring: !_isHovered,
+                      child: _buildHoverActions(
+                        context,
+                        theme,
+                        lang,
+                        coordinator,
+                        canCopy:
+                            sticker != null &&
+                            sticker.isFromFile &&
+                            File(sticker.previewPath).existsSync(),
+                        canRegenerate: false,
+                        isImage: true,
+                        onCopy:
+                            (sticker != null &&
+                                sticker.isFromFile &&
+                                File(sticker.previewPath).existsSync())
+                            ? () => ImageClipboardHelper.copyImageToClipboard(
+                                context,
+                                filePath: sticker.previewPath,
+                                lang: lang,
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (message.reactions.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            _MessageReactionsBar(
+              reactions: message.reactions,
+              localUsername: coordinator.localUsername,
+              isMine: isMine,
+              onToggleReaction: (emoji) => coordinator.toggleMessageReaction(
+                message.conversationId,
+                message.id,
+                emoji,
+              ),
+              onAddReaction: () =>
+                  _showQuickReactionPicker(context, coordinator),
+            ),
+          ],
+        ],
+      );
+
+      if (isGroupOrBroadcast && senderPeer != null) {
+        stickerContent = Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 6, right: 8),
+              child: AppAvatar(peer: senderPeer, size: 28, showStatus: false),
+            ),
+            Flexible(child: stickerContent),
+          ],
+        );
+      }
+
+      return Align(
+        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _isHovered = true),
+          onExit: (_) => setState(() => _isHovered = false),
+          child: stickerContent,
+        ),
+      );
+    }
 
     // 2. Full-bleed Photo Bubble (Telegram/Discord style)
     if (isPureImage) {
@@ -2780,8 +3315,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
                         theme,
                         lang,
                         coordinator,
-                        canCopy: false,
+                        canCopy: fileExists,
                         canRegenerate: false,
+                        onCopy: () => _copyImage(lang),
+                        isImage: true,
                       ),
                     ),
                   ),
@@ -2834,7 +3371,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
     final isAi = message.aiModelTag != null;
     final canCopy = message.text.isNotEmpty;
     final canRegenerate = isAi && !isMine && !message.isStreaming;
-    final detectedEntities = MessageEntityDetector.extractEntities(message.text);
+    final detectedEntities = MessageEntityDetector.extractEntities(
+      message.text,
+    );
 
     final Color bubbleBg;
     if (isMine) {
@@ -3328,16 +3867,18 @@ class _MessageQuickActionChips extends StatelessWidget {
           final chipBg = isMine
               ? Colors.white.withValues(alpha: 0.16)
               : (theme.isDark
-                  ? const Color(0xFF334155).withValues(alpha: 0.70)
-                  : const Color(0xFFF1F5F9));
+                    ? const Color(0xFF334155).withValues(alpha: 0.70)
+                    : const Color(0xFFF1F5F9));
           final chipBorder = isMine
               ? Colors.white.withValues(alpha: 0.28)
               : (theme.isDark
-                  ? const Color(0x33FFFFFF)
-                  : Colors.black.withValues(alpha: 0.08));
+                    ? const Color(0x33FFFFFF)
+                    : Colors.black.withValues(alpha: 0.08));
           final textColor = isMine
               ? Colors.white
-              : (theme.isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155));
+              : (theme.isDark
+                    ? const Color(0xFFE2E8F0)
+                    : const Color(0xFF334155));
           final iconColor = isMine
               ? Colors.cyanAccent.shade100
               : theme.colors.accentBlue;
@@ -3363,7 +3904,10 @@ class _MessageQuickActionChips extends StatelessWidget {
                   message: copiedToast,
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 3.5,
+                  ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -3883,6 +4427,40 @@ class _AttachmentPreview extends StatelessWidget {
                     ],
                   ),
                 ),
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Tooltip(
+                    message: lang.tr('copyImage'),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () => ImageClipboardHelper.copyImageToClipboard(
+                          context,
+                          filePath: file.path,
+                          lang: lang,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white30,
+                              width: 0.8,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.copy_rounded,
+                            size: 13,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -3992,6 +4570,7 @@ class _ChatInputDock extends StatefulWidget {
   final List<File> stagedAttachments;
   final ValueChanged<int>? onRemoveStagedAttachment;
   final VoidCallback? onClearStagedAttachments;
+  final void Function(StickerItem sticker)? onSendSticker;
 
   const _ChatInputDock({
     required this.controller,
@@ -4008,6 +4587,7 @@ class _ChatInputDock extends StatefulWidget {
     this.stagedAttachments = const [],
     this.onRemoveStagedAttachment,
     this.onClearStagedAttachments,
+    this.onSendSticker,
   });
 
   @override
@@ -4016,6 +4596,21 @@ class _ChatInputDock extends StatefulWidget {
 
 class _ChatInputDockState extends State<_ChatInputDock> {
   bool _showEmojiPicker = false;
+  bool _showStickerPicker = false;
+  final Object _pickerTapGroup = Object();
+
+  Widget _dismissiblePicker(Widget child) => TapRegion(
+    groupId: _pickerTapGroup,
+    onTapOutside: (_) {
+      if (_showEmojiPicker || _showStickerPicker) {
+        setState(() {
+          _showEmojiPicker = false;
+          _showStickerPicker = false;
+        });
+      }
+    },
+    child: child,
+  );
   final ScrollController _inputScrollController = ScrollController();
 
   @override
@@ -4202,136 +4797,167 @@ class _ChatInputDockState extends State<_ChatInputDock> {
                             padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
                             child: Align(
                               alignment: Alignment.centerLeft,
-                              child: Container(
-                                width: 340,
-                                height: 220,
-                                decoration: BoxDecoration(
-                                  color:
-                                      (theme.isDark
-                                              ? const Color(0xFF1E293B)
-                                              : const Color(0xFFF7F8FA))
-                                          .withValues(alpha: 0.98),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
+                              child: _dismissiblePicker(
+                                Container(
+                                  width: 340,
+                                  height: 220,
+                                  decoration: BoxDecoration(
                                     color:
                                         (theme.isDark
-                                                ? const Color(0x1FFFFFFF)
-                                                : Colors.black)
-                                            .withValues(
-                                              alpha: theme.isDark ? 0.8 : 0.08,
-                                            ),
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(
-                                        alpha: theme.isDark ? 0.35 : 0.08,
-                                      ),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Padding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        12,
-                                        8,
-                                        8,
-                                        6,
-                                      ),
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            lang.tr('emojis'),
-                                            style: TextStyle(
-                                              fontSize: 11.5,
-                                              fontWeight: FontWeight.w600,
-                                              color: theme.isDark
-                                                  ? Colors.white70
-                                                  : Colors.black87,
-                                            ),
-                                          ),
-                                          InkWell(
-                                            onTap: () => setState(
-                                              () => _showEmojiPicker = false,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(3),
-                                              child: Icon(
-                                                Icons.close_rounded,
-                                                size: 15,
-                                                color: theme.isDark
-                                                    ? Colors.white54
-                                                    : Colors.black45,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Divider(
-                                      height: 1,
-                                      thickness: 0.8,
+                                                ? const Color(0xFF1E293B)
+                                                : const Color(0xFFF7F8FA))
+                                            .withValues(alpha: 0.98),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
                                       color:
                                           (theme.isDark
-                                                  ? Colors.white
+                                                  ? const Color(0x1FFFFFFF)
                                                   : Colors.black)
                                               .withValues(
                                                 alpha: theme.isDark
-                                                    ? 0.08
-                                                    : 0.06,
+                                                    ? 0.8
+                                                    : 0.08,
                                               ),
                                     ),
-                                    Expanded(
-                                      child: Scrollbar(
-                                        child: GridView.builder(
-                                          padding: const EdgeInsets.all(6),
-                                          gridDelegate:
-                                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                                crossAxisCount: 8,
-                                                mainAxisSpacing: 3,
-                                                crossAxisSpacing: 3,
-                                                childAspectRatio: 1.0,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: theme.isDark ? 0.35 : 0.08,
+                                        ),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          12,
+                                          8,
+                                          8,
+                                          6,
+                                        ),
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              lang.tr('emojis'),
+                                              style: TextStyle(
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: theme.isDark
+                                                    ? Colors.white70
+                                                    : Colors.black87,
                                               ),
-                                          itemCount: _commonEmojis.length,
-                                          itemBuilder: (context, idx) {
-                                            final emoji = _commonEmojis[idx];
-                                            return Material(
-                                              color: Colors.transparent,
-                                              child: InkWell(
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
-                                                hoverColor:
-                                                    (theme.isDark
-                                                            ? Colors.white
-                                                            : Colors.black)
-                                                        .withValues(
-                                                          alpha: 0.08,
-                                                        ),
-                                                onTap: () =>
-                                                    _insertEmoji(emoji),
-                                                child: Center(
-                                                  child: Text(
-                                                    emoji,
-                                                    style: const TextStyle(
-                                                      fontSize: 22,
+                                            ),
+                                            InkWell(
+                                              onTap: () => setState(
+                                                () => _showEmojiPicker = false,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              child: Padding(
+                                                padding: const EdgeInsets.all(
+                                                  3,
+                                                ),
+                                                child: Icon(
+                                                  Icons.close_rounded,
+                                                  size: 15,
+                                                  color: theme.isDark
+                                                      ? Colors.white54
+                                                      : Colors.black45,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Divider(
+                                        height: 1,
+                                        thickness: 0.8,
+                                        color:
+                                            (theme.isDark
+                                                    ? Colors.white
+                                                    : Colors.black)
+                                                .withValues(
+                                                  alpha: theme.isDark
+                                                      ? 0.08
+                                                      : 0.06,
+                                                ),
+                                      ),
+                                      Expanded(
+                                        child: Scrollbar(
+                                          child: GridView.builder(
+                                            padding: const EdgeInsets.all(6),
+                                            gridDelegate:
+                                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                                  crossAxisCount: 8,
+                                                  mainAxisSpacing: 3,
+                                                  crossAxisSpacing: 3,
+                                                  childAspectRatio: 1.0,
+                                                ),
+                                            itemCount: _commonEmojis.length,
+                                            itemBuilder: (context, idx) {
+                                              final emoji = _commonEmojis[idx];
+                                              return Material(
+                                                color: Colors.transparent,
+                                                child: InkWell(
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                  hoverColor:
+                                                      (theme.isDark
+                                                              ? Colors.white
+                                                              : Colors.black)
+                                                          .withValues(
+                                                            alpha: 0.08,
+                                                          ),
+                                                  onTap: () =>
+                                                      _insertEmoji(emoji),
+                                                  child: Center(
+                                                    child: Text(
+                                                      emoji,
+                                                      style: const TextStyle(
+                                                        fontSize: 22,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
-                                              ),
-                                            );
-                                          },
+                                              );
+                                            },
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+
+                  // 1.2 Sticker Popover (Bento Frosted Glass)
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    child: _showStickerPicker
+                        ? Padding(
+                            padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: _dismissiblePicker(
+                                StickerPickerPopover(
+                                  onSelectSticker: (sticker) {
+                                    setState(() => _showStickerPicker = false);
+                                    widget.onSendSticker?.call(sticker);
+                                  },
+                                  onClose: () => setState(
+                                    () => _showStickerPicker = false,
+                                  ),
                                 ),
                               ),
                             ),
@@ -4396,7 +5022,11 @@ class _ChatInputDockState extends State<_ChatInputDock> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  widget.replyingTo!.text.isNotEmpty
+                                  StickerService.isSticker(
+                                        widget.replyingTo!.text,
+                                      )
+                                      ? '[${lang.tr('stickers')}]'
+                                      : widget.replyingTo!.text.isNotEmpty
                                       ? widget.replyingTo!.text.replaceAll(
                                           '\n',
                                           ' ',
@@ -4555,18 +5185,44 @@ class _ChatInputDockState extends State<_ChatInputDock> {
                           onPressed: widget.onAttachFile,
                         ),
                         const SizedBox(width: 2),
-                        GlassIconButton(
-                          icon: Icons.sentiment_satisfied_alt_rounded,
-                          tooltip: lang.tr('emojis'),
-                          size: 32,
-                          color: _showEmojiPicker
-                              ? theme.colors.accentBlue
-                              : null,
-                          onPressed: () {
-                            setState(() {
-                              _showEmojiPicker = !_showEmojiPicker;
-                            });
-                          },
+                        TapRegion(
+                          groupId: _pickerTapGroup,
+                          child: GlassIconButton(
+                            icon: Icons.sentiment_satisfied_alt_rounded,
+                            tooltip: lang.tr('emojis'),
+                            size: 32,
+                            color: _showEmojiPicker
+                                ? theme.colors.accentBlue
+                                : null,
+                            onPressed: () {
+                              setState(() {
+                                _showEmojiPicker = !_showEmojiPicker;
+                                if (_showEmojiPicker) {
+                                  _showStickerPicker = false;
+                                }
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        TapRegion(
+                          groupId: _pickerTapGroup,
+                          child: GlassIconButton(
+                            icon: Icons.sticky_note_2_rounded,
+                            tooltip: lang.tr('stickers'),
+                            size: 32,
+                            color: _showStickerPicker
+                                ? theme.colors.accentBlue
+                                : null,
+                            onPressed: () {
+                              setState(() {
+                                _showStickerPicker = !_showStickerPicker;
+                                if (_showStickerPicker) {
+                                  _showEmojiPicker = false;
+                                }
+                              });
+                            },
+                          ),
                         ),
                         if (!isAiChat) ...[
                           const SizedBox(width: 2),

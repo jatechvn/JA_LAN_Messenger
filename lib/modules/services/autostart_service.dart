@@ -4,6 +4,26 @@ import 'package:flutter/foundation.dart';
 /// Manages Windows startup configuration via the HKCU Run registry key.
 /// Safe and does not require administrative / UAC elevation.
 class AutostartService {
+  /// Apply once for a fresh Windows user profile, never re-enable an opt-out.
+  static Future<void> ensureDefaultForNewInstallation({
+    required File preferencesFile,
+    bool? windows,
+    Future<bool> Function(bool)? register,
+  }) async {
+    if (!(windows ?? Platform.isWindows)) return;
+    final marker = File('${preferencesFile.path}.autostart-initialized');
+    try {
+      // Older installations may have disabled startup without a stored flag.
+      if (await preferencesFile.exists() || await marker.exists()) return;
+      if (await (register ?? setAutoStart)(true)) {
+        await marker.parent.create(recursive: true);
+        await marker.writeAsString('1', flush: true);
+      }
+    } catch (e) {
+      debugPrint('[AutostartService] First-run setup error: $e');
+    }
+  }
+
   static const String _registryKey =
       r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run';
   static const String _appName = 'JA_LAN_Messenger';

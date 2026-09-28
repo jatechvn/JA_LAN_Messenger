@@ -2,6 +2,9 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'app_icon_decoder.dart';
+import 'package:crypto/crypto.dart';
 
 /// Dịch vụ tạo icon thanh tác vụ (System Tray Icon) có hiển thị huy hiệu (badge)
 /// thông báo số lượng tin nhắn chưa đọc cho Windows Desktop.
@@ -52,16 +55,21 @@ class TrayBadgeService {
     if (unreadCount <= 0) return null;
 
     final badgeText = unreadCount > 9 ? '9+' : '$unreadCount';
-    final cacheKey = 'badge_$badgeText';
-
-    if (_cache.containsKey(cacheKey)) {
-      final cachedPath = _cache[cacheKey]!;
-      if (await File(cachedPath).exists()) {
-        return cachedPath;
-      }
-    }
-
     try {
+      final asset = await rootBundle.load('assets/app_icon.ico');
+      final iconBytes = asset.buffer.asUint8List(
+        asset.offsetInBytes,
+        asset.lengthInBytes,
+      );
+      final cacheKey = '${sha256.convert(iconBytes)}_$badgeText';
+
+      if (_cache.containsKey(cacheKey)) {
+        final cachedPath = _cache[cacheKey]!;
+        if (await File(cachedPath).exists()) {
+          return cachedPath;
+        }
+      }
+
       final tempDir = Directory(
         '${Directory.systemTemp.path}${Platform.pathSeparator}ja_tray_cache',
       );
@@ -70,10 +78,10 @@ class TrayBadgeService {
       }
 
       final targetFile = File(
-        '${tempDir.path}${Platform.pathSeparator}tray_badge_$badgeText.ico',
+        '${tempDir.path}${Platform.pathSeparator}tray_badge_$cacheKey.ico',
       );
 
-      final pngBytes = await _renderBadgePng(badgeText);
+      final pngBytes = await _renderBadgePng(badgeText, iconBytes);
       if (pngBytes == null) return null;
 
       final icoBytes = wrapPngAsIco(pngBytes, width: 32, height: 32);
@@ -88,39 +96,28 @@ class TrayBadgeService {
   }
 
   /// Vẽ biểu tượng ứng dụng và huy hiệu màu đỏ chứa số bằng Canvas
-  static Future<Uint8List?> _renderBadgePng(String badgeText) async {
+  static Future<Uint8List?> _renderBadgePng(
+    String badgeText,
+    Uint8List iconBytes,
+  ) async {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, 32, 32));
 
-    // 1. Nền icon ứng dụng: Hình tròn hoặc bo tròn màu xanh dương gradient JA LAN Messenger
-    final bgPaint = Paint()
-      ..shader = ui.Gradient.linear(const Offset(0, 0), const Offset(32, 32), [
-        const Color(0xFF2563EB),
-        const Color(0xFF0D9488),
-      ]);
-    final bgRRect = RRect.fromRectAndRadius(
-      const Rect.fromLTWH(2, 2, 28, 28),
-      const Radius.circular(8),
+    final base = await decodeAppIcon(iconBytes);
+    final fitted = applyBoxFit(
+      BoxFit.contain,
+      Size(base.width.toDouble(), base.height.toDouble()),
+      const Size(32, 32),
     );
-    canvas.drawRRect(bgRRect, bgPaint);
-
-    // 2. Vẽ biểu tượng chat bubble tinh gọn ở giữa
-    final iconPaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    final bubbleRect = RRect.fromRectAndRadius(
-      const Rect.fromLTWH(7, 8, 18, 13),
-      const Radius.circular(4),
+    canvas.drawImageRect(
+      base,
+      Rect.fromLTWH(0, 0, base.width.toDouble(), base.height.toDouble()),
+      Alignment.center.inscribe(
+        fitted.destination,
+        const Rect.fromLTWH(0, 0, 32, 32),
+      ),
+      Paint()..filterQuality = FilterQuality.medium,
     );
-    canvas.drawRRect(bubbleRect, iconPaint);
-
-    // Đuôi chat bubble
-    final tailPath = ui.Path()
-      ..moveTo(10, 20)
-      ..lineTo(7, 24)
-      ..lineTo(14, 21)
-      ..close();
-    canvas.drawPath(tailPath, iconPaint);
 
     // 3. Vẽ Huy hiệu đỏ nổi bật (Badge) ở góc trên bên phải
     final badgePaint = Paint()
@@ -166,8 +163,18 @@ class TrayBadgeService {
     );
 
     final picture = recorder.endRecording();
-    final image = await picture.toImage(32, 32);
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    return byteData?.buffer.asUint8List();
+    try {
+      final image = await picture.toImage(32, 32);
+      try {
+        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+        return byteData?.buffer.asUint8List();
+      } finally {
+        image.dispose();
+      }
+    } finally {
+      picture.dispose();
+      base.dispose();
+      textPainter.dispose();
+    }
   }
 }

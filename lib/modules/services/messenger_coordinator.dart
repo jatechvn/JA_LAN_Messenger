@@ -1024,6 +1024,11 @@ class MessengerCoordinator extends ChangeNotifier {
     }
   }
 
+  /// Same presence rule as the Online tab, including away/busy peers.
+  /// Uses the deduplicated, search-filtered contact list (including enabled AI).
+  List<PeerModel> get onlinePeers =>
+      peers.where((peer) => peer.status != PeerStatus.offline).toList();
+
   List<PeerModel> get peers {
     // Deduplicate peers by canonical device identity
     final Map<String, PeerModel> uniqueMap = {};
@@ -1190,18 +1195,91 @@ class MessengerCoordinator extends ChangeNotifier {
       _discovery.enabledAdapters;
 
   String getLocalizedScanStatus(LanguageProvider lang) {
-    if (_discovery.scanState.isSweeping) {
-      final percent = (_discovery.scanState.progress * 100).toInt();
-      final subnets = _discovery.scanState.activeSubnets.isNotEmpty
-          ? ' • ${_discovery.scanState.activeSubnets.join(', ')}'
+    final state = _discovery.scanState;
+    if (state.isSweeping) {
+      final percent = (state.progress * 100).toInt();
+      final subnets = state.activeSubnets.isNotEmpty
+          ? ' • ${state.activeSubnets.join(', ')}'
           : '';
-      if (_discovery.scanState.activePhase == 'subnet_sweep') {
-        return _discovery.scanState.statusText;
+
+      switch (state.activePhase) {
+        case 'subnet_sweep':
+          int done = state.sweepDone;
+          int total = state.sweepTotal;
+          int sent = state.sweepSent;
+
+          // Double-guard fallback: if metrics were 0, try parsing statusText
+          if (total <= 0 && state.statusText.isNotEmpty) {
+            final match = RegExp(
+              r'(\d+)\s*/\s*(\d+).*?(\d+)',
+            ).firstMatch(state.statusText);
+            if (match != null) {
+              done = int.tryParse(match.group(1) ?? '') ?? done;
+              total = int.tryParse(match.group(2) ?? '') ?? total;
+              sent = int.tryParse(match.group(3) ?? '') ?? sent;
+            }
+          }
+
+          if (total > 0) {
+            return lang.tr('scanSubnetProgress', [done, total, sent]);
+          }
+          return '${lang.tr('scanning')} ($percent%)$subnets';
+
+        case 'broadcasting':
+          final count = state.activeAdaptersCount > 0
+              ? state.activeAdaptersCount
+              : (state.activeSubnets.isNotEmpty
+                    ? state.activeSubnets.length
+                    : 1);
+          return lang.tr('scanBroadcastingMultiNic', [count]);
+
+        case 'arp_sweep':
+          int arpCount = state.arpCount;
+          if (arpCount <= 0 && state.statusText.isNotEmpty) {
+            final match = RegExp(r'\((\d+)\s*').firstMatch(state.statusText);
+            if (match != null) {
+              arpCount = int.tryParse(match.group(1) ?? '') ?? arpCount;
+            }
+          }
+          if (arpCount > 0) {
+            return lang.tr('scanArpChecking', [arpCount]);
+          }
+          return '${lang.tr('scanning')} ($percent%)$subnets';
+
+        case 'initializing':
+          return lang.tr('scanPreparing');
+
+        case 'adapters_updated':
+          return lang.tr('scanAdaptersUpdated');
+
+        default:
+          return '${lang.tr('scanning')} ($percent%)$subnets';
       }
-      return '${lang.tr('scanning')} ($percent%)$subnets';
     }
-    final subnetSummary = _discovery.scanState.activeSubnets.isNotEmpty
-        ? _discovery.scanState.activeSubnets.join(', ')
+
+    // Khi không quét (isSweeping == false)
+    switch (state.activePhase) {
+      case 'no_adapters':
+        return lang.tr('scanNoAdaptersSelected');
+
+      case 'error':
+        return lang.tr('scanIncomplete', [state.errorMessage ?? '']);
+
+      case 'stopped':
+        return lang.tr('scanStopped');
+
+      case 'sweep_finished':
+        if (state.sweepDone > 0) {
+          return lang.tr('scanCompletedDetail', [
+            state.sweepDone,
+            state.sweepSent,
+          ]);
+        }
+        break;
+    }
+
+    final subnetSummary = state.activeSubnets.isNotEmpty
+        ? state.activeSubnets.join(', ')
         : 'LAN';
     return '${lang.tr('realtimeListening')} • $subnetSummary';
   }
@@ -1244,6 +1322,9 @@ class MessengerCoordinator extends ChangeNotifier {
   }
 
   void markAllAsRead() {
+    for (final id in _conversations.keys.toList()) {
+      markConversationAsRead(id);
+    }
     _allUsersPeer.unreadCount = 0;
     _aiPeer.unreadCount = 0;
     for (final p in _peers.values) {
@@ -2297,7 +2378,6 @@ class MessengerCoordinator extends ChangeNotifier {
     final list = _conversations.putIfAbsent(group.id, () => []);
     if (list.any((message) => message.id == messageId)) return;
     final notice = languageProvider?.tr(localeKey, args) ?? fallback;
-    final isCurrentChat = _selectedPeer?.id == group.id;
     list.add(
       MessageModel(
         id: messageId,
@@ -2306,13 +2386,13 @@ class MessengerCoordinator extends ChangeNotifier {
         recipientId: group.id,
         text: notice,
         isMine: false,
-        status: isCurrentChat ? MessageStatus.read : MessageStatus.delivered,
+        status: MessageStatus.delivered,
       ),
     );
     chatHistory.scheduleSave(group.id, list);
     group.lastMessage = notice;
     group.lastMessageTime = list.last.timestamp;
-    if (!isCurrentChat) group.unreadCount++;
+    group.unreadCount++;
   }
 
   String _groupMemberLabel(String memberId, GroupModel group) {
@@ -2846,7 +2926,6 @@ class MessengerCoordinator extends ChangeNotifier {
     if (groupId == null && decryptedText.startsWith('[All Users] ')) {
       final actualText = decryptedText.substring('[All Users] '.length);
       final quote = _parseQuote(actualText);
-      final isCurrentChat = _selectedPeer?.id == '__ALL_USERS__';
       final msg = MessageModel(
         id: messageId,
         senderId: senderPeer.id,
@@ -2855,7 +2934,7 @@ class MessengerCoordinator extends ChangeNotifier {
         text: quote.text,
         timestamp: timestamp,
         isMine: false,
-        status: isCurrentChat ? MessageStatus.read : MessageStatus.delivered,
+        status: MessageStatus.delivered,
         replyToSender: quote.replySender,
         replyToText: quote.replyText,
       );
@@ -2864,9 +2943,7 @@ class MessengerCoordinator extends ChangeNotifier {
       chatHistory.scheduleSave('__ALL_USERS__', list);
       _allUsersPeer.lastMessage = '${senderPeer.name}: ${quote.text}';
       _allUsersPeer.lastMessageTime = timestamp;
-      if (!isCurrentChat) {
-        _allUsersPeer.unreadCount++;
-      }
+      _allUsersPeer.unreadCount++;
       _showDesktopNotification(
         title: '[All Users] ${senderPeer.displayName}',
         body: quote.text,
@@ -2890,7 +2967,6 @@ class MessengerCoordinator extends ChangeNotifier {
             ? decryptedText.substring(prefix.length)
             : decryptedText;
         final quote = _parseQuote(actualText);
-        final isCurrentChat = _selectedPeer?.id == targetGroup.id;
         final msg = MessageModel(
           id: messageId,
           senderId: senderPeer.id,
@@ -2899,7 +2975,7 @@ class MessengerCoordinator extends ChangeNotifier {
           text: quote.text,
           timestamp: timestamp,
           isMine: false,
-          status: isCurrentChat ? MessageStatus.read : MessageStatus.delivered,
+          status: MessageStatus.delivered,
           replyToSender: quote.replySender,
           replyToText: quote.replyText,
         );
@@ -2912,9 +2988,7 @@ class MessengerCoordinator extends ChangeNotifier {
 
         targetGroup.lastMessage = '${senderPeer.name}: ${quote.text}';
         targetGroup.lastMessageTime = timestamp;
-        if (!isCurrentChat) {
-          targetGroup.unreadCount++;
-        }
+        targetGroup.unreadCount++;
         _groupTypingPeers[targetGroup.id]?.remove(senderPeer.id);
         _saveGroups();
         notifyListeners();
@@ -2938,7 +3012,7 @@ class MessengerCoordinator extends ChangeNotifier {
           text: quote.text,
           timestamp: timestamp,
           isMine: false,
-          status: isCurrentChat ? MessageStatus.read : MessageStatus.delivered,
+          status: MessageStatus.delivered,
           replyToSender: quote.replySender,
           replyToText: quote.replyText,
         );
@@ -2968,17 +3042,7 @@ class MessengerCoordinator extends ChangeNotifier {
         senderPeer.lastMessage = quote.text;
         senderPeer.lastMessageTime = timestamp;
 
-        if (!isCurrentChat) {
-          senderPeer.unreadCount++;
-        } else {
-          // Gửi ngay tín hiệu đã xem (Read receipt) về phía gửi
-          _tcpServer.send(
-            _peerSessions.sessions.containsKey(senderIp)
-                ? senderIp
-                : senderPeer.id,
-            ProtocolBeebeep.buildReadPacket(messageId),
-          );
-        }
+        senderPeer.unreadCount++;
 
         _showDesktopNotification(
           title: senderPeer.displayName,
@@ -3295,31 +3359,54 @@ class MessengerCoordinator extends ChangeNotifier {
 
   /// Đánh dấu toàn bộ tin nhắn trong cuộc trò chuyện là đã đọc
   void markConversationAsRead(String peerId) {
+    markMessagesAsRead(peerId, _conversations[peerId]?.toSet() ?? {});
+  }
+
+  /// Called only for individually observed messages, or explicit mark-read actions.
+  void markMessagesAsRead(String peerId, Set<MessageModel> visibleMessages) {
     final list = _conversations[peerId];
     var hadUnread = false;
     if (list != null && list.isNotEmpty) {
       for (final m in list) {
-        if (!m.isMine && m.status != MessageStatus.read) {
+        if (visibleMessages.contains(m) &&
+            !m.isMine &&
+            m.status != MessageStatus.read) {
           m.status = MessageStatus.read;
           hadUnread = true;
-          if (peerId != '__ALL_USERS__' && !_groups.containsKey(peerId)) {
-            _sendToPeer(peerId, ProtocolBeebeep.buildReadPacket(m.id));
+          if (peerId != '__ALL_USERS__' &&
+              !_groups.containsKey(peerId) &&
+              int.tryParse(m.id) != null) {
+            final sessions = _peerSessions
+                .forConversation(peerId)
+                .where((s) => s.available && s.hash == m.sourceSession);
+            if (m.sourceSession != null) {
+              if (sessions.isNotEmpty) {
+                _tcpServer.send(
+                  sessions.first.endpoint,
+                  ProtocolBeebeep.buildReadPacket(m.id),
+                );
+              }
+            } else {
+              _sendToPeer(peerId, ProtocolBeebeep.buildReadPacket(m.id));
+            }
           }
         }
       }
     }
+    final remaining = countUnreadMessages(peerId);
+    if (_selectedPeer?.id == peerId) _selectedPeer!.unreadCount = remaining;
     final peer = _peers[peerId];
-    if (peer != null && peer.unreadCount > 0) {
-      peer.unreadCount = 0;
+    if (peer != null && peer.unreadCount != remaining) {
+      peer.unreadCount = remaining;
       hadUnread = true;
     }
-    if (peerId == '__ALL_USERS__' && _allUsersPeer.unreadCount > 0) {
-      _allUsersPeer.unreadCount = 0;
+    if (peerId == '__ALL_USERS__' && _allUsersPeer.unreadCount != remaining) {
+      _allUsersPeer.unreadCount = remaining;
       hadUnread = true;
     }
     final group = _groups[peerId];
-    if (group != null && group.unreadCount > 0) {
-      group.unreadCount = 0;
+    if (group != null && group.unreadCount != remaining) {
+      group.unreadCount = remaining;
       hadUnread = true;
       _saveGroups();
     }
@@ -3400,27 +3487,13 @@ class MessengerCoordinator extends ChangeNotifier {
     final list = _conversations[peer.id];
     if (list != null) {
       var updated = false;
-      var found = false;
       for (int i = list.length - 1; i >= 0; i--) {
         final msg = list[i];
-        if (msg.id == messageId && msg.isMine) {
-          found = true;
-        }
-        if (found && msg.isMine && msg.status != MessageStatus.read) {
+        if (msg.id == messageId &&
+            msg.isMine &&
+            msg.status != MessageStatus.read) {
           msg.status = MessageStatus.read;
           updated = true;
-        }
-      }
-      if (!found) {
-        for (int i = list.length - 1; i >= 0; i--) {
-          final msg = list[i];
-          if (msg.isMine) {
-            if (msg.status != MessageStatus.read) {
-              msg.status = MessageStatus.read;
-              updated = true;
-            }
-            break;
-          }
         }
       }
       if (updated) {
@@ -3716,12 +3789,6 @@ class MessengerCoordinator extends ChangeNotifier {
     if (peer != null) {
       final firstUnread = getFirstUnreadMessageId(peer.id);
       _initialUnreadMessageIds[peer.id] = firstUnread;
-      peer.unreadCount = 0;
-      if (peer.isAllUsers) {
-        _allUsersPeer.unreadCount = 0;
-      }
-      // Giữ mốc tin chưa đọc cho dải phân cách, rồi xóa badge ngay khi mở hội thoại.
-      markConversationAsRead(peer.id);
       _chatFocusRequestId++;
     }
     notifyListeners();
@@ -5363,6 +5430,9 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
     );
 
     if (existingIndex >= 0) {
+      if (list[existingIndex].status == MessageStatus.read) {
+        msg.status = MessageStatus.read;
+      }
       list[existingIndex] = msg;
       chatHistory.scheduleSave(conversationId, list);
       if (completed) {
@@ -5379,16 +5449,12 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
     if (group != null) {
       group.lastMessage = '${senderPeer.displayName}: $preview';
       group.lastMessageTime = DateTime.now();
-      if (_selectedPeer?.id != group.id) {
-        group.unreadCount++;
-      }
+      group.unreadCount++;
       _saveGroups();
     } else {
       senderPeer.lastMessage = preview;
       senderPeer.lastMessageTime = DateTime.now();
-      if (_selectedPeer?.id != senderPeer.id) {
-        senderPeer.unreadCount++;
-      }
+      senderPeer.unreadCount++;
     }
 
     if (completed) {

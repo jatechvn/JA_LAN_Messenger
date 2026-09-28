@@ -13,9 +13,11 @@ import 'modules/constants.dart';
 import 'modules/logger_config.dart';
 import 'modules/window_helper.dart';
 import 'modules/services/app_preferences.dart';
+import 'modules/services/autostart_service.dart';
 import 'modules/services/ota_update_service.dart';
 import 'modules/ime/ime_service.dart';
 import 'modules/ime/ime_types.dart';
+import 'modules/services/sticker_service.dart';
 
 void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,6 +43,11 @@ void main(List<String> args) async {
 
   // Khởi tạo cửa sổ Desktop nhỏ gọn, nhẹ, tốc độ cao
   final prefs = AppPreferences();
+  if (kReleaseMode) {
+    await AutostartService.ensureDefaultForNewInstallation(
+      preferencesFile: prefs.preferencesFile,
+    );
+  }
   await prefs.load();
   // Tự động nạp cấu hình OTA từ update_config.json nếu có
   await OtaUpdateService().syncExternalConfigToPreferences();
@@ -49,6 +56,9 @@ void main(List<String> args) async {
   final ime = ImeService();
   ime.setMode(ImeMode.fromId(prefs.imeMode));
   ime.setAutoBypassExternal(prefs.imeAutoBypassExternal);
+
+  // Tự động nạp bộ nhãn dán Sticker
+  await StickerService().loadPacks();
 
   await initGlassWindow(
     title: appName,
@@ -77,6 +87,7 @@ class JaLanMessengerApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => LanguageProvider()),
         ChangeNotifierProvider(create: (_) => MessengerCoordinator()),
         ChangeNotifierProvider.value(value: ImeService()),
+        ChangeNotifierProvider.value(value: StickerService()),
       ],
       child: const _MessengerAppContent(),
     );

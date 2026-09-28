@@ -21,8 +21,12 @@ class DiscoveryScanState {
   final List<String> activeSubnets;
   final DateTime? lastSweepTime;
   final int discoveredPeersCount;
-  final String
-  activePhase; // 'initializing', 'broadcasting', 'arp_sweep', 'idle'
+  final String activePhase; // 'initializing', 'broadcasting', 'arp_sweep', 'subnet_sweep', 'idle', 'stopped', 'error', 'no_adapters', 'sweep_finished', 'adapters_updated'
+  final int sweepDone;
+  final int sweepTotal;
+  final int sweepSent;
+  final int arpCount;
+  final String? errorMessage;
 
   const DiscoveryScanState({
     this.isSweeping = false,
@@ -33,6 +37,11 @@ class DiscoveryScanState {
     this.lastSweepTime,
     this.discoveredPeersCount = 0,
     this.activePhase = 'idle',
+    this.sweepDone = 0,
+    this.sweepTotal = 0,
+    this.sweepSent = 0,
+    this.arpCount = 0,
+    this.errorMessage,
   });
 
   DiscoveryScanState copyWith({
@@ -44,6 +53,11 @@ class DiscoveryScanState {
     DateTime? lastSweepTime,
     int? discoveredPeersCount,
     String? activePhase,
+    int? sweepDone,
+    int? sweepTotal,
+    int? sweepSent,
+    int? arpCount,
+    String? errorMessage,
   }) {
     return DiscoveryScanState(
       isSweeping: isSweeping ?? this.isSweeping,
@@ -54,6 +68,11 @@ class DiscoveryScanState {
       lastSweepTime: lastSweepTime ?? this.lastSweepTime,
       discoveredPeersCount: discoveredPeersCount ?? this.discoveredPeersCount,
       activePhase: activePhase ?? this.activePhase,
+      sweepDone: sweepDone ?? this.sweepDone,
+      sweepTotal: sweepTotal ?? this.sweepTotal,
+      sweepSent: sweepSent ?? this.sweepSent,
+      arpCount: arpCount ?? this.arpCount,
+      errorMessage: errorMessage ?? this.errorMessage,
     );
   }
 }
@@ -102,7 +121,7 @@ class LanDiscoveryService {
       statusText: enabled.isEmpty
           ? 'Chưa chọn card mạng nào'
           : 'Đã cập nhật card mạng • Đang quét...',
-      activePhase: enabled.isNotEmpty ? 'initializing' : 'idle',
+      activePhase: enabled.isNotEmpty ? 'adapters_updated' : 'no_adapters',
     );
 
     // Hủy sweep cũ ngay lập tức
@@ -111,7 +130,12 @@ class LanDiscoveryService {
 
     if (!_isRunning || enabled.isEmpty) {
       if (enabled.isEmpty) {
-        _updateScanState(isSweeping: false, progress: 1.0);
+        _updateScanState(
+          isSweeping: false,
+          progress: 1.0,
+          activePhase: 'no_adapters',
+          statusText: 'Chưa chọn card mạng nào',
+        );
       }
       return;
     }
@@ -145,6 +169,11 @@ class LanDiscoveryService {
     DateTime? lastSweepTime,
     int? discoveredPeersCount,
     String? activePhase,
+    int? sweepDone,
+    int? sweepTotal,
+    int? sweepSent,
+    int? arpCount,
+    String? errorMessage,
   }) {
     _scanState = _scanState.copyWith(
       isSweeping: isSweeping,
@@ -155,6 +184,11 @@ class LanDiscoveryService {
       lastSweepTime: lastSweepTime,
       discoveredPeersCount: discoveredPeersCount,
       activePhase: activePhase,
+      sweepDone: sweepDone,
+      sweepTotal: sweepTotal,
+      sweepSent: sweepSent,
+      arpCount: arpCount,
+      errorMessage: errorMessage,
     );
     onScanStateChanged?.call(_scanState);
   }
@@ -366,6 +400,9 @@ class LanDiscoveryService {
       activePhase: 'initializing',
       activeAdaptersCount: currentEnabled.length,
       activeSubnets: currentEnabled.map((a) => a.subnet).toSet().toList(),
+      sweepDone: 0,
+      sweepTotal: 0,
+      sweepSent: 0,
     );
     await _initNetworkInterfaces(forceRefresh: forceRefreshAdapters);
     if (!_isRunning || generation != _scanGeneration) return;
@@ -414,6 +451,9 @@ class LanDiscoveryService {
             statusText:
                 'Quét UDP + TCP: $done/$total địa chỉ • đã phát $sent gói UDP',
             activePhase: 'subnet_sweep',
+            sweepDone: done,
+            sweepTotal: total,
+            sweepSent: sent,
           );
         },
       );
@@ -433,12 +473,17 @@ class LanDiscoveryService {
       _updateScanState(
         statusText:
             'Đã duyệt ${result.attempted} địa chỉ • gửi ${result.sent} gói UDP • $failures gói chưa gửi • đang lắng nghe phản hồi',
+        activePhase: 'sweep_finished',
+        sweepDone: result.attempted,
+        sweepTotal: result.attempted,
+        sweepSent: result.sent,
       );
     } catch (e) {
       if (_isRunning && generation == _scanGeneration) {
         _updateScanState(
           isSweeping: false,
-          activePhase: 'idle',
+          activePhase: 'error',
+          errorMessage: e.toString(),
           statusText: 'Quét chưa hoàn tất: $e',
         );
       }
@@ -465,6 +510,7 @@ class LanDiscoveryService {
           statusText:
               'Đang phát sóng đa tầng (${_interfaceSenders.length} card mạng)...',
           activePhase: 'broadcasting',
+          activeAdaptersCount: _interfaceSenders.length,
         );
       }
 
@@ -576,6 +622,7 @@ class LanDiscoveryService {
         progress: 0.7,
         statusText: 'Đang đối soát bảng ARP (${ips.length} thiết bị)...',
         activePhase: 'arp_sweep',
+        arpCount: ips.length,
       );
 
       for (final targetIp in ips) {
@@ -700,7 +747,7 @@ class LanDiscoveryService {
     _subnetSweep?.cancel();
     _updateScanState(
       isSweeping: false,
-      activePhase: 'idle',
+      activePhase: 'stopped',
       statusText: 'Đã dừng quét',
     );
     _broadcastTimer?.cancel();

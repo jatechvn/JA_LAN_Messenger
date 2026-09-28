@@ -394,6 +394,9 @@ class AppPreferences extends ChangeNotifier {
     return File('user_preferences.json');
   }
 
+  /// Used before startup migrations; reading this path does not save defaults.
+  File get preferencesFile => _getPrefFile();
+
   Future<void> load() async {
     final currentGen = ++_loadGeneration;
     try {

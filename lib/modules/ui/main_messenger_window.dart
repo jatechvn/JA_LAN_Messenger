@@ -425,7 +425,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
                                           // Custom Window Subheader
                                           _CustomTitleBar(
                                             onlinePeersCount:
-                                                coordinator.peers.length,
+                                                coordinator.onlinePeers.length,
                                             localIdentity:
                                                 coordinator.localUsername,
                                             isScanning: coordinator.isScanning,

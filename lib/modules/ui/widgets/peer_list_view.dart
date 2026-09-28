@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../theme/theme_provider.dart';
 import '../../localization/app_locale.dart';
 import '../../services/messenger_coordinator.dart';
+import '../../services/sticker_service.dart';
 import '../../models/peer_model.dart';
 import '../../models/group_model.dart';
 import 'glass_components.dart';
@@ -42,9 +43,7 @@ class _PeerListViewState extends State<PeerListView> {
             b.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
         return bTime.compareTo(aTime);
       });
-    final onlinePeers = allPeers
-        .where((p) => p.status != PeerStatus.offline)
-        .toList();
+    final onlinePeers = coordinator.onlinePeers;
 
     final List<PeerModel> displayPeers;
     switch (_activeCategory) {
@@ -700,7 +699,12 @@ class _PinnedAllUsersTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      allUsers.lastMessage ?? lang.tr('allUsersDesc'),
+                      allUsers.lastMessage != null
+                          ? StickerService.formatLastMessagePreview(
+                              allUsers.lastMessage!,
+                              lang.tr('stickers'),
+                            )
+                          : lang.tr('allUsersDesc'),
                       style: TextStyle(
                         fontSize: 10.5,
                         color: theme.isDark ? Colors.white38 : Colors.black45,
@@ -828,8 +832,12 @@ class _GroupListTile extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(
-                              group.lastMessage ??
-                                  '${group.memberCount} ${lang.tr('groupMembersCount')}',
+                              group.lastMessage != null
+                                  ? StickerService.formatLastMessagePreview(
+                                      group.lastMessage!,
+                                      lang.tr('stickers'),
+                                    )
+                                  : '${group.memberCount} ${lang.tr('groupMembersCount')}',
                               style: TextStyle(
                                 fontSize: 10.5,
                                 color: group.unreadCount > 0
@@ -1217,7 +1225,12 @@ class _PeerListTile extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        peer.lastMessage ?? peer.ip,
+                        peer.lastMessage != null
+                            ? StickerService.formatLastMessagePreview(
+                                peer.lastMessage!,
+                                lang.tr('stickers'),
+                              )
+                            : peer.ip,
                         style: TextStyle(
                           fontSize: 11.5,
                           color: peer.unreadCount > 0

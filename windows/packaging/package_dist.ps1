@@ -34,6 +34,10 @@ New-Item -ItemType Directory -Path $payload,$output | Out-Null
 $runtime = @(Get-ChildItem -LiteralPath $release -File | Where-Object { $_.Name -eq 'ja_lan_messenger.exe' -or $_.Extension -eq '.dll' })
 if (Get-ChildItem -LiteralPath (Join-Path $release 'data') -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }) { throw 'Linked assets refused' }
 $runtime += @(Get-ChildItem -LiteralPath (Join-Path $release 'data') -Recurse -File -Force)
+if (Test-Path -LiteralPath (Join-Path $release 'assets')) {
+    if (Get-ChildItem -LiteralPath (Join-Path $release 'assets') -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }) { throw 'Linked assets refused' }
+    $runtime += @(Get-ChildItem -LiteralPath (Join-Path $release 'assets') -Recurse -File -Force)
+}
 foreach ($file in $runtime) {
     if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Linked payload refused' }
     $relative = $file.FullName.Substring($release.Length).TrimStart('\')

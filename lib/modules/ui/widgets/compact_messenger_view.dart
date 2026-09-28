@@ -111,9 +111,7 @@ class _CompactConversationListState extends State<_CompactConversationList> {
     }
 
     final totalUnread = allItems.fold<int>(0, (sum, p) => sum + p.unreadCount);
-    final onlineCount = allPeers
-        .where((p) => p.status != PeerStatus.offline)
-        .length;
+    final onlineCount = coordinator.onlinePeers.length;
 
     return Column(
       children: [

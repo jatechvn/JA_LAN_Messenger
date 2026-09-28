@@ -1,5 +1,9 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:ja_lan_messenger/modules/services/app_icon_decoder.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ja_lan_messenger/modules/services/tray_badge_service.dart';
 
@@ -7,6 +11,59 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('TrayBadgeService Unit Tests', () {
+    test('badge preserves source icon pixels outside badge area', () async {
+      final source = await File('assets/app_icon.ico').readAsBytes();
+      final bundled = await rootBundle.load('assets/app_icon.ico');
+      expect(bundled.buffer.asUint8List(), source);
+      final base = await decodeAppIcon(source);
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      final fitted = applyBoxFit(
+        BoxFit.contain,
+        Size(base.width.toDouble(), base.height.toDouble()),
+        const Size(32, 32),
+      );
+      canvas.drawImageRect(
+        base,
+        Rect.fromLTWH(0, 0, base.width.toDouble(), base.height.toDouble()),
+        Alignment.center.inscribe(
+          fitted.destination,
+          const Rect.fromLTWH(0, 0, 32, 32),
+        ),
+        Paint()..filterQuality = FilterQuality.medium,
+      );
+      final picture = recorder.endRecording();
+      final expected = await picture.toImage(32, 32);
+      final path = await TrayBadgeService.getBadgeIconPath(3);
+      final actual = await decodeAppIcon(await File(path!).readAsBytes());
+      // Match PNG encode/decode quantization at translucent edges.
+      final encoded = await expected.toByteData(format: ui.ImageByteFormat.png);
+      final codec = await ui.instantiateImageCodec(
+        encoded!.buffer.asUint8List(),
+      );
+      final normalized = (await codec.getNextFrame()).image;
+      final expectedBytes = (await normalized.toByteData())!.buffer
+          .asUint8List();
+      normalized.dispose();
+      codec.dispose();
+      final actualBytes = (await actual.toByteData())!.buffer.asUint8List();
+      expect(
+        actualBytes.sublist(32 * 18 * 4),
+        expectedBytes.sublist(32 * 18 * 4),
+      );
+      expect(actualBytes, isNot(equals(expectedBytes)));
+      actual.dispose();
+      expected.dispose();
+      picture.dispose();
+      base.dispose();
+    });
+    test('invalid ICO is rejected', () async {
+      await expectLater(decodeAppIcon(Uint8List(4)), throwsFormatException);
+      await expectLater(
+        decodeAppIcon(Uint8List.fromList([0, 0, 1, 0, 1, 0])),
+        throwsFormatException,
+      );
+    });
     test(
       'wrapPngAsIco creates valid Windows ICO header and directory entry',
       () {

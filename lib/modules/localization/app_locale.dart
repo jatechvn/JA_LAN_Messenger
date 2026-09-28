@@ -136,6 +136,12 @@ class LanguageProvider extends ChangeNotifier {
     final dict = _translations[_currentLanguage.code] ?? _translations['en']!;
     var str = dict[key] ?? _translations['en']?[key] ?? key;
     if (args != null && args.isNotEmpty) {
+      for (var i = 0; i < args.length; i++) {
+        final placeholder = '{$i}';
+        if (str.contains(placeholder)) {
+          str = str.replaceAll(placeholder, args[i].toString());
+        }
+      }
       for (final arg in args) {
         if (str.contains('%s')) {
           str = str.replaceFirst('%s', arg.toString());
@@ -607,6 +613,34 @@ class LanguageProvider extends ChangeNotifier {
       'linkCopiedToast': 'Đã sao chép liên kết',
       'pathCopiedToast': 'Đã sao chép đường dẫn',
       'emailCopiedToast': 'Đã sao chép email',
+      'copyImage': 'Sao chép ảnh',
+      'imageCopiedToast': 'Đã sao chép ảnh vào clipboard',
+      'copyImageFailed': 'Không thể sao chép ảnh',
+      'stickers': 'Nhãn dán',
+      'zaloOriginalPack': 'Zalo gốc',
+      'reloadStickers': 'Quét lại thư mục nhãn dán',
+      'noStickersFound': 'Chưa có bộ nhãn dán nào trong assets/sticker',
+      'replaySticker': 'Phát lại nhãn dán',
+      'scanSubnetProgress':
+          'Quét UDP + TCP: %s/%s địa chỉ • đã phát %s gói UDP',
+      'scanCompletedDetail':
+          'Đã duyệt %s địa chỉ • gửi %s gói UDP • đang lắng nghe phản hồi',
+      'scanBroadcastingMultiNic':
+          'Đang phát sóng đa tầng (%s card mạng)...',
+      'scanArpChecking':
+          'Đang đối soát bảng ARP (%s thiết bị)...',
+      'scanPreparing':
+          'Đang chuẩn bị quét mạng...',
+      'scanIncomplete':
+          'Quét chưa hoàn tất: %s',
+      'scanInitializingNet':
+          'Đang khởi tạo dịch vụ mạng...',
+      'scanStopped':
+          'Đã dừng quét',
+      'scanNoAdaptersSelected':
+          'Chưa chọn card mạng nào',
+      'scanAdaptersUpdated':
+          'Đã cập nhật card mạng • Đang quét...',
     },
     'en': {
       'appName': 'JA LAN Messenger',
@@ -1063,6 +1097,34 @@ class LanguageProvider extends ChangeNotifier {
       'linkCopiedToast': 'Link copied to clipboard',
       'pathCopiedToast': 'Path copied to clipboard',
       'emailCopiedToast': 'Email copied to clipboard',
+      'copyImage': 'Copy Image',
+      'imageCopiedToast': 'Image copied to clipboard',
+      'copyImageFailed': 'Failed to copy image',
+      'stickers': 'Stickers',
+      'zaloOriginalPack': 'Zalo Original',
+      'reloadStickers': 'Rescan sticker folder',
+      'noStickersFound': 'No sticker packs found in assets/sticker',
+      'replaySticker': 'Replay sticker',
+      'scanSubnetProgress':
+          'Scanning UDP + TCP: %s/%s addresses • sent %s UDP packets',
+      'scanCompletedDetail':
+          'Scanned %s addresses • sent %s UDP packets • listening for responses',
+      'scanBroadcastingMultiNic':
+          'Multi-NIC broadcasting (%s adapters)...',
+      'scanArpChecking':
+          'Checking ARP table (%s devices)...',
+      'scanPreparing':
+          'Preparing network scan...',
+      'scanIncomplete':
+          'Scan incomplete: %s',
+      'scanInitializingNet':
+          'Initializing network service...',
+      'scanStopped':
+          'Scan stopped',
+      'scanNoAdaptersSelected':
+          'No network adapter selected',
+      'scanAdaptersUpdated':
+          'Network adapters updated • Scanning...',
     },
     'zh': {
       'appName': 'JA LAN Messenger',
@@ -1491,6 +1553,34 @@ class LanguageProvider extends ChangeNotifier {
       'linkCopiedToast': '链接已复制',
       'pathCopiedToast': '路径已复制',
       'emailCopiedToast': '邮箱已复制',
+      'copyImage': '复制图片',
+      'imageCopiedToast': '图片已复制到剪贴板',
+      'copyImageFailed': '复制图片失败',
+      'stickers': '贴图',
+      'zaloOriginalPack': 'Zalo 原版',
+      'reloadStickers': '重新扫描贴图文件夹',
+      'noStickersFound': 'assets/sticker 中未找到贴图包',
+      'replaySticker': '重播贴图',
+      'scanSubnetProgress':
+          '正在扫描 UDP + TCP：%s/%s 个地址 • 已发送 %s 个 UDP 数据包',
+      'scanCompletedDetail':
+          '已扫描 %s 个地址 • 发送 %s 个 UDP 包 • 正在监听响应',
+      'scanBroadcastingMultiNic':
+          '正在多网卡广播（%s 个网卡）...',
+      'scanArpChecking':
+          '正在核对 ARP 表（%s 台设备）...',
+      'scanPreparing':
+          '正在准备扫描网络...',
+      'scanIncomplete':
+          '扫描未完成：%s',
+      'scanInitializingNet':
+          '正在初始化网络服务...',
+      'scanStopped':
+          '已停止扫描',
+      'scanNoAdaptersSelected':
+          '未选择任何网卡',
+      'scanAdaptersUpdated':
+          '网卡已更新 • 正在扫描...',
     },
   };
 }

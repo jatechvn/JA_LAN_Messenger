@@ -1,6 +1,6 @@
 # JA LAN Messenger
 
-[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.6.1-blue.svg)](CHANGELOG.md)
 [![Flutter Version](https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter)](https://flutter.dev)
 [![Dart Version](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com/windows)
@@ -13,6 +13,9 @@ A modern, ultra-lightweight, high-performance **Peer-to-Peer (P2P) Office LAN Me
 
 ## ⚡ Key Highlights
 
+- **Animated Sprite Stickers (Zalo-Style)**: Seamlessly detects and loads animated sticker packs from `assets/sticker/`. Supports sprite sheets with JSON coordinate maps (`spritesheet.json`, `frames.json`) and individual frame sequences with a rich interactive picker, live animated previews, and instant P2P LAN transmission.
+- **Copy Chat Images to Clipboard**: Direct 1-click "Copy Image" option from message bubble context menu to copy raw image bytes into the Windows clipboard for fast pasting into Word, Excel, Paint, or other applications.
+- **Multilingual Network IP Sweep Progress**: Full dynamic localization (Vietnamese, English, Simplified Chinese) across all scan phases (UDP/TCP sweep, multi-NIC broadcast, ARP check, complete, error), featuring real-time percentage and scanned count counters.
 - **Smart Chat Bubble Entity Detection & Quick Action Chips**: Automatically extracts URLs, Phone numbers (excluding IPs/dates), RFC emails, and UNC LAN shares (`\\server\share\...`) / local drive paths (`C:\...`). Renders Bento Glassmorphic interactive action chips right under messages with 1-click execution and copy.
 - **Selectable & Interactive Chat Text**: Full markdown selectable text support (`selectable: true`) allowing users to highlight and copy partial text, plus direct link tapping to open browsers, emails, or phone callers.
 - **System Tray 1-Click Toggle**: Left-clicking the Windows system tray icon intelligently toggles between minimizing/hiding the app to the tray and restoring/focusing it to the foreground.

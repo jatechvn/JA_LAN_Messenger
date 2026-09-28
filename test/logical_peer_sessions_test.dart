@@ -78,6 +78,31 @@ void main() {
   });
 
   test(
+    'online list excludes offline and shares search and session deduplication',
+    () {
+      hello('192.0.2.1');
+      hello('192.0.2.1', port: 6477, bee: true);
+      hello('192.0.2.2', account: 'bob', host: 'PC-B');
+      hello('192.0.2.3', account: 'carol', host: 'PC-C');
+      hello('192.0.2.4', account: 'dave', host: 'PC-D');
+      c.peersMap['192.0.2.2:6475']!.status = PeerStatus.away;
+      c.peersMap['192.0.2.3:6475']!.status = PeerStatus.busy;
+      c.peersMap['192.0.2.4:6475']!.status = PeerStatus.offline;
+      expect(c.onlinePeers.where((p) => !p.isAiAssistant), hasLength(3));
+      expect(
+        c.onlinePeers,
+        c.peers.where((p) => p.status != PeerStatus.offline),
+      );
+      c.setSearchQuery('bob');
+      expect(c.onlinePeers, hasLength(1));
+      expect(c.onlinePeers.single.status, PeerStatus.away);
+      c.setSearchQuery('dave');
+      expect(c.peers, hasLength(1));
+      expect(c.onlinePeers, isEmpty);
+    },
+  );
+
+  test(
     'one conversation prefers JA independently of handshake order and falls back to Bee',
     () async {
       hello('192.0.2.1', bee: true);
@@ -132,6 +157,65 @@ void main() {
     );
     expect(c.pendingOfflineMessageIds[peer.id] ?? {}, isEmpty);
   });
+
+  test(
+    'selection and receipt do not read; exposure reads only exact source message',
+    () {
+      hello('192.0.2.1', bee: true);
+      hello('192.0.2.1', port: 6477);
+      final peer = c.peersMap['192.0.2.1:6475']!;
+      c.selectPeer(peer);
+      server.sent.clear();
+      c.handleIncomingMessage('192.0.2.1:6475', '901', 'Bee', DateTime.now());
+      c.handleIncomingMessage('192.0.2.1:6477', '901', 'JA', DateTime.now());
+      final messages = c.conversationsMap[peer.id]!;
+      expect(
+        messages.every((m) => m.status == MessageStatus.delivered),
+        isTrue,
+      );
+      expect(peer.unreadCount, 2);
+      c.selectPeer(peer);
+      expect(peer.unreadCount, 2);
+      final before = server.sent.length;
+      c.markMessagesAsRead(peer.id, {messages.first});
+      expect(messages.first.status, MessageStatus.read);
+      expect(messages.last.status, MessageStatus.delivered);
+      expect(peer.unreadCount, 1);
+      expect(server.sent.length, before + 1);
+      expect(server.sent.last.endpoint, '192.0.2.1:6475');
+      c.markMessagesAsRead(peer.id, {messages.first});
+      expect(server.sent.length, before + 1);
+    },
+  );
+
+  test(
+    'read receipt is exact, unknown IDs do not read latest or older messages',
+    () {
+      hello('192.0.2.1');
+      final peer = c.peersMap['192.0.2.1:6475']!;
+      final messages = List.generate(
+        3,
+        (i) => MessageModel(
+          id: '${100 + i}',
+          senderId: 'me',
+          senderName: 'Me',
+          recipientId: peer.id,
+          text: 'sent $i',
+          isMine: true,
+          status: MessageStatus.delivered,
+        ),
+      );
+      c.conversationsMap[peer.id] = messages;
+      server.onRead!('192.0.2.1:6475', '101');
+      expect(messages.map((m) => m.status), [
+        MessageStatus.delivered,
+        MessageStatus.read,
+        MessageStatus.delivered,
+      ]);
+      server.onRead!('192.0.2.1:6475', 'unknown');
+      expect(messages.last.status, MessageStatus.delivered);
+    },
+  );
 
   test(
     'traffic cannot override advertised offline or revive a closed session',

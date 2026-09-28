@@ -75,7 +75,7 @@ try {
         sha256 = $hash
         releaseNotes = $notes
         releaseDate = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss')
-    } | ConvertTo-Json -Indent 2
+    } | ConvertTo-Json
 
     [System.IO.File]::WriteAllText((Join-Path $remoteDir 'version.json'), $json, [System.Text.Encoding]::UTF8)
     Write-Host "      - Da ghi thanh cong version.json len server LAN OTA!" -ForegroundColor Green
