@@ -42,7 +42,7 @@ rem 4. Git Add va Commit
 echo.
 echo [4/6] Thuc hien Git Add va Git Commit...
 git add -A
-git commit -m "Release v%APP_VER%: Conversation Scroll Restoration, Visible-Based Read Receipts & Packaging Auto-Cleanup"
+git commit -m "Release v%APP_VER%: Smart Manual IP 2-Octet Suggestion, Connection Feedback & New Friend Badge"
 
 rem 5. Git Tag va Git Push
 echo.

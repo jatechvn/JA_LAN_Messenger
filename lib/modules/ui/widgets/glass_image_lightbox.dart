@@ -87,7 +87,8 @@ class _GlassImageLightboxState extends State<GlassImageLightbox> {
             Navigator.of(context).pop();
             return KeyEventResult.handled;
           }
-          final isCtrlOrCmd = HardwareKeyboard.instance.isControlPressed ||
+          final isCtrlOrCmd =
+              HardwareKeyboard.instance.isControlPressed ||
               HardwareKeyboard.instance.isMetaPressed;
           if (isCtrlOrCmd && event.logicalKey == LogicalKeyboardKey.keyC) {
             _handleCopyImage(lang);

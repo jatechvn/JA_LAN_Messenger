@@ -56,7 +56,9 @@ class ToastData {
         final ver = rawVer.startsWith('v') ? rawVer : 'v$rawVer';
         return '🚀 ${lang.tr('updateAvailable', [ver])}';
       default:
-        if (base.contains('%s') || base.contains('%d')) {
+        if (base.contains('%s') ||
+            base.contains('%d') ||
+            base.contains('{0}')) {
           return lang.tr(key, args);
         }
         return '$base ${args.join(' ')}'.trim();
@@ -125,6 +127,28 @@ class PendingBuzzTarget {
 
     return true;
   }
+}
+
+enum ManualAddStatus { success, alreadyExists, ownIp, unreachable, invalidIp }
+
+class ManualPeerResult {
+  final ManualAddStatus status;
+  final PeerModel? peer;
+  final String ip;
+  final String? message;
+
+  const ManualPeerResult({
+    required this.status,
+    this.peer,
+    required this.ip,
+    this.message,
+  });
+
+  bool get isSuccess => status == ManualAddStatus.success;
+  bool get isAlreadyExists => status == ManualAddStatus.alreadyExists;
+  bool get isOwnIp => status == ManualAddStatus.ownIp;
+  bool get isUnreachable => status == ManualAddStatus.unreachable;
+  bool get isInvalidIp => status == ManualAddStatus.invalidIp;
 }
 
 class MessengerCoordinator extends ChangeNotifier {
@@ -1106,6 +1130,19 @@ class MessengerCoordinator extends ChangeNotifier {
         if (a.isAiAssistant != b.isAiAssistant) return a.isAiAssistant ? -1 : 1;
       }
 
+      // 2.5. Bạn mới thêm ưu tiên lên đầu (ngay sau các mục đã ghim)
+      final aNew = isNewlyAddedPeer(a.id);
+      final bNew = isNewlyAddedPeer(b.id);
+      if (aNew != bNew) return aNew ? -1 : 1;
+      if (aNew && bNew) {
+        final aTime =
+            _newlyAddedPeers[a.id] ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bTime =
+            _newlyAddedPeers[b.id] ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final cmp = bTime.compareTo(aTime);
+        if (cmp != 0) return cmp;
+      }
+
       // 3. Unread messages first
       final aUnread = a.unreadCount > 0;
       final bUnread = b.unreadCount > 0;
@@ -1195,6 +1232,54 @@ class MessengerCoordinator extends ChangeNotifier {
       _discovery.availableAdapters;
   List<NetworkInterfaceDetails> get enabledAdapters =>
       _discovery.enabledAdapters;
+
+  /// Gợi ý các tiền tố 2 số đầu tiên (ví dụ 172.21. hoặc 192.168.) dựa trên các card mạng đang dùng
+  List<String> get suggestedIpPrefixes {
+    final prefixes = <String>{};
+    final adapters = enabledAdapters.isNotEmpty
+        ? enabledAdapters
+        : activeAdapters;
+
+    // Sắp xếp ưu tiên: LAN vật lý trước, card khác tiếp theo, card ảo sau cùng
+    final sortedAdapters = List.of(adapters)
+      ..sort((a, b) {
+        if (!a.isVirtual && a.isPrivateLan) return -1;
+        if (!b.isVirtual && b.isPrivateLan) return 1;
+        if (!a.isVirtual && b.isVirtual) return -1;
+        if (a.isVirtual && !b.isVirtual) return 1;
+        return 0;
+      });
+
+    for (final a in sortedAdapters) {
+      final ip = a.ip.trim();
+      if (ip.isEmpty || ip.startsWith('127.')) continue;
+      final parts = ip.split('.');
+      if (parts.length >= 2) {
+        prefixes.add('${parts[0]}.${parts[1]}.');
+      }
+    }
+
+    if (prefixes.isEmpty) {
+      prefixes.add('192.168.');
+    }
+    return prefixes.toList();
+  }
+
+  // Quản lý danh sách các bạn mới thêm
+  final Map<String, DateTime> _newlyAddedPeers = {};
+
+  bool isNewlyAddedPeer(String peerId) => _newlyAddedPeers.containsKey(peerId);
+
+  void markNewlyAddedPeer(String peerId) {
+    _newlyAddedPeers[peerId] = DateTime.now();
+    notifyListeners();
+  }
+
+  void dismissNewlyAddedPeer(String peerId) {
+    if (_newlyAddedPeers.remove(peerId) != null) {
+      notifyListeners();
+    }
+  }
 
   String getLocalizedScanStatus(LanguageProvider lang) {
     final state = _discovery.scanState;
@@ -3807,6 +3892,9 @@ class MessengerCoordinator extends ChangeNotifier {
     await historyLoaded;
     if (_selectedPeer == null || text.trim().isEmpty) return false;
 
+    // Tự động gỡ huy hiệu "Bạn mới" khi đã gửi tin nhắn trò chuyện
+    _newlyAddedPeers.remove(_selectedPeer!.id);
+
     // Kết thúc trạng thái đang soạn tin khi gửi tin nhắn
     sendTypingStatus(false);
 
@@ -5204,8 +5292,90 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
   }
 
   /// Thêm thủ công một địa chỉ IP (cho máy khác lớp mạng hoặc VPN)
-  void addManualPeer(String ip, [int port = defaultListenerPort]) {
-    _handlePeerDiscovered(ip, port);
+  Future<ManualPeerResult> addManualPeer(
+    String ip, [
+    int port = defaultListenerPort,
+  ]) async {
+    final cleanIp = ip.trim();
+    if (!NetworkUtils.isValidIp(cleanIp)) {
+      return ManualPeerResult(status: ManualAddStatus.invalidIp, ip: cleanIp);
+    }
+
+    final localIps = {
+      '127.0.0.1',
+      'localhost',
+      ...enabledAdapters.map((a) => a.ip),
+      ...activeAdapters.map((a) => a.ip),
+    };
+    if (localIps.contains(cleanIp) && port == localTcpPort) {
+      return ManualPeerResult(status: ManualAddStatus.ownIp, ip: cleanIp);
+    }
+
+    // Kiểm tra xem IP này đã có trong danh sách peers online chưa
+    final existingPeer = _findPeerByIpOrId(cleanIp);
+    if (existingPeer != null && existingPeer.status != PeerStatus.offline) {
+      markNewlyAddedPeer(existingPeer.id);
+      notifyListeners();
+      return ManualPeerResult(
+        status: ManualAddStatus.alreadyExists,
+        peer: existingPeer,
+        ip: cleanIp,
+      );
+    }
+
+    // Thực hiện kết nối TCP và trao đổi gói tin HELLO
+    final connected = await _tcpServer.connect(
+      cleanIp,
+      port,
+      timeout: const Duration(milliseconds: 3200),
+    );
+
+    if (connected) {
+      PeerModel? targetPeer = _findPeerByIpOrId(cleanIp);
+      if (targetPeer == null) {
+        final endpoint = '$cleanIp:$port';
+        targetPeer =
+            _peers[endpoint] ??
+            _peers.values.firstWhere(
+              (p) => p.ip == cleanIp || p.knownIps.contains(cleanIp),
+              orElse: () => PeerModel(
+                id: endpoint,
+                name: cleanIp,
+                ip: cleanIp,
+                port: port,
+                status: PeerStatus.online,
+              ),
+            );
+      }
+      markNewlyAddedPeer(targetPeer.id);
+      notifyListeners();
+      return ManualPeerResult(
+        status: ManualAddStatus.success,
+        peer: targetPeer,
+        ip: cleanIp,
+      );
+    }
+
+    return ManualPeerResult(status: ManualAddStatus.unreachable, ip: cleanIp);
+  }
+
+  /// Lưu một liên hệ thủ công ngoại tuyến vào danh bạ (khi chưa kết nối được)
+  PeerModel addOfflineManualPeer(String ip, [int port = defaultListenerPort]) {
+    final cleanIp = ip.trim();
+    final endpoint = '$cleanIp:$port';
+    final peer =
+        _peers[endpoint] ??
+        PeerModel(
+          id: endpoint,
+          name: cleanIp,
+          ip: cleanIp,
+          port: port,
+          status: PeerStatus.offline,
+        );
+    _peers[endpoint] = peer;
+    markNewlyAddedPeer(peer.id);
+    notifyListeners();
+    return peer;
   }
 
   /// Ghim / bỏ ghim cuộc trò chuyện

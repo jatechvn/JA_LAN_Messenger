@@ -15,12 +15,12 @@ void main() {
       log.clear();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-        log.add(methodCall);
-        if (methodCall.method == 'writeImage') {
-          return null;
-        }
-        return null;
-      });
+            log.add(methodCall);
+            if (methodCall.method == 'writeImage') {
+              return null;
+            }
+            return null;
+          });
     });
 
     tearDown(() {

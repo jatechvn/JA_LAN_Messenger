@@ -106,8 +106,8 @@ class MarkdownMessageView extends StatelessWidget {
             decorationColor: isMine
                 ? Colors.cyanAccent.shade100.withValues(alpha: 0.6)
                 : (isDark
-                    ? const Color(0xFF38BDF8).withValues(alpha: 0.6)
-                    : theme.colors.accentBlue.withValues(alpha: 0.6)),
+                      ? const Color(0xFF38BDF8).withValues(alpha: 0.6)
+                      : theme.colors.accentBlue.withValues(alpha: 0.6)),
           ),
           tableHead: style.copyWith(fontWeight: FontWeight.bold),
           tableBody: style,
@@ -165,10 +165,10 @@ class MarkdownMessageView extends StatelessWidget {
             InkWell(
               onTap: fileExists
                   ? () => showGlassImageLightbox(
-                        context: context,
-                        filePath: file.path,
-                        fileName: alt ?? file.uri.pathSegments.last,
-                      )
+                      context: context,
+                      filePath: file.path,
+                      fileName: alt ?? file.uri.pathSegments.last,
+                    )
                   : null,
               borderRadius: BorderRadius.circular(8),
               child: ClipRRect(
@@ -196,10 +196,7 @@ class MarkdownMessageView extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.55),
                           shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white30,
-                            width: 0.8,
-                          ),
+                          border: Border.all(color: Colors.white30, width: 0.8),
                         ),
                         child: const Icon(
                           Icons.copy_rounded,

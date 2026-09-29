@@ -39,7 +39,10 @@ class QuickActionHelper {
   /// Soạn email qua ứng dụng Mail mặc định của Windows
   static Future<bool> composeEmail(String email) async {
     try {
-      final cleanEmail = email.trim().replaceFirst(RegExp(r'^mailto:', caseSensitive: false), '');
+      final cleanEmail = email.trim().replaceFirst(
+        RegExp(r'^mailto:', caseSensitive: false),
+        '',
+      );
       final mailtoUri = 'mailto:$cleanEmail';
 
       if (Platform.isWindows) {
@@ -89,7 +92,10 @@ class QuickActionHelper {
       if (Platform.isWindows) {
         // Nếu là file đã tồn tại, dùng /select để mở thư mục và chọn đúng file
         if (File(cleanPath).existsSync()) {
-          final res = await Process.run('explorer.exe', ['/select,', cleanPath]);
+          final res = await Process.run('explorer.exe', [
+            '/select,',
+            cleanPath,
+          ]);
           return res.exitCode == 0;
         }
 
@@ -144,7 +150,8 @@ class QuickActionHelper {
       await callPhone(target.substring(4));
     } else if (target.startsWith('file://')) {
       await openPath(target.substring(7));
-    } else if (target.startsWith(r'\\') || RegExp(r'^[a-zA-Z]:\\').hasMatch(target)) {
+    } else if (target.startsWith(r'\\') ||
+        RegExp(r'^[a-zA-Z]:\\').hasMatch(target)) {
       await openPath(target);
     } else {
       await openUrl(target);
@@ -181,7 +188,8 @@ class QuickActionHelper {
   ) async {
     final callText = lang?.tr('callPhone') ?? 'Gọi điện';
     final copyText = lang?.tr('copyPhone') ?? 'Sao chép số';
-    final copiedToast = lang?.tr('phoneCopiedToast') ?? 'Đã sao chép số điện thoại';
+    final copiedToast =
+        lang?.tr('phoneCopiedToast') ?? 'Đã sao chép số điện thoại';
 
     final choice = await showDialog<String>(
       context: context,
@@ -191,7 +199,10 @@ class QuickActionHelper {
           children: [
             const Icon(Icons.phone_rounded, color: Colors.green, size: 20),
             const SizedBox(width: 8),
-            Text(phone, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            Text(
+              phone,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
           ],
         ),
         actions: [

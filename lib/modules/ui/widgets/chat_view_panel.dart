@@ -5278,7 +5278,10 @@ class _ChatInputDockState extends State<_ChatInputDock> {
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.redAccent.shade400,
                                   foregroundColor: Colors.white,
-                                  minimumSize: Size(isNarrow ? 30 : 36, buttonSize),
+                                  minimumSize: Size(
+                                    isNarrow ? 30 : 36,
+                                    buttonSize,
+                                  ),
                                   padding: EdgeInsets.symmetric(
                                     horizontal: isNarrow ? 6 : 10,
                                   ),
@@ -5306,7 +5309,10 @@ class _ChatInputDockState extends State<_ChatInputDock> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: theme.colors.accentBlue,
                                 foregroundColor: Colors.white,
-                                minimumSize: Size(isNarrow ? 36 : 40, buttonSize),
+                                minimumSize: Size(
+                                  isNarrow ? 36 : 40,
+                                  buttonSize,
+                                ),
                                 padding: EdgeInsets.symmetric(
                                   horizontal: isNarrow ? 8 : 14,
                                 ),

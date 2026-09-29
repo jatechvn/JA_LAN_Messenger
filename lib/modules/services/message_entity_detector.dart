@@ -1,12 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 /// Loại thực thể được tự động nhận diện trong tin nhắn
-enum MessageEntityType {
-  url,
-  phone,
-  email,
-  path,
-}
+enum MessageEntityType { url, phone, email, path }
 
 /// Thông tin một thực thể được phát hiện trong tin nhắn
 @immutable
@@ -118,7 +113,13 @@ class MessageEntityDetector {
     final collected = <({int start, MessageEntity entity})>[];
     final seenValues = <String>{};
 
-    void addEntity(int start, MessageEntityType type, String rawValue, String actionUrl, String label) {
+    void addEntity(
+      int start,
+      MessageEntityType type,
+      String rawValue,
+      String actionUrl,
+      String label,
+    ) {
       final cleanVal = rawValue.trim();
       if (cleanVal.isEmpty || seenValues.contains(cleanVal)) return;
       seenValues.add(cleanVal);
@@ -227,7 +228,8 @@ class MessageEntityDetector {
       final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
       if (digits.length >= 9 && digits.length <= 11) {
         // Đảm bảo là định dạng số điện thoại VN hoặc quốc tế hợp lệ
-        final isValidStart = raw.startsWith('+84') ||
+        final isValidStart =
+            raw.startsWith('+84') ||
             raw.startsWith('03') ||
             raw.startsWith('05') ||
             raw.startsWith('07') ||
@@ -237,13 +239,7 @@ class MessageEntityDetector {
 
         if (isValidStart) {
           final telUrl = 'tel:${raw.startsWith('+') ? '+$digits' : digits}';
-          addEntity(
-            match.start,
-            MessageEntityType.phone,
-            raw,
-            telUrl,
-            raw,
-          );
+          addEntity(match.start, MessageEntityType.phone, raw, telUrl, raw);
         }
       }
     }

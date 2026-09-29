@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.7.0
+# Hướng dẫn sử dụng JA LAN Messenger v1.7.1
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.7.0_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.7.1_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -25,9 +25,14 @@
 
 ## 2. Các tính năng chính
 
-### 2.1. Tự động tìm kiếm & Kết nối P2P
+### 2.1. Tự động tìm kiếm & Thêm bạn qua IP thông minh
 - Khi khởi động, ứng dụng tự động phát sóng gói tin UDP Discovery trên cổng `36475` để tìm các máy tính khác trong cùng dải mạng LAN.
-- **Thêm máy thủ công:** Nếu máy đồng nghiệp ở lớp mạng (subnet) khác hoặc kết nối qua VPN, nhấn nút biểu tượng `+` (Thêm IP) trên danh bạ và nhập địa chỉ IPv4 của máy đó.
+- **Thêm bạn qua IP thông minh:** Nhấn biểu tượng `+` (Thêm IP) trên thanh công cụ tìm kiếm:
+  - **Gợi ý dải mạng tự động 2 octet:** Ứng dụng tự động phát hiện IP của card mạng đang kết nối và viết sẵn 2 số đầu tiên (ví dụ `172.21.` hoặc `192.168.`), con trỏ nhấp nháy ngay sau dấu chấm thứ 2 để bạn gõ tiếp 2 số còn lại (ví dụ `.100.25`) rồi nhấn Enter.
+  - **Thanh Chip gợi ý:** Nếu máy kết nối nhiều mạng (dây xưởng + Wi-Fi), các chip như `[ 172.21. ]`, `[ 192.168. ]` xuất hiện để bạn đổi dải mạng chỉ với 1 cú click.
+  - **Thông báo kết nối thành công:** Nút kết nối xoay vòng tiến trình trong lúc bắt tay mạng; khi kết nối thành công, hộp thoại đóng, Toast báo thành công nổi lên và ứng dụng tự động mở khung chat ngay.
+  - **Ưu tiên Bạn mới & Huy hiệu:** Bạn mới được tự động đưa lên vị trí cao nhất danh bạ (ngay sau các mục đã ghim) kèm huy hiệu `[Bạn mới]` màu xanh ngọc bích. Huy hiệu tự động biến mất khi bạn gửi tin nhắn trò chuyện đầu tiên hoặc qua chuột phải chọn `Bỏ đánh dấu bạn mới`.
+  - **Lưu danh bạ ngoại tuyến:** Nếu máy đồng nghiệp chưa bật app, bạn có thể chọn `Lưu vào danh bạ (ngoại tuyến)` để lưu trước.
 
 ### 2.2. Trò chuyện, Rung chuông & Khởi chạy từ xa qua WinRM
 - **Nhắn tin tức thì:** Gõ tin nhắn và bấm `Enter` để gửi (`Shift + Enter` để xuống dòng).

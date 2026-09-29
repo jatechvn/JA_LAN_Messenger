@@ -21,7 +21,8 @@ class DiscoveryScanState {
   final List<String> activeSubnets;
   final DateTime? lastSweepTime;
   final int discoveredPeersCount;
-  final String activePhase; // 'initializing', 'broadcasting', 'arp_sweep', 'subnet_sweep', 'idle', 'stopped', 'error', 'no_adapters', 'sweep_finished', 'adapters_updated'
+  final String
+  activePhase; // 'initializing', 'broadcasting', 'arp_sweep', 'subnet_sweep', 'idle', 'stopped', 'error', 'no_adapters', 'sweep_finished', 'adapters_updated'
   final int sweepDone;
   final int sweepTotal;
   final int sweepSent;

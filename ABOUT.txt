@@ -1,12 +1,13 @@
 ================================================================================
 JA LAN Messenger - Lightweight P2P Office LAN Messenger
 ================================================================================
-Version: 1.7.0+14
+Version: 1.7.1+15
 Developer: JA Team
 Language: Dart / Flutter Desktop
 Architecture: Pure Dart P2P Sockets (UDP Broadcast/Multicast + TCP Streaming)
 Protocol: Dual-Mode (BeeBEEP Compatible + JA Modern Packet)
 Features:
+- Smart 2-Octet Manual IP Suggestion & New Friend Badge: Auto-extracts active 2-octet network prefix with quick suggestion chips, connects with real-time feedback, and prioritizes newly added peers to top of contact list with an emerald 'Bạn mới' badge
 - Smart Conversation Scroll Restoration: Preserves exact chat scroll offset and bottom intent across app restarts (conversation_scroll.json)
 - Visible-Message Read Receipts: Real-time viewport dwell detection marks messages as read only when physically viewed on screen
 - Persistent Taskbar Flashing & Tray Badge: Alternates icon badge and flashes Windows taskbar via native FlashWindowEx until unread messages are viewed

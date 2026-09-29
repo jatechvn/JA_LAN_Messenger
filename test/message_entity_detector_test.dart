@@ -4,10 +4,13 @@ import 'package:ja_lan_messenger/modules/services/message_entity_detector.dart';
 void main() {
   group('MessageEntityDetector Tests', () {
     test('Extract URLs correctly', () {
-      const text = 'Truy cập https://github.com/jatechvn hoặc www.google.com và check zalo.me/test.';
+      const text =
+          'Truy cập https://github.com/jatechvn hoặc www.google.com và check zalo.me/test.';
       final entities = MessageEntityDetector.extractEntities(text);
 
-      final urls = entities.where((e) => e.type == MessageEntityType.url).toList();
+      final urls = entities
+          .where((e) => e.type == MessageEntityType.url)
+          .toList();
       expect(urls.length, 3);
       expect(urls[0].value, 'https://github.com/jatechvn');
       expect(urls[0].actionUrl, 'https://github.com/jatechvn');
@@ -20,10 +23,13 @@ void main() {
     });
 
     test('Extract Emails correctly', () {
-      const text = 'Gửi phản hồi về support@jatech.vn hoặc user.name+dev@sub.domain.com!';
+      const text =
+          'Gửi phản hồi về support@jatech.vn hoặc user.name+dev@sub.domain.com!';
       final entities = MessageEntityDetector.extractEntities(text);
 
-      final emails = entities.where((e) => e.type == MessageEntityType.email).toList();
+      final emails = entities
+          .where((e) => e.type == MessageEntityType.email)
+          .toList();
       expect(emails.length, 2);
       expect(emails[0].value, 'support@jatech.vn');
       expect(emails[0].actionUrl, 'mailto:support@jatech.vn');
@@ -42,7 +48,9 @@ void main() {
       ''';
       final entities = MessageEntityDetector.extractEntities(text);
 
-      final phones = entities.where((e) => e.type == MessageEntityType.phone).toList();
+      final phones = entities
+          .where((e) => e.type == MessageEntityType.phone)
+          .toList();
       expect(phones.length, 4);
 
       expect(phones[0].value, '0901234567');
@@ -67,10 +75,13 @@ void main() {
     });
 
     test('Extract UNC and Local Windows paths correctly', () {
-      const text = r'Xem thư mục cập nhật tại \\10.81.141.226\temp\FBT\JA_PROJECT và file C:\Program Files\JA_LAN\app.exe.';
+      const text =
+          r'Xem thư mục cập nhật tại \\10.81.141.226\temp\FBT\JA_PROJECT và file C:\Program Files\JA_LAN\app.exe.';
       final entities = MessageEntityDetector.extractEntities(text);
 
-      final paths = entities.where((e) => e.type == MessageEntityType.path).toList();
+      final paths = entities
+          .where((e) => e.type == MessageEntityType.path)
+          .toList();
       expect(paths.length, 2);
       expect(paths[0].value, r'\\10.81.141.226\temp\FBT\JA_PROJECT');
       expect(paths[0].actionUrl, r'\\10.81.141.226\temp\FBT\JA_PROJECT');
@@ -80,24 +91,36 @@ void main() {
     });
 
     test('Extract Windows directory paths with spaces', () {
-      const text = r'Vào thư mục C:\Program Files\Google\Chrome\ hoặc \\10.81.141.226\Shared Folder\Data\ để lấy tệp.';
+      const text =
+          r'Vào thư mục C:\Program Files\Google\Chrome\ hoặc \\10.81.141.226\Shared Folder\Data\ để lấy tệp.';
       final entities = MessageEntityDetector.extractEntities(text);
-      final paths = entities.where((e) => e.type == MessageEntityType.path).toList();
+      final paths = entities
+          .where((e) => e.type == MessageEntityType.path)
+          .toList();
       expect(paths.length, 2);
       expect(paths[0].value, r'C:\Program Files\Google\Chrome\');
       expect(paths[1].value, r'\\10.81.141.226\Shared Folder\Data\');
     });
 
     test('Extract mixed entities in single message without conflict', () {
-      const text = r'File gửi ở \\server\share\data.xlsx, cần hỗ trợ gọi 0908889999 hoặc mail admin@ja.com, xem https://ja.com/guide';
+      const text =
+          r'File gửi ở \\server\share\data.xlsx, cần hỗ trợ gọi 0908889999 hoặc mail admin@ja.com, xem https://ja.com/guide';
       final entities = MessageEntityDetector.extractEntities(text);
 
       expect(entities.length, 4);
 
-      final emails = entities.where((e) => e.type == MessageEntityType.email).toList();
-      final paths = entities.where((e) => e.type == MessageEntityType.path).toList();
-      final urls = entities.where((e) => e.type == MessageEntityType.url).toList();
-      final phones = entities.where((e) => e.type == MessageEntityType.phone).toList();
+      final emails = entities
+          .where((e) => e.type == MessageEntityType.email)
+          .toList();
+      final paths = entities
+          .where((e) => e.type == MessageEntityType.path)
+          .toList();
+      final urls = entities
+          .where((e) => e.type == MessageEntityType.url)
+          .toList();
+      final phones = entities
+          .where((e) => e.type == MessageEntityType.phone)
+          .toList();
 
       expect(emails.length, 1);
       expect(emails.first.value, 'admin@ja.com');
@@ -115,7 +138,12 @@ void main() {
     test('Handle empty and plain text with no entities', () {
       expect(MessageEntityDetector.extractEntities(''), isEmpty);
       expect(MessageEntityDetector.extractEntities('   '), isEmpty);
-      expect(MessageEntityDetector.extractEntities('Xin chào, chúc một ngày tốt lành!'), isEmpty);
+      expect(
+        MessageEntityDetector.extractEntities(
+          'Xin chào, chúc một ngày tốt lành!',
+        ),
+        isEmpty,
+      );
     });
   });
 }

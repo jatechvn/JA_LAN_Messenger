@@ -187,8 +187,21 @@ class LanguageProvider extends ChangeNotifier {
       'attachFile': 'Đính kèm tệp',
       'pasteClipboard': 'Dán ảnh/tệp từ clipboard (Ctrl+V)',
       'nudge': 'Rung chuông Nudge',
-      'addIpTitle': 'Thêm máy qua IP',
+      'addIpTitle': 'Thêm bạn qua IP',
       'addIpDesc': 'Nhập địa chỉ IP của máy trong mạng LAN hoặc VPN:',
+      'addIpSuggestedPrefix': 'Gợi ý dải mạng:',
+      'addIpConnecting': 'Đang kết nối tới {0}...',
+      'addIpSuccessToast': 'Đã kết nối và thêm bạn mới: {0}',
+      'addIpFailedToast':
+          'Không thể kết nối đến {0}. Vui lòng kiểm tra địa chỉ IP hoặc tường lửa.',
+      'addIpAlreadyExists': 'Thiết bị này đã có trong danh bạ: {0}',
+      'addIpInvalid':
+          'Địa chỉ IP không hợp lệ. Vui lòng nhập đúng định dạng IPv4.',
+      'addIpOwnIp': 'Đây là địa chỉ IP của máy hiện tại.',
+      'badgeNewFriend': 'Bạn mới',
+      'dismissNewFriendBadge': 'Bỏ đánh dấu bạn mới',
+      'saveAsOfflineContact': 'Lưu vào danh bạ (ngoại tuyến)',
+      'savedOfflineToast': 'Đã lưu liên hệ ngoại tuyến: {0}',
       'createGroupTitle': 'Tạo nhóm mới',
       'groupNameHint': 'Nhập tên nhóm (e.g. Phòng Kỹ Thuật)...',
       'selectMembers': 'Chọn thành viên tham gia nhóm:',
@@ -625,22 +638,14 @@ class LanguageProvider extends ChangeNotifier {
           'Quét UDP + TCP: %s/%s địa chỉ • đã phát %s gói UDP',
       'scanCompletedDetail':
           'Đã duyệt %s địa chỉ • gửi %s gói UDP • đang lắng nghe phản hồi',
-      'scanBroadcastingMultiNic':
-          'Đang phát sóng đa tầng (%s card mạng)...',
-      'scanArpChecking':
-          'Đang đối soát bảng ARP (%s thiết bị)...',
-      'scanPreparing':
-          'Đang chuẩn bị quét mạng...',
-      'scanIncomplete':
-          'Quét chưa hoàn tất: %s',
-      'scanInitializingNet':
-          'Đang khởi tạo dịch vụ mạng...',
-      'scanStopped':
-          'Đã dừng quét',
-      'scanNoAdaptersSelected':
-          'Chưa chọn card mạng nào',
-      'scanAdaptersUpdated':
-          'Đã cập nhật card mạng • Đang quét...',
+      'scanBroadcastingMultiNic': 'Đang phát sóng đa tầng (%s card mạng)...',
+      'scanArpChecking': 'Đang đối soát bảng ARP (%s thiết bị)...',
+      'scanPreparing': 'Đang chuẩn bị quét mạng...',
+      'scanIncomplete': 'Quét chưa hoàn tất: %s',
+      'scanInitializingNet': 'Đang khởi tạo dịch vụ mạng...',
+      'scanStopped': 'Đã dừng quét',
+      'scanNoAdaptersSelected': 'Chưa chọn card mạng nào',
+      'scanAdaptersUpdated': 'Đã cập nhật card mạng • Đang quét...',
     },
     'en': {
       'appName': 'JA LAN Messenger',
@@ -675,8 +680,20 @@ class LanguageProvider extends ChangeNotifier {
       'attachFile': 'Attach file',
       'pasteClipboard': 'Paste image/file from clipboard (Ctrl+V)',
       'nudge': 'Nudge buzz',
-      'addIpTitle': 'Add Device by IP',
+      'addIpTitle': 'Add Friend by IP',
       'addIpDesc': 'Enter IPv4 address of workstation in LAN or VPN:',
+      'addIpSuggestedPrefix': 'Suggested network:',
+      'addIpConnecting': 'Connecting to {0}...',
+      'addIpSuccessToast': 'Connected and added new friend: {0}',
+      'addIpFailedToast':
+          'Could not connect to {0}. Please check IP address or firewall.',
+      'addIpAlreadyExists': 'This device is already in contacts: {0}',
+      'addIpInvalid': 'Invalid IP address. Please enter a valid IPv4 format.',
+      'addIpOwnIp': 'This is the IP address of this device.',
+      'badgeNewFriend': 'New',
+      'dismissNewFriendBadge': 'Dismiss new friend badge',
+      'saveAsOfflineContact': 'Save to contacts (offline)',
+      'savedOfflineToast': 'Saved offline contact: {0}',
       'createGroupTitle': 'Create New Group',
       'groupNameHint': 'Enter group name (e.g. Engineering Team)...',
       'selectMembers': 'Select group members:',
@@ -1109,22 +1126,14 @@ class LanguageProvider extends ChangeNotifier {
           'Scanning UDP + TCP: %s/%s addresses • sent %s UDP packets',
       'scanCompletedDetail':
           'Scanned %s addresses • sent %s UDP packets • listening for responses',
-      'scanBroadcastingMultiNic':
-          'Multi-NIC broadcasting (%s adapters)...',
-      'scanArpChecking':
-          'Checking ARP table (%s devices)...',
-      'scanPreparing':
-          'Preparing network scan...',
-      'scanIncomplete':
-          'Scan incomplete: %s',
-      'scanInitializingNet':
-          'Initializing network service...',
-      'scanStopped':
-          'Scan stopped',
-      'scanNoAdaptersSelected':
-          'No network adapter selected',
-      'scanAdaptersUpdated':
-          'Network adapters updated • Scanning...',
+      'scanBroadcastingMultiNic': 'Multi-NIC broadcasting (%s adapters)...',
+      'scanArpChecking': 'Checking ARP table (%s devices)...',
+      'scanPreparing': 'Preparing network scan...',
+      'scanIncomplete': 'Scan incomplete: %s',
+      'scanInitializingNet': 'Initializing network service...',
+      'scanStopped': 'Scan stopped',
+      'scanNoAdaptersSelected': 'No network adapter selected',
+      'scanAdaptersUpdated': 'Network adapters updated • Scanning...',
     },
     'zh': {
       'appName': 'JA LAN Messenger',
@@ -1157,8 +1166,19 @@ class LanguageProvider extends ChangeNotifier {
       'attachFile': '附加文件',
       'pasteClipboard': '从剪贴板粘贴图片/文件 (Ctrl+V)',
       'nudge': '窗口抖动提醒',
-      'addIpTitle': '通过IP添加设备',
+      'addIpTitle': '通过IP添加好友',
       'addIpDesc': '输入局域网或VPN中工作站的IPv4地址：',
+      'addIpSuggestedPrefix': '推荐网段：',
+      'addIpConnecting': '正在连接至 {0}...',
+      'addIpSuccessToast': '已连接并添加新好友：{0}',
+      'addIpFailedToast': '无法连接到 {0}。请检查IP地址或防火墙设置。',
+      'addIpAlreadyExists': '该设备已在联系人列表中：{0}',
+      'addIpInvalid': '无效的IP地址。请输入正确的IPv4格式。',
+      'addIpOwnIp': '这是本机的IP地址。',
+      'badgeNewFriend': '新好友',
+      'dismissNewFriendBadge': '清除新好友标记',
+      'saveAsOfflineContact': '保存到联系人（离线）',
+      'savedOfflineToast': '已保存离线联系人：{0}',
       'createGroupTitle': '创建新群组',
       'groupNameHint': '输入群组名称（例如：技术部）...',
       'selectMembers': '选择群组成员：',
@@ -1561,26 +1581,16 @@ class LanguageProvider extends ChangeNotifier {
       'reloadStickers': '重新扫描贴图文件夹',
       'noStickersFound': 'assets/sticker 中未找到贴图包',
       'replaySticker': '重播贴图',
-      'scanSubnetProgress':
-          '正在扫描 UDP + TCP：%s/%s 个地址 • 已发送 %s 个 UDP 数据包',
-      'scanCompletedDetail':
-          '已扫描 %s 个地址 • 发送 %s 个 UDP 包 • 正在监听响应',
-      'scanBroadcastingMultiNic':
-          '正在多网卡广播（%s 个网卡）...',
-      'scanArpChecking':
-          '正在核对 ARP 表（%s 台设备）...',
-      'scanPreparing':
-          '正在准备扫描网络...',
-      'scanIncomplete':
-          '扫描未完成：%s',
-      'scanInitializingNet':
-          '正在初始化网络服务...',
-      'scanStopped':
-          '已停止扫描',
-      'scanNoAdaptersSelected':
-          '未选择任何网卡',
-      'scanAdaptersUpdated':
-          '网卡已更新 • 正在扫描...',
+      'scanSubnetProgress': '正在扫描 UDP + TCP：%s/%s 个地址 • 已发送 %s 个 UDP 数据包',
+      'scanCompletedDetail': '已扫描 %s 个地址 • 发送 %s 个 UDP 包 • 正在监听响应',
+      'scanBroadcastingMultiNic': '正在多网卡广播（%s 个网卡）...',
+      'scanArpChecking': '正在核对 ARP 表（%s 台设备）...',
+      'scanPreparing': '正在准备扫描网络...',
+      'scanIncomplete': '扫描未完成：%s',
+      'scanInitializingNet': '正在初始化网络服务...',
+      'scanStopped': '已停止扫描',
+      'scanNoAdaptersSelected': '未选择任何网卡',
+      'scanAdaptersUpdated': '网卡已更新 • 正在扫描...',
     },
   };
 }
