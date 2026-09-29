@@ -163,10 +163,9 @@ void main() {
           DateTime.now(),
         );
 
-        // Active chat window immediately shows the incoming message (no jump, no loss!)
         expect(coordinator.currentMessages, hasLength(2));
         expect(coordinator.currentMessages.last.text, 'Em nghe a ơi');
-        expect(coordinator.currentMessages.last.status, MessageStatus.read);
+        expect(coordinator.currentMessages.last.status, MessageStatus.delivered);
 
         // 4. Peer also has BeeBEEP running on port 6477 or reconnects with BeeBEEP
         coordinator.handlePeerHandshake('172.21.174.103', {

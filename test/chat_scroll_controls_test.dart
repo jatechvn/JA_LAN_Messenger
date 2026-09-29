@@ -1,15 +1,22 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:ja_lan_messenger/modules/theme/theme_provider.dart';
 import 'package:ja_lan_messenger/modules/localization/app_locale.dart';
 import 'package:ja_lan_messenger/modules/services/messenger_coordinator.dart';
+import 'package:ja_lan_messenger/modules/services/app_preferences.dart';
 import 'package:ja_lan_messenger/modules/models/peer_model.dart';
 import 'package:ja_lan_messenger/modules/models/message_model.dart';
 import 'package:ja_lan_messenger/modules/ui/widgets/chat_view_panel.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() {
+    final dir = Directory.systemTemp.createTempSync('chat_scroll_controls_');
+    AppPreferences().setCustomFileForTesting(File('${dir.path}/prefs.json'));
+  });
+  tearDown(() => AppPreferences().setCustomFileForTesting(null));
 
   group('Chat Scroll Controls & Telegram-style Navigation Tests', () {
     test(

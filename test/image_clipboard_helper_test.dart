@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -37,10 +36,12 @@ void main() {
       );
       final context = tester.element(find.byType(SizedBox));
 
-      final result = await ImageClipboardHelper.copyImageToClipboard(
-        context,
-        filePath: r'C:\non_existent_folder\fake_image_12345.png',
-        showToast: false,
+      final result = await tester.runAsync(
+        () => ImageClipboardHelper.copyImageToClipboard(
+          context,
+          filePath: r'C:\non_existent_folder\fake_image_12345.png',
+          showToast: false,
+        ),
       );
 
       expect(result, isFalse);
@@ -53,10 +54,12 @@ void main() {
       );
       final context = tester.element(find.byType(SizedBox));
 
-      final result = await ImageClipboardHelper.copyImageToClipboard(
-        context,
-        imageBytes: Uint8List(0),
-        showToast: false,
+      final result = await tester.runAsync(
+        () => ImageClipboardHelper.copyImageToClipboard(
+          context,
+          imageBytes: Uint8List(0),
+          showToast: false,
+        ),
       );
 
       expect(result, isFalse);
@@ -72,10 +75,12 @@ void main() {
       final context = tester.element(find.byType(SizedBox));
 
       final dummyBytes = Uint8List.fromList([1, 2, 3, 4]);
-      final result = await ImageClipboardHelper.copyImageToClipboard(
-        context,
-        imageBytes: dummyBytes,
-        showToast: false,
+      final result = await tester.runAsync(
+        () => ImageClipboardHelper.copyImageToClipboard(
+          context,
+          imageBytes: dummyBytes,
+          showToast: false,
+        ),
       );
 
       expect(result, isTrue);
@@ -94,10 +99,12 @@ void main() {
         );
         final context = tester.element(find.byType(SizedBox));
 
-        final result = await ImageClipboardHelper.copyImageToClipboard(
-          context,
-          filePath: tempFile.path,
-          showToast: false,
+        final result = await tester.runAsync(
+          () => ImageClipboardHelper.copyImageToClipboard(
+            context,
+            filePath: tempFile.path,
+            showToast: false,
+          ),
         );
 
         expect(result, isTrue);

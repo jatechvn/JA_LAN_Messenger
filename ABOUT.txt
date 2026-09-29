@@ -1,13 +1,17 @@
 ================================================================================
 JA LAN Messenger - Lightweight P2P Office LAN Messenger
 ================================================================================
-Version: 1.6.1+13
+Version: 1.7.0+14
 Developer: JA Team
 Language: Dart / Flutter Desktop
 Architecture: Pure Dart P2P Sockets (UDP Broadcast/Multicast + TCP Streaming)
 Protocol: Dual-Mode (BeeBEEP Compatible + JA Modern Packet)
 Features:
-- Animated Sprite Stickers: Support Zalo-style sticker packs, sprite sheet animations, auto-folder detection & P2P sending
+- Smart Conversation Scroll Restoration: Preserves exact chat scroll offset and bottom intent across app restarts (conversation_scroll.json)
+- Visible-Message Read Receipts: Real-time viewport dwell detection marks messages as read only when physically viewed on screen
+- Persistent Taskbar Flashing & Tray Badge: Alternates icon badge and flashes Windows taskbar via native FlashWindowEx until unread messages are viewed
+- Animated Sprite Stickers: Zalo-style sticker packs with tuned 18 FPS animations, auto-folder detection, hover previews & click-outside dismissal
+- Packaging Auto-Cleanup: Automatically purges temporary staging folders (.package-stage-*, dist.previous-*) to save disk space and stop OneDrive clutter
 - Copy Chat Images to Clipboard: 1-click image copy directly into Windows clipboard from message bubble
 - Multilingual Network IP Sweep: Full real-time scanning progress localization across Tiếng Việt, English, 简体中文
 - Decentralized serverless P2P communication on local area networks (LAN)

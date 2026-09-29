@@ -4,6 +4,12 @@ param([string]$ProjectRoot = '')
 $ErrorActionPreference = 'Stop'
 if (-not $ProjectRoot) { $ProjectRoot = Join-Path $PSScriptRoot '..\..' }
 $root = (Resolve-Path -LiteralPath $ProjectRoot).Path
+# Automatically clean up any leftover staging or previous dist directories from prior runs
+Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction SilentlyContinue | Where-Object {
+    $_.Name -like '.package-stage-*' -or $_.Name -like 'dist.previous-*'
+} | ForEach-Object {
+    try { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+}
 $pubspec = Get-Content -LiteralPath (Join-Path $root 'pubspec.yaml') -Raw
 if ($pubspec -notmatch '(?m)^version:\s*(\d+\.\d+\.\d+)(?:\+(\d+))?\s*$') { throw 'Invalid package version' }
 $version = $Matches[1]
@@ -75,11 +81,23 @@ Set-Content -LiteralPath (Join-Path $output 'SHA256SUMS.txt') -Value "$hash *$pa
 # Publish only a validated complete output. Keep old output untouched on failure.
 $previous = Join-Path $root ('dist.previous-' + $id)
 if (Test-Path -LiteralPath $dist) { Move-Item -LiteralPath $dist -Destination $previous }
-try { Move-Item -LiteralPath $output -Destination $dist }
+try {
+    Move-Item -LiteralPath $output -Destination $dist
+    # Automatically clean up temporary staging and previous dist on successful publish
+    if (Test-Path -LiteralPath $stage) {
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path -LiteralPath $previous) {
+        Remove-Item -LiteralPath $previous -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
 catch {
-    if ((Test-Path -LiteralPath $previous) -and -not (Test-Path -LiteralPath $dist)) { Move-Item -LiteralPath $previous -Destination $dist }
+    if ((Test-Path -LiteralPath $previous) -and -not (Test-Path -LiteralPath $dist)) {
+        Move-Item -LiteralPath $previous -Destination $dist
+    }
+    if (Test-Path -LiteralPath $stage) {
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+    }
     throw
 }
-Write-Host "[SUCCESS] $dist ($expected). ZIP contents and SHA256 verified."
-if (Test-Path -LiteralPath $previous) { Write-Host "Previous output retained: $previous" }
-Write-Host "Staging retained: $stage"
+Write-Host "[SUCCESS] $dist ($expected). ZIP contents and SHA256 verified. Temporary staging cleaned up."

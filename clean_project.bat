@@ -103,4 +103,12 @@ if exist "%target%\*.iml" (
     del /f /q "%target%\*.iml" 2>nul
     echo  - Xoa cac file .iml
 )
+for /d %%d in ("%target%\.package-stage-*") do (
+    echo  - Xoa %%~nxd\
+    rmdir /s /q "%%d"
+)
+for /d %%d in ("%target%\dist.previous-*") do (
+    echo  - Xoa %%~nxd\
+    rmdir /s /q "%%d"
+)
 goto :eof

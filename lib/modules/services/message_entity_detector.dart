@@ -53,12 +53,12 @@ class MessageEntityDetector {
 
   // Đường dẫn Windows: UNC (\\server\share\...) hoặc ổ đĩa (C:\Folder\...)
   static final RegExp _uncPathRegExp = RegExp(
-    r'\\\\[a-zA-Z0-9_.-]+(?:\\[^\r\n\\/:*?"<>|]+)*(?:\\[^\r\n\\/:*?"<>|]+?\.[a-zA-Z0-9]{1,8}|\\[^\s\r\n\\/:*?"<>|]+)?',
+    r'\\\\[a-zA-Z0-9_.-]+\\(?:[^\s\r\n\\/:*?"<>|,;!]+(?: [^\s\r\n\\/:*?"<>|,;!]+)*\\)*(?:[^\s\r\n\\/:*?"<>|,;!]+(?: [^\s\r\n\\/:*?"<>|,;!]+)*\.[a-zA-Z0-9]{1,8}|[^\s\r\n\\/:*?"<>|,;!]+)?',
     caseSensitive: false,
   );
 
   static final RegExp _localPathRegExp = RegExp(
-    r'[a-zA-Z]:\\(?:[^\r\n\\/:*?"<>|]+\\)*(?:[^\r\n\\/:*?"<>|]+?\.[a-zA-Z0-9]{1,8}|[^\s\r\n\\/:*?"<>|]+)?',
+    r'[a-zA-Z]:\\(?:[^\s\r\n\\/:*?"<>|,;!]+(?: [^\s\r\n\\/:*?"<>|,;!]+)*\\)*(?:[^\s\r\n\\/:*?"<>|,;!]+(?: [^\s\r\n\\/:*?"<>|,;!]+)*\.[a-zA-Z0-9]{1,8}|[^\s\r\n\\/:*?"<>|,;!]+)?',
     caseSensitive: false,
   );
 
@@ -74,9 +74,9 @@ class MessageEntityDetector {
     caseSensitive: false,
   );
 
-  // Domain phổ biến (không bắt đầu bằng @ để tránh trùng email)
+  // Domain phổ biến (không bắt đầu bằng @ hoặc / hoặc : hoặc \ để tránh trùng email, URL đầy đủ hoặc path)
   static final RegExp _urlDomainRegExp = RegExp(
-    r'''(?<![@\w])(?:[a-zA-Z0-9-]+\.)+(?:com|vn|net|org|edu|gov|io|ai|dev|co|xyz|me|info|biz|cc|tv)(?::\d+)?(?:\/[^\s<>"'()\[\]{}]*)?''',
+    r'''(?<![@\w/:\\])(?:[a-zA-Z0-9-]+\.)+(?:com|vn|net|org|edu|gov|io|ai|dev|co|xyz|me|info|biz|cc|tv)(?::\d+)?(?:\/[^\s<>"'()\[\]{}]*)?''',
     caseSensitive: false,
   );
 
@@ -115,18 +115,21 @@ class MessageEntityDetector {
   static List<MessageEntity> extractEntities(String text) {
     if (text.trim().isEmpty) return const [];
 
-    final entities = <MessageEntity>[];
+    final collected = <({int start, MessageEntity entity})>[];
     final seenValues = <String>{};
 
-    void addEntity(MessageEntityType type, String rawValue, String actionUrl, String label) {
+    void addEntity(int start, MessageEntityType type, String rawValue, String actionUrl, String label) {
       final cleanVal = rawValue.trim();
       if (cleanVal.isEmpty || seenValues.contains(cleanVal)) return;
       seenValues.add(cleanVal);
-      entities.add(MessageEntity(
-        type: type,
-        value: cleanVal,
-        actionUrl: actionUrl,
-        label: label,
+      collected.add((
+        start: start,
+        entity: MessageEntity(
+          type: type,
+          value: cleanVal,
+          actionUrl: actionUrl,
+          label: label,
+        ),
       ));
     }
 
@@ -135,6 +138,7 @@ class MessageEntityDetector {
       final email = _cleanTrailingPunctuation(match.group(0)!);
       if (email.contains('@')) {
         addEntity(
+          match.start,
           MessageEntityType.email,
           email,
           'mailto:$email',
@@ -148,6 +152,7 @@ class MessageEntityDetector {
       final path = _cleanTrailingPunctuation(match.group(0)!);
       if (path.length >= 4) {
         addEntity(
+          match.start,
           MessageEntityType.path,
           path,
           path,
@@ -160,6 +165,7 @@ class MessageEntityDetector {
       final path = _cleanTrailingPunctuation(match.group(0)!);
       if (path.length >= 3) {
         addEntity(
+          match.start,
           MessageEntityType.path,
           path,
           path,
@@ -169,7 +175,7 @@ class MessageEntityDetector {
     }
 
     // 3. URLs
-    void processUrl(String rawUrl) {
+    void processUrl(int start, String rawUrl) {
       final url = _cleanTrailingPunctuation(rawUrl);
       if (url.isEmpty || seenValues.contains(url)) return;
 
@@ -191,17 +197,17 @@ class MessageEntityDetector {
         displayLabel = '${displayLabel.substring(0, 27)}...';
       }
 
-      addEntity(MessageEntityType.url, url, actionUrl, displayLabel);
+      addEntity(start, MessageEntityType.url, url, actionUrl, displayLabel);
     }
 
     for (final match in _urlWithProtocolRegExp.allMatches(text)) {
-      processUrl(match.group(0)!);
+      processUrl(match.start, match.group(0)!);
     }
     for (final match in _urlWwwRegExp.allMatches(text)) {
-      processUrl(match.group(0)!);
+      processUrl(match.start, match.group(0)!);
     }
     for (final match in _urlDomainRegExp.allMatches(text)) {
-      processUrl(match.group(0)!);
+      processUrl(match.start, match.group(0)!);
     }
 
     // 4. Số điện thoại (Phone Numbers)
@@ -232,6 +238,7 @@ class MessageEntityDetector {
         if (isValidStart) {
           final telUrl = 'tel:${raw.startsWith('+') ? '+$digits' : digits}';
           addEntity(
+            match.start,
             MessageEntityType.phone,
             raw,
             telUrl,
@@ -241,6 +248,7 @@ class MessageEntityDetector {
       }
     }
 
-    return entities;
+    collected.sort((a, b) => a.start.compareTo(b.start));
+    return collected.map((e) => e.entity).toList();
   }
 }

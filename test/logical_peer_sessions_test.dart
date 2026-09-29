@@ -77,6 +77,16 @@ void main() {
     MessengerCoordinator.customGroupsFileForTesting = null;
   });
 
+  test('unread attention total is independent of contact search', () {
+    hello('192.0.2.1');
+    hello('192.0.2.1', port: 6477, bee: true);
+    c.peersMap['192.0.2.1:6475']!.unreadCount = 3;
+    expect(c.totalUnreadCount, 3);
+    c.setSearchQuery('no-such-contact');
+    expect(c.peers, isEmpty);
+    expect(c.totalUnreadCount, 3);
+  });
+
   test(
     'online list excludes offline and shares search and session deduplication',
     () {

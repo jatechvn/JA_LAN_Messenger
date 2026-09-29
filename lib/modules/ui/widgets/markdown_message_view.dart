@@ -146,13 +146,13 @@ class MarkdownMessageView extends StatelessWidget {
         if (isNetwork) {
           imgWidget = Image.network(
             uri.toString(),
-            errorBuilder: (_, __, ___) =>
+            errorBuilder: (context, error, stackTrace) =>
                 const Icon(Icons.broken_image_rounded, size: 40),
           );
         } else if (fileExists) {
           imgWidget = Image.file(
             file,
-            errorBuilder: (_, __, ___) =>
+            errorBuilder: (context, error, stackTrace) =>
                 const Icon(Icons.broken_image_rounded, size: 40),
           );
         } else {

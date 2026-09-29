@@ -2,6 +2,42 @@
 
 All notable changes to the **JA LAN Messenger** project will be documented in this file.
 
+## [1.7.0] - 2026-09-29
+
+### 🚀 Nâng cấp & Tính năng mới
+- **Khôi phục vị trí cuộn & ý định xem tin nhắn qua các lần khởi động lại (Conversation Scroll Restoration)**:
+  - Bổ sung `ConversationScrollStore` lưu trữ trạng thái vị trí cuộn chat vào tệp `conversation_scroll.json` ngay cạnh cấu hình ứng dụng.
+  - Tự động ghi nhớ vị trí pixel cuộn và ý định bám đáy (bottom intent) riêng biệt cho từng người dùng/nhóm.
+  - Khi mở lại ứng dụng hoặc chuyển đổi giữa các cuộc trò chuyện, khung chat tự động khôi phục đúng vị trí người dùng đang đọc thay vì luôn tự động nhảy xuống tin nhắn mới nhất nếu người dùng đang đọc lại lịch sử cũ.
+- **Cơ chế xác nhận đã đọc dựa trên khả năng nhìn thấy thực tế (Visible-Message Read Receipts)**:
+  - Bỏ cơ chế tự động đánh dấu đã đọc toàn bộ tin nhắn chỉ khi người dùng click chọn người liên hệ hoặc gửi tin nhắn.
+  - Tin nhắn nhận được chỉ được đánh dấu là "đã đọc" (`read`) khi cửa sổ ứng dụng đang ở trạng thái active/focused, tin nhắn nằm trong vùng hiển thị (viewport) và lưu lại trên màn hình tối thiểu 500ms.
+  - Giữ nguyên trạng thái tin nhắn chưa đọc (`unread`) khi cửa sổ bị che khuất, thu nhỏ hoặc tin nhắn nằm ngoài vùng cuộn.
+- **Dịch vụ thông báo chú ý tin nhắn chưa đọc & Nhấp nháy Taskbar Windows (Persistent Unread Attention)**:
+  - Tích hợp `UnreadAttentionService` giao tiếp trực tiếp với native Windows runner qua MethodChannel `FlashWindowEx` (`FLASHW_TRAY | FLASHW_TIMER`).
+  - Khi có tin nhắn chưa đọc (> 0), biểu tượng khay hệ thống (Tray) tự động luân phiên nhấp nháy chu kỳ 750ms và nhấp nháy thanh tác vụ Windows (Taskbar) cho đến khi người dùng mở và thực sự quan sát tin nhắn.
+  - Khắc phục lỗi tính toán số tin chưa đọc khi đang bật ô tìm kiếm danh bạ (dùng danh sách liên hệ không bị search filter).
+- **Tối ưu hóa Trải nghiệm Nhãn dán Động (Animated Sprite Stickers UX)**:
+  - Tinh chỉnh tốc độ chuyển khung hình Sprite từ 22 fps xuống **18 fps** (56ms) cho hoạt ảnh nhãn dán chuyển động tự nhiên, mượt mà và tiết kiệm CPU.
+  - Bọc bảng chọn nhãn dán và emoji bằng `TapRegion`: Tự động đóng bảng chọn khi người dùng nhấp chuột ra ngoài khung chat hoặc vùng nhập liệu.
+  - Tự động đóng bảng chọn sticker ngay sau khi người dùng bấm chọn một nhãn dán để gửi.
+- **Tự động Dọn dẹp Thư mục Staging & Sao lưu khi Đóng gói (Packaging Auto-Cleanup)**:
+  - Nâng cấp `windows/packaging/package_dist.ps1` và `clean_project.bat`: Tự động dọn dẹp sạch sẽ các thư mục staging tạm `.package-stage-*` và bản sao lưu cũ `dist.previous-*` ngay sau khi đóng gói thành công.
+  - Thu hồi hàng Gigabyte dung lượng ổ cứng bị chiếm dụng và loại bỏ triệt để xung đột đồng bộ rác lên OneDrive.
+  - Bổ sung cơ chế Pre-packaging sweep tự động xóa các thư mục dở dang nếu các lần đóng gói trước bị gián đoạn đột ngột.
+- **Giao diện Input Dock thích ứng màn hình hẹp (Responsive Input Toolbar)**:
+  - Tích hợp `LayoutBuilder` cho thanh công cụ dưới ô nhập tin nhắn: Tự động co giãn kích thước nút bấm và padding khi chiều rộng khung chat thu nhỏ (< 360px), loại bỏ hoàn toàn lỗi tràn pixel (`RenderFlex overflowed`) trong chế độ Compact Mode.
+
+### 🐛 Sửa lỗi & Tối ưu hóa
+- **Độ chính xác Nhận diện Thực thể (Message Entity Detector)**:
+  - Khắc phục lỗi trích xuất URL bị trùng lặp do nhận diện cả domain trần bên trong URL đầy đủ.
+  - Nâng cấp biểu thức chính quy nhận diện đường dẫn UNC và Windows Path: Giới hạn các khoảng trắng theo chuẩn hệ thống tệp Windows, không nuốt nhầm các từ ngữ trong câu vào đường dẫn thư mục.
+  - Sắp xếp các thẻ Quick Action Chips theo đúng thứ tự xuất hiện của thực thể trong tin nhắn văn bản.
+- **Kiểm thử tự động hóa**: Đạt 100% kiểm thử thành công (469 tests passed, 0 failures) trên toàn bộ dự án.
+
+### 📦 Phát hành
+- Đồng bộ version `1.7.0+14` trong `pubspec.yaml`, `constants.dart`, `Runner.rc`, `ABOUT.txt`, `README.md`, `USERGUIDE.md`, `RELEASE_NOTES.md`.
+
 ## [1.6.1] - 2026-09-28
 
 ### 🚀 Nâng cấp & Tính năng mới

@@ -459,8 +459,9 @@ void main() {
       group.unreadCount = 2;
       coordinator.selectPeer(coordinator.allUsersPeer);
       coordinator.selectPeer(coordinator.getPeerForGroup(group));
-      expect(coordinator.groups.single.unreadCount, 0);
       expect(coordinator.getInitialUnreadMessageId(group.id), 'm1');
+      coordinator.markConversationAsRead(group.id);
+      expect(coordinator.groups.single.unreadCount, 0);
       expect(
         coordinator.conversationsMap[group.id]!.single.status,
         MessageStatus.read,

@@ -61,7 +61,7 @@ void main() {
       c.conversationsMap[a.id] = history;
       c.conversationsMap[b.id] = [];
       c.selectPeer(a);
-      await tester.pumpWidget(
+      Future<void> mountChat() => tester.pumpWidget(
         MultiProvider(
           providers: [
             ChangeNotifierProvider.value(value: c),
@@ -71,6 +71,7 @@ void main() {
           child: const MaterialApp(home: Scaffold(body: ChatViewPanel())),
         ),
       );
+      await mountChat();
       await tester.pumpAndSettle();
       ScrollController controller() =>
           tester.widget<ListView>(find.byType(ListView).first).controller!;
@@ -98,6 +99,33 @@ void main() {
       expect(controller().position.extentAfter, greaterThan(100));
       expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
       expect(history.last.status, MessageStatus.delivered);
+      await tester.pumpWidget(const SizedBox());
+
+      // A fresh panel has no RAM scroll map: it must restore the disk snapshot.
+      await mountChat();
+      await tester.pumpAndSettle();
+      expect(controller().offset, closeTo(oldOffset, 1));
+      expect(controller().position.extentAfter, greaterThan(100));
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
+      await tester.pumpAndSettle();
+      expect(controller().position.extentAfter, lessThan(3));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpWidget(const SizedBox());
+      history.addAll(List.generate(25, (i) => message(200 + i, read: false)));
+      await mountChat();
+      await tester.pumpAndSettle();
+      expect(controller().position.extentAfter, lessThan(3));
+      expect(history.last.status, MessageStatus.delivered);
+
+      // Offline delivery can also complete after reopening the chat.
+      history.addAll(List.generate(20, (i) => message(300 + i, read: false)));
+      c.selectPeer(a);
+      await tester.pumpAndSettle();
+      expect(controller().position.extentAfter, lessThan(3));
+      expect(
+        history.where((m) => m.id == '200').single.status,
+        MessageStatus.delivered,
+      ); // Jumped-over bubbles are not marked read.
       await tester.pumpWidget(const SizedBox());
       c.chatHistory.cancelAll();
     },

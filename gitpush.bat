@@ -3,9 +3,12 @@ setlocal EnableExtensions DisableDelayedExpansion
 chcp 65001 >nul
 cd /d "%~dp0"
 
-title JA LAN Messenger - Release and Git Push v1.6.1
+for /f "tokens=2 delims=: " %%a in ('findstr /r "^version:" pubspec.yaml') do set "FULL_VER=%%a"
+for /f "tokens=1 delims=+" %%a in ("%FULL_VER%") do set "APP_VER=%%a"
+
+title JA LAN Messenger - Release and Git Push v%APP_VER%
 echo ===============================================================================
-echo            JA LAN MESSENGER - AUTOMATED RELEASE AND GIT PUSH v1.6.1
+echo            JA LAN MESSENGER - AUTOMATED RELEASE AND GIT PUSH v%APP_VER%
 echo ===============================================================================
 echo.
 
@@ -16,7 +19,7 @@ taskkill /IM ja_lan_messenger.exe /F >nul 2>&1
 rem 2. Chay kiem thu Verification
 echo.
 echo [2/6] Chay kiem thu Verification (Flutter Test)...
-call flutter test test\scan_localization_test.dart
+call flutter test test\scan_localization_test.dart test\message_entity_detector_test.dart
 if errorlevel 1 (
     echo [WARNING] Test don le that bai hoac co canh bao. Dang chay flutter test...
     call flutter test
@@ -39,15 +42,15 @@ rem 4. Git Add va Commit
 echo.
 echo [4/6] Thuc hien Git Add va Git Commit...
 git add -A
-git commit -m "Release v1.6.1: Animated Sprite Stickers, Clipboard Image Copy & Multilingual IP Scan Progress"
+git commit -m "Release v%APP_VER%: Conversation Scroll Restoration, Visible-Based Read Receipts & Packaging Auto-Cleanup"
 
 rem 5. Git Tag va Git Push
 echo.
 echo [5/6] Tao Git Tag va Push len GitHub Remote...
-git tag -d v1.6.1 >nul 2>&1
-git tag -a v1.6.1 -m "Release v1.6.1"
+git tag -d v%APP_VER% >nul 2>&1
+git tag -a v%APP_VER% -m "Release v%APP_VER%"
 git push origin main
-git push origin v1.6.1 --force
+git push origin v%APP_VER% --force
 
 rem 6. Tu dong dong bo sang may chu mang LAN (172.21.*.*)
 echo.
@@ -56,8 +59,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$isFactory = @(Get-NetIP
 
 echo.
 echo ===============================================================================
-echo   [HOAN TAT] PHAT HANH VA GIT PUSH v1.6.1 THANH CONG!
-echo   - Phien ban: v1.6.1+13
+echo   [HOAN TAT] PHAT HANH VA GIT PUSH v%APP_VER% THANH CONG!
+echo   - Phien ban: v%FULL_VER%
 echo   - Thu muc phat hanh: %~dp0dist
 echo   - GitHub Repository: https://github.com/jatechvn/JA_LAN_Messenger.git
 echo ===============================================================================

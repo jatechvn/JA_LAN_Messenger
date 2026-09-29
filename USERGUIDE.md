@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.6.1
+# Hướng dẫn sử dụng JA LAN Messenger v1.7.0
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.6.1_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.7.0_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -119,6 +119,13 @@
   - Nhấp chuột phải vào bất kỳ hình ảnh nào trong bong bóng chat và chọn **"Sao chép ảnh"** (`Copy Image`). Dữ liệu ảnh sẽ được lưu ngay vào Clipboard hệ điều hành để dán (`Ctrl + V`) sang Word, Excel, Paint, Zalo mà không cần lưu file ra ổ đĩa.
 - **Đa ngôn ngữ tiến độ quét IP mạng (Network IP Sweep Localization):**
   - Thanh trạng thái quét mạng hiển thị đầy đủ tiến độ (UDP/TCP, đa card mạng NIC, đối soát ARP) chuẩn xác theo ngôn ngữ bạn chọn (Tiếng Việt, English, 简体中文).
+- **Khôi phục vị trí cuộn & ý định xem tin nhắn (Conversation Scroll Restoration):**
+  - Tự động lưu vị trí đọc tin nhắn và ý định xem lịch sử của bạn trên từng cuộc trò chuyện.
+  - Khi bạn khởi động lại ứng dụng hoặc chuyển đổi qua lại giữa các bạn chat, màn hình tự động dừng đúng vị trí bạn đang đọc, không bị tình trạng tự động nhảy mất dấu xuống cuối trang.
+- **Xác nhận đã đọc theo khả năng nhìn thấy thực tế (Visible-Message Read Receipts):**
+  - Tin nhắn chỉ được đánh dấu là "đã đọc" khi cửa sổ đang mở active và tin nhắn thực sự nằm trong tầm mắt của bạn tối thiểu 0.5 giây. Nếu app đang bị thu nhỏ hoặc che khuất, tin nhắn vẫn giữ nguyên trạng thái chưa đọc.
+- **Nhắc nhở tin nhắn chưa đọc & Nhấp nháy Taskbar Windows (Persistent Unread Attention):**
+  - Biểu tượng khay hệ thống (Tray) tự động luân phiên nhấp nháy và thanh Taskbar Windows nhấp nháy liên tục khi có tin nhắn chưa đọc cho đến khi bạn bấm vào xem.
 
 ---
 

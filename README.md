@@ -1,6 +1,6 @@
 # JA LAN Messenger
 
-[![Version](https://img.shields.io/badge/version-1.6.1-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.7.0-blue.svg)](CHANGELOG.md)
 [![Flutter Version](https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter)](https://flutter.dev)
 [![Dart Version](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com/windows)
@@ -13,13 +13,14 @@ A modern, ultra-lightweight, high-performance **Peer-to-Peer (P2P) Office LAN Me
 
 ## ⚡ Key Highlights
 
-- **Animated Sprite Stickers (Zalo-Style)**: Seamlessly detects and loads animated sticker packs from `assets/sticker/`. Supports sprite sheets with JSON coordinate maps (`spritesheet.json`, `frames.json`) and individual frame sequences with a rich interactive picker, live animated previews, and instant P2P LAN transmission.
+- **Smart Conversation Scroll Restoration**: Seamlessly preserves and restores exact conversation pixel scroll offsets and bottom intent across app restarts and chat switches via `conversation_scroll.json`.
+- **Visible-Message Read Receipts**: Real-time viewport dwell detection marks incoming messages as read only when the window is focused and the message is physically visible on screen for >= 500ms, eliminating rushed accidental reads.
+- **Persistent Unread Attention & Taskbar Flashing**: Automatically alternates the system tray icon badge (750ms cadence) and flashes the Windows taskbar via native `FlashWindowEx` (`FLASHW_TRAY | FLASHW_TIMER`) until unread messages are observed.
+- **Refined Animated Sprite Stickers**: Zalo-style sticker packs running at a natural, battery-efficient 18 FPS (56ms) with interactive animated hover previews, instant P2P LAN transmission, and outside-click auto-close via `TapRegion`.
+- **Packaging Auto-Cleanup & Disk Optimization**: Automatically sweeps and purges temporary staging directories (`.package-stage-*`, `dist.previous-*`) upon successful build, saving gigabytes of disk space and preventing OneDrive clutter.
+- **Responsive Input Dock Layout**: Dynamic `LayoutBuilder` automatically scales button sizing and padding in narrow views (< 360px) to prevent layout overflows in compact mode.
 - **Copy Chat Images to Clipboard**: Direct 1-click "Copy Image" option from message bubble context menu to copy raw image bytes into the Windows clipboard for fast pasting into Word, Excel, Paint, or other applications.
 - **Multilingual Network IP Sweep Progress**: Full dynamic localization (Vietnamese, English, Simplified Chinese) across all scan phases (UDP/TCP sweep, multi-NIC broadcast, ARP check, complete, error), featuring real-time percentage and scanned count counters.
-- **Smart Chat Bubble Entity Detection & Quick Action Chips**: Automatically extracts URLs, Phone numbers (excluding IPs/dates), RFC emails, and UNC LAN shares (`\\server\share\...`) / local drive paths (`C:\...`). Renders Bento Glassmorphic interactive action chips right under messages with 1-click execution and copy.
-- **Selectable & Interactive Chat Text**: Full markdown selectable text support (`selectable: true`) allowing users to highlight and copy partial text, plus direct link tapping to open browsers, emails, or phone callers.
-- **System Tray 1-Click Toggle**: Left-clicking the Windows system tray icon intelligently toggles between minimizing/hiding the app to the tray and restoring/focusing it to the foreground.
-- **Responsive Chat Header Adaptation**: Dynamically collapses the chat top bar when opening Conversation Info, placing status dots directly on the avatar, hiding standalone status badges (saving ~85px horizontal space), and enabling smooth nickname marquee scrolling.
 
 - **Remote WinRM App Launch & Auto-Buzz**: Automatically launches the peer's desktop application remotely via Windows Remote Management (WinRM) into an interactive session (`SessionId > 0`) when ringing (Buzz) an offline peer, with automatic auto-buzz delivery upon peer startup.
 - **AES-256 Protected WinRM Credentials**: End-to-end device-bound AES-256 encrypted credential storage with per-peer override and secure in-memory execution via temporary scripts.
@@ -88,7 +89,7 @@ build\windows\x64\runner\Release\
 
 ### Installation & Uninstallation
 
-`build.bat` packages Release into `dist` only after checking the EXE version, runtime files and ZIP hashes. Packaging failures stop the build script. Previous output is retained in `dist.previous-*`; temporary staging is retained in `.package-stage-*` for inspection. Release configuration and logs are not deleted or distributed. These retained directories use additional disk space and can be reviewed before manual cleanup.
+`build.bat` packages Release into `dist` only after checking the EXE version, runtime files and ZIP hashes. Packaging failures stop the build script. Temporary staging (`.package-stage-*`) and previous dist directories (`dist.previous-*`) are automatically cleaned up upon successful build to save disk space and prevent workspace clutter. Release configuration and logs are never deleted or distributed.
 
 - **One-Click Installation (`install.bat`)**:
   - Installs to `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` without requiring administrator / UAC elevation.

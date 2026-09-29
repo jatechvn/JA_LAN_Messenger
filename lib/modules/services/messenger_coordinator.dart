@@ -1029,7 +1029,9 @@ class MessengerCoordinator extends ChangeNotifier {
   List<PeerModel> get onlinePeers =>
       peers.where((peer) => peer.status != PeerStatus.offline).toList();
 
-  List<PeerModel> get peers {
+  List<PeerModel> get peers => _contactPeers();
+
+  List<PeerModel> _contactPeers({bool applySearch = true}) {
     // Deduplicate peers by canonical device identity
     final Map<String, PeerModel> uniqueMap = {};
     for (final p in _peers.values) {
@@ -1131,7 +1133,7 @@ class MessengerCoordinator extends ChangeNotifier {
       return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
     });
 
-    if (_searchQuery.trim().isEmpty) return list;
+    if (!applySearch || _searchQuery.trim().isEmpty) return list;
     final query = _searchQuery.toLowerCase();
     return list
         .where(
@@ -1312,7 +1314,7 @@ class MessengerCoordinator extends ChangeNotifier {
 
   int get totalUnreadCount {
     var count = _allUsersPeer.unreadCount;
-    for (final p in peers) {
+    for (final p in _contactPeers(applySearch: false)) {
       count += p.unreadCount;
     }
     for (final g in _groups.values) {

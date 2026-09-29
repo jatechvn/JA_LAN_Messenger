@@ -11,8 +11,10 @@ $packager=Join-Path (Split-Path $PSScriptRoot -Parent) 'windows\packaging\packag
 & $packager -ProjectRoot $root
 if (-not (Test-Path -LiteralPath (Join-Path $release 'update_config.json'))) { throw 'Source modified' }
 if (Test-Path -LiteralPath (Join-Path $root 'dist\update_config.json')) { throw 'Runtime configuration leaked' }
-$previous=Get-ChildItem -LiteralPath $root -Directory -Filter 'dist.previous-*'
-if (-not (Test-Path -LiteralPath (Join-Path $previous.FullName 'keep.txt'))) { throw 'Previous output lost' }
+$stageDirs = Get-ChildItem -LiteralPath $root -Directory -Filter '.package-stage-*'
+if ($stageDirs.Count -gt 0) { throw 'Staging directory was not cleaned up' }
+$prevDirs = Get-ChildItem -LiteralPath $root -Directory -Filter 'dist.previous-*'
+if ($prevDirs.Count -gt 0) { throw 'Previous dist directory was not cleaned up' }
 $zip=Get-ChildItem -LiteralPath (Join-Path $root 'dist') -Filter '*.zip'
 $before=(Get-FileHash -LiteralPath $zip.FullName).Hash
 Set-Content -LiteralPath (Join-Path $root 'pubspec.yaml') -Value 'version: 1.3.0+4'

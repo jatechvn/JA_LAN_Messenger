@@ -17,6 +17,7 @@ import '../../models/peer_model.dart';
 import '../../models/message_model.dart';
 import '../../models/ai_config_model.dart';
 import '../../services/app_preferences.dart';
+import '../../services/conversation_scroll_store.dart';
 import 'glass_components.dart';
 import 'glass_dialog.dart';
 import 'glass_image_lightbox.dart';
@@ -153,19 +154,33 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
   int _prevMessageCount = 0;
   bool _prevPeerTyping = false;
   String? _lastPeerId;
+  String? _lastScrollKey;
+  late final ConversationScrollStore _scrollStore;
+  Timer? _scrollSaveTimer;
   final _savedScrollPositions =
       <String, ({double offset, bool atBottom, String? separator})>{};
 
   void _saveConversationScroll() {
     final id = _lastPeerId;
-    if (id == null || !_scrollController.hasClients) return;
+    if (id == null ||
+        !_scrollController.hasClients ||
+        _isProgrammaticScroll ||
+        _pendingJumpToBottom ||
+        _pendingJumpToUnread) {
+      return;
+    }
     final position = _scrollController.position;
     _savedScrollPositions[id] = (
       offset: position.pixels,
       atBottom: position.maxScrollExtent - position.pixels <= 50,
       separator: _activeUnreadSeparatorMessageId,
     );
+    final key = _lastScrollKey;
+    if (key != null) _scrollStore.save(key, _savedScrollPositions[id]!);
   }
+
+  @override
+  void onWindowClose() => _saveConversationScroll();
 
   // Scroll tracking state
   bool _hasScrollableContent = false;
@@ -222,6 +237,11 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
   @override
   void initState() {
     super.initState();
+    _scrollStore = ConversationScrollStore(
+      File(
+        '${AppPreferences().preferencesFile.parent.path}${Platform.pathSeparator}conversation_scroll.json',
+      ),
+    );
     _inputFocusNode = FocusNode();
     _scrollController.addListener(_onScroll);
     windowManager.addListener(this);
@@ -234,6 +254,8 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
 
   @override
   void dispose() {
+    _saveConversationScroll();
+    _scrollSaveTimer?.cancel();
     _readTimer?.cancel();
     windowManager.removeListener(this);
     _focusTimer?.cancel();
@@ -250,6 +272,10 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
   void _onScroll() {
     _resetReadExposure();
     _updateScrollState();
+    _scrollSaveTimer?.cancel();
+    _scrollSaveTimer = Timer(const Duration(milliseconds: 200), () {
+      if (mounted) _saveConversationScroll();
+    });
   }
 
   void _updateScrollState() {
@@ -610,6 +636,7 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
     if (isPeerChanged) {
       _saveConversationScroll();
       _lastPeerId = peer.id;
+      _lastScrollKey = peer.canonicalIdentity;
       _isManualScrolling = false;
       _manualScrollHideTimer?.cancel();
       _requestInputFocus();
@@ -647,7 +674,8 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
         _pendingJumpToUnread = false;
       }
 
-      final saved = _savedScrollPositions[peer.id];
+      final saved =
+          _savedScrollPositions[peer.id] ?? _scrollStore.read(_lastScrollKey!);
       if (saved != null) {
         _pendingJumpToUnread = false;
         _pendingJumpToBottom = saved.atBottom;
@@ -5175,128 +5203,137 @@ class _ChatInputDockState extends State<_ChatInputDock> {
 
                   // 3. Action Toolbar Row (Fixed height ~38px, hugging buttons only)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 2, 10, 8),
-                    child: Row(
-                      children: [
-                        GlassIconButton(
-                          icon: Icons.attach_file_rounded,
-                          tooltip: lang.tr('attachFile'),
-                          size: 32,
-                          onPressed: widget.onAttachFile,
-                        ),
-                        const SizedBox(width: 2),
-                        TapRegion(
-                          groupId: _pickerTapGroup,
-                          child: GlassIconButton(
-                            icon: Icons.sentiment_satisfied_alt_rounded,
-                            tooltip: lang.tr('emojis'),
-                            size: 32,
-                            color: _showEmojiPicker
-                                ? theme.colors.accentBlue
-                                : null,
-                            onPressed: () {
-                              setState(() {
-                                _showEmojiPicker = !_showEmojiPicker;
-                                if (_showEmojiPicker) {
-                                  _showStickerPicker = false;
-                                }
-                              });
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 2),
-                        TapRegion(
-                          groupId: _pickerTapGroup,
-                          child: GlassIconButton(
-                            icon: Icons.sticky_note_2_rounded,
-                            tooltip: lang.tr('stickers'),
-                            size: 32,
-                            color: _showStickerPicker
-                                ? theme.colors.accentBlue
-                                : null,
-                            onPressed: () {
-                              setState(() {
-                                _showStickerPicker = !_showStickerPicker;
-                                if (_showStickerPicker) {
-                                  _showEmojiPicker = false;
-                                }
-                              });
-                            },
-                          ),
-                        ),
-                        if (!isAiChat) ...[
-                          const SizedBox(width: 2),
-                          _BuzzActionButton(
-                            onPressed: widget.onBuzz,
-                            tooltip: isTargetOffline
-                                ? lang.tr('buzzOfflineTooltip')
-                                : lang.tr('nudge'),
-                            size: 32,
-                            defaultColor: theme.isDark
-                                ? Colors.white70
-                                : Colors.black87,
-                          ),
-                        ],
-                        const SizedBox(width: 4),
-                        const ImeToggleButton(),
-                        const Spacer(),
-                        if (isAiBusy) ...[
-                          ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.redAccent.shade400,
-                              foregroundColor: Colors.white,
-                              minimumSize: const Size(36, 32),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              elevation: 0,
+                    padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isNarrow = constraints.maxWidth < 360;
+                        final buttonSize = isNarrow ? 28.0 : 32.0;
+                        final spacing = isNarrow ? 1.0 : 2.0;
+                        return Row(
+                          children: [
+                            GlassIconButton(
+                              icon: Icons.attach_file_rounded,
+                              tooltip: lang.tr('attachFile'),
+                              size: buttonSize,
+                              onPressed: widget.onAttachFile,
                             ),
-                            onPressed: () => coordinator.stopAiGeneration(),
-                            icon: const Icon(
-                              Icons.stop_circle_rounded,
-                              size: 14,
-                            ),
-                            label: Text(
-                              lang.tr('stopAiGeneration'),
-                              style: const TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
+                            SizedBox(width: spacing),
+                            TapRegion(
+                              groupId: _pickerTapGroup,
+                              child: GlassIconButton(
+                                icon: Icons.sentiment_satisfied_alt_rounded,
+                                tooltip: lang.tr('emojis'),
+                                size: buttonSize,
+                                color: _showEmojiPicker
+                                    ? theme.colors.accentBlue
+                                    : null,
+                                onPressed: () {
+                                  setState(() {
+                                    _showEmojiPicker = !_showEmojiPicker;
+                                    if (_showEmojiPicker) {
+                                      _showStickerPicker = false;
+                                    }
+                                  });
+                                },
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 6),
-                        ],
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: theme.colors.accentBlue,
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(40, 32),
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                            SizedBox(width: spacing),
+                            TapRegion(
+                              groupId: _pickerTapGroup,
+                              child: GlassIconButton(
+                                icon: Icons.sticky_note_2_rounded,
+                                tooltip: lang.tr('stickers'),
+                                size: buttonSize,
+                                color: _showStickerPicker
+                                    ? theme.colors.accentBlue
+                                    : null,
+                                onPressed: () {
+                                  setState(() {
+                                    _showStickerPicker = !_showStickerPicker;
+                                    if (_showStickerPicker) {
+                                      _showEmojiPicker = false;
+                                    }
+                                  });
+                                },
+                              ),
                             ),
-                            elevation: 0,
-                          ),
-                          onPressed: _triggerSend,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                lang.tr('send'),
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
+                            if (!isAiChat) ...[
+                              SizedBox(width: spacing),
+                              _BuzzActionButton(
+                                onPressed: widget.onBuzz,
+                                tooltip: isTargetOffline
+                                    ? lang.tr('buzzOfflineTooltip')
+                                    : lang.tr('nudge'),
+                                size: buttonSize,
+                                defaultColor: theme.isDark
+                                    ? Colors.white70
+                                    : Colors.black87,
+                              ),
+                            ],
+                            SizedBox(width: isNarrow ? 2.0 : 4.0),
+                            ImeToggleButton(size: buttonSize),
+                            const Spacer(),
+                            if (isAiBusy) ...[
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.redAccent.shade400,
+                                  foregroundColor: Colors.white,
+                                  minimumSize: Size(isNarrow ? 30 : 36, buttonSize),
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: isNarrow ? 6 : 10,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  elevation: 0,
+                                ),
+                                onPressed: () => coordinator.stopAiGeneration(),
+                                icon: const Icon(
+                                  Icons.stop_circle_rounded,
+                                  size: 14,
+                                ),
+                                label: Text(
+                                  lang.tr('stopAiGeneration'),
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(width: 4),
-                              const Icon(Icons.send_rounded, size: 13),
+                              SizedBox(width: isNarrow ? 4 : 6),
                             ],
-                          ),
-                        ),
-                      ],
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: theme.colors.accentBlue,
+                                foregroundColor: Colors.white,
+                                minimumSize: Size(isNarrow ? 36 : 40, buttonSize),
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: isNarrow ? 8 : 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                elevation: 0,
+                              ),
+                              onPressed: _triggerSend,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    lang.tr('send'),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.send_rounded, size: 13),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ],

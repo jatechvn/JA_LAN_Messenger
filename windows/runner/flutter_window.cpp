@@ -1,6 +1,7 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <flutter/standard_method_codec.h>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -25,6 +26,34 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  attention_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "ja_lan_messenger/unread_attention",
+          &flutter::StandardMethodCodec::GetInstance());
+  attention_channel_->SetMethodCallHandler(
+      [this](const auto& call, auto result) {
+        if (call.method_name() != "setFlash") {
+          result->NotImplemented();
+          return;
+        }
+        const auto* active = call.arguments()
+            ? std::get_if<bool>(call.arguments()) : nullptr;
+        if (!active) {
+          result->Error("invalid_argument", "Expected a boolean");
+          return;
+        }
+        // Windows owns the repeating cadence; Dart sends only start/stop.
+        // Do not use TIMERNOFG: focusing alone does not mean messages were read.
+        FLASHWINFO info{};
+        info.cbSize = sizeof(info);
+        info.hwnd = GetHandle();
+        info.dwFlags = *active ? (FLASHW_TRAY | FLASHW_TIMER) : FLASHW_STOP;
+        info.uCount = 0;  // FLASHW_TIMER repeats until explicitly stopped.
+        info.dwTimeout = 750;
+        FlashWindowEx(&info);
+        result->Success();
+      });
   if (!keyboard_guard_.Install(flutter_controller_->view()->GetNativeWindow())) {
     return false;
   }
@@ -43,6 +72,10 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  if (attention_channel_) {
+    attention_channel_->SetMethodCallHandler(nullptr);
+    attention_channel_.reset();
+  }
   HWND hwnd = GetHandle();
   if (hwnd != nullptr) {
     ::RemovePropW(hwnd, L"JA_LAN_MESSENGER_INSTANCE");

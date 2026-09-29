@@ -11,7 +11,7 @@ import '../localization/app_locale.dart';
 import '../models/peer_model.dart';
 import '../services/messenger_coordinator.dart';
 import '../services/app_preferences.dart';
-import '../services/tray_badge_service.dart';
+import '../services/unread_attention_service.dart';
 import '../services/tray_window_toggle.dart';
 import '../constants.dart';
 import '../build_info.dart';
@@ -40,6 +40,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
   MainViewTab _activeTab = MainViewTab.chats;
   bool _showDetailsPanel = false;
   final _trayWindowToggle = TrayWindowToggle();
+  final _unreadAttention = UnreadAttentionService();
 
   @override
   void initState() {
@@ -75,6 +76,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
 
   @override
   void dispose() {
+    _unreadAttention.dispose();
     _observedCoordinator?.removeListener(_onCoordinatorChangedForTray);
     windowManager.removeListener(this);
     trayManager.removeListener(this);
@@ -116,9 +118,8 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
       _lastTrayUnreadCount = unread;
       _lastTrayStatus = status;
 
-      // 1. Cập nhật icon khay: Có badge số nếu unread > 0
-      final badgedPath = await TrayBadgeService.getBadgeIconPath(unread);
-      await trayManager.setIcon(badgedPath ?? 'assets/app_icon.ico');
+      // One owner for icon writes: blink until all conversations are read.
+      _unreadAttention.update(unread);
 
       // 2. Cập nhật tooltip động
       if (unread > 0) {
