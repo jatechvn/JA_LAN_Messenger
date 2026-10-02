@@ -19,7 +19,7 @@ taskkill /IM ja_lan_messenger.exe /F >nul 2>&1
 rem 2. Chay kiem thu Verification
 echo.
 echo [2/6] Chay kiem thu Verification (Flutter Test)...
-call flutter test test\scan_localization_test.dart test\message_entity_detector_test.dart
+call flutter test test\scan_localization_test.dart test\message_entity_detector_test.dart test\smart_file_preview_test.dart test\file_preview_inspector_test.dart
 if errorlevel 1 (
     echo [WARNING] Test don le that bai hoac co canh bao. Dang chay flutter test...
     call flutter test
@@ -42,7 +42,7 @@ rem 4. Git Add va Commit
 echo.
 echo [4/6] Thuc hien Git Add va Git Commit...
 git add -A
-git commit -m "Release v%APP_VER%: Smart Manual IP 2-Octet Suggestion, Connection Feedback & New Friend Badge"
+git commit -m "Release v%APP_VER%: Bento Smart File Inspector, Pure Dart ZIP/Excel Parser, Hex View & Backdrop Dismissal"
 
 rem 5. Git Tag va Git Push
 echo.

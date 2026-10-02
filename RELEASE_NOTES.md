@@ -1,21 +1,19 @@
-TAG=v1.7.1
-TITLE=JA LAN Messenger v1.7.1 — Smart Manual IP 2-Octet Suggestion, Connection Feedback & New Friend Badge
+TAG=v1.7.2
+TITLE=JA LAN Messenger v1.7.2 — Bento Smart File Inspector, Pure Dart ZIP/Excel Parser, Hex View & Backdrop Dismissal
 BODY=
-## JA LAN Messenger v1.7.1 — Smart Manual IP 2-Octet Suggestion, Connection Feedback & New Friend Badge
+## JA LAN Messenger v1.7.2 — Bento Smart File Inspector, Pure Dart ZIP/Excel Parser, Hex View & Backdrop Dismissal
 
-- **Gợi ý Thông minh theo IP Đang Sử dụng & Viết sẵn 2 Octet Đầu (Smart 2-Octet Manual IP Suggestion)**:
-  - Tự động nhận diện dải mạng của card mạng LAN vật lý đang hoạt động (`172.21.*.*` hoặc `192.168.*.*`) và điền sẵn 2 số đầu tiên (ví dụ `172.21.` hoặc `192.168.`) thay vì gán cứng 3 số (`192.168.1.`) như trước.
-  - Con trỏ soạn thảo tự động đặt ngay sau dấu chấm thứ 2, giúp người dùng chỉ việc gõ nốt 2 số còn lại (ví dụ `.100.25`) và nhấn Enter để kết nối.
-  - Tích hợp thanh **Suggestion Chips** (`[ 172.21. ]`, `[ 192.168. ]`) giúp chuyển đổi tiền tố mạng chỉ bằng 1 cú nhấp chuột khi máy có nhiều card mạng hoạt động đồng thời (LAN dây xưởng + Wi-Fi).
-- **Phản hồi Kết nối Thời gian thực & Thông báo Thành công (Connection Feedback & Toast)**:
-  - Nút "Kết nối" hiển thị vòng xoay tiến trình (`CircularProgressIndicator`) và văn bản `Đang kết nối tới [IP]...` trong thời gian bắt tay TCP & HELLO (timeout 3.2s), ngăn chặn nhấp chuột trùng lặp.
-  - Khi kết nối thành công: Hộp thoại tự động đóng, Toast thông báo nổi lên (`Đã kết nối và thêm bạn mới: $name ($ip)`), và tự động mở ngay khung chat với bạn mới.
-  - Khi không kết nối được: Hiển thị cảnh báo lỗi inline màu cam/vàng rõ ràng ngay dưới ô nhập, cho phép sửa lại IP mà không bị mất dữ liệu đã gõ, kèm nút `Lưu vào danh bạ (ngoại tuyến)` để lưu trước khi máy đồng nghiệp chưa bật ứng dụng.
-- **Ưu tiên Bạn mới lên Đầu Danh sách & Huy hiệu "Bạn mới" (New Friend Prioritization & Badge)**:
-  - Tự động ưu tiên đưa bạn mới vừa kết nối lên vị trí cao nhất trong danh sách liên hệ (ngay sau các mục đã ghim `isPinned`), áp dụng cho cả tab *Tất cả* và tab *Trực tuyến*.
-  - Hiển thị huy hiệu `[Bạn mới]` (VI) / `[New]` (EN) / `[新好友]` (ZH) màu xanh ngọc bích (`accentEmerald`) tinh tế bên cạnh tên liên hệ.
-  - Tự động gỡ huy hiệu khi người dùng gửi tin nhắn trò chuyện đầu tiên (`sendMessage`), hoặc chủ động gỡ bỏ qua menu chuột phải (`Bỏ đánh dấu bạn mới`).
-- **Đồng bộ Toàn diện Phiên bản**: Cập nhật `v1.7.1+15` vào toàn bộ mã nguồn, metadata Windows Runner, tài liệu hướng dẫn và bộ cài đặt.
+- **Hộp thoại Soi tập tin Đa năng Bento & Đóng khi Click Ra ngoài (Bento Smart File Inspector & Backdrop Dismissal)**:
+  - **Đóng nhanh khi click ra ngoài backdrop**: Hỗ trợ đóng hộp thoại xem trước ngay lập tức khi nhấp chuột ra ngoài vùng cửa sổ modal (backdrop tap-to-dismiss) hoặc nhấn phím `Esc`, không còn bắt buộc phải rê chuột tìm và bấm nút X.
+  - **Thẻ Bento Thông tin Chi tiết (Bento Metadata Grid)**: Hiển thị phân loại MIME, dung lượng tệp định dạng đẹp, thời gian sửa đổi lần cuối, phân tích quyền truy cập tệp (Read/Write/Execute), và ứng dụng mặc định của hệ thống Windows được đăng ký để mở phần mở rộng đó (qua kênh `AssocQueryStringW` native Win32).
+  - **Trình Duyệt Cấu trúc Tệp Nén ZIP Thuần Dart (Pure Dart ZIP Archive Explorer)**: Phân tích trực tiếp tệp nén `.zip`, `.jar`, `.apk` không cần giải nén ra ổ cứng; hiển thị danh sách cây thư mục/tệp tin, kích thước nén, kích thước thực tế và tỷ lệ nén (compression ratio) kèm biểu tượng trực quan.
+  - **Trình Xem Trước Bảng Tính Excel (Pure Dart Sheet Structure Inspector)**: Đọc cấu trúc bảng tính `.xlsx`, trích xuất số lượng trang tính (Sheet count), tên danh sách từng Sheet, và dung lượng dữ liệu tệp nén bảng tính.
+  - **Băm Toàn vẹn Tệp Tin SHA-256 (File Integrity Checksum)**: Tự động tính toán mã băm SHA-256 thời gian thực cho mọi tệp tin, tích hợp nút sao chép mã băm nhanh chỉ với 1 cú click (`Ctrl+Shift+C`) để kiểm tra toàn vẹn và đối soát an toàn.
+  - **Trình Soi Mã Nhị Phân Hex Dump (Binary Hex Dump Viewer)**: Trích xuất và định dạng 512 bytes đầu tiên của mọi tệp nhị phân (`.bin`, `.dat`, `.exe`, `.dll`, `.iso`...) theo chuẩn Hex Editor (Offset | Hex bytes | ASCII representation) trong bảng cuộn giao diện tối Monospace.
+  - **Sao Chép Trực Tiếp Tệp Tin Vật Lý vào Windows Clipboard**: Bổ sung nút sao chép file thật (`Pasteboard.writeFiles`) vào khay nhớ tạm Windows, cho phép người dùng `Ctrl+C` trong hộp thoại và `Ctrl+V` dán thẳng file vào Windows Explorer, thư mục làm việc, hoặc các ứng dụng khác.
+  - **Phím Tắt Toàn Diện (Keyboard Shortcuts)**: `Enter` hoặc `Ctrl+O` để mở tệp bằng ứng dụng mặc định, `Ctrl+C` sao chép tệp vật lý, `Ctrl+Shift+C` sao chép mã SHA-256, `Esc` để đóng hộp thoại.
+  - **Layout Thích Ứng (Responsive Bento UI)**: Sử dụng `LayoutBuilder` tự động co giãn kích thước dialog theo kích thước cửa sổ ứng dụng (kể cả trong Compact Mode), loại bỏ triệt để lỗi tràn pixel.
+- **Đồng bộ Toàn diện Phiên bản**: Cập nhật `v1.7.2+16` vào toàn bộ mã nguồn, metadata Windows Runner, tài liệu hướng dẫn và bộ cài đặt.
 
 ### Cài đặt
 Chạy file `install.bat` để cài đặt ứng dụng vào Windows (có shortcut Desktop & Start Menu, đăng ký Control Panel), hoặc chạy trực tiếp `ja_lan_messenger.exe` để sử dụng dạng portable. Xem file `USERGUIDE.md` đính kèm để biết thêm chi tiết.

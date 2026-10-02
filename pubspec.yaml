@@ -1,7 +1,7 @@
 name: ja_lan_messenger
 description: "JA LAN Messenger - Lightweight, High-Compatibility P2P Office LAN Messenger for Windows Desktop"
 publish_to: 'none'
-version: 1.7.1+15
+version: 1.7.2+16
 
 environment:
   sdk: ^3.12.2
@@ -24,6 +24,7 @@ dependencies:
   # Mã hóa bảo mật P2P & Checksum
   encrypt: ^5.0.3
   crypto: ^3.0.6
+  xml: ^7.0.1
   pointycastle: ^3.9.1
 
   # Chọn file đính kèm truyền qua mạng LAN

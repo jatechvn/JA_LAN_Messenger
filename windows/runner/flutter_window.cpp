@@ -1,6 +1,8 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <shlwapi.h>
+#include "utils.h"
 #include <flutter/standard_method_codec.h>
 
 #include "flutter/generated_plugin_registrant.h"
@@ -26,6 +28,36 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  preview_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "ja_lan_messenger/file_preview",
+      &flutter::StandardMethodCodec::GetInstance());
+  preview_channel_->SetMethodCallHandler([](const auto& call, auto result) {
+    if (call.method_name() != "defaultApplication") {
+      result->NotImplemented();
+      return;
+    }
+    const auto* extension = call.arguments() ? std::get_if<std::string>(call.arguments()) : nullptr;
+    if (!extension || extension->empty() || extension->front() != '.') {
+      result->Error("invalid_argument", "Expected extension");
+      return;
+    }
+    // Dart validates an ASCII extension before calling this method.
+    if (extension->find_first_not_of(".abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") != std::string::npos) {
+      result->Error("invalid_argument", "Expected ASCII extension");
+      return;
+    }
+    const std::wstring wide(extension->begin(), extension->end());
+    DWORD length = 0;
+    AssocQueryStringW(ASSOCF_NONE, ASSOCSTR_FRIENDLYAPPNAME, wide.c_str(), nullptr, nullptr, &length);
+    if (length == 0 || length > 32768) { result->Success(); return; }
+    std::wstring name(length, L'\0');
+    if (FAILED(AssocQueryStringW(ASSOCF_NONE, ASSOCSTR_FRIENDLYAPPNAME, wide.c_str(), nullptr, name.data(), &length))) {
+      result->Success(); return;
+    }
+    name.resize(wcslen(name.c_str()));
+    const auto utf8 = Utf8FromUtf16(name.c_str());
+    result->Success(flutter::EncodableValue(utf8));
+  });
   attention_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
@@ -72,6 +104,10 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  if (preview_channel_) {
+    preview_channel_->SetMethodCallHandler(nullptr);
+    preview_channel_.reset();
+  }
   if (attention_channel_) {
     attention_channel_->SetMethodCallHandler(nullptr);
     attention_channel_.reset();

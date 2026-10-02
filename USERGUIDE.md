@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.7.1
+# Hướng dẫn sử dụng JA LAN Messenger v1.7.2
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.7.1_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.7.2_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -71,9 +71,17 @@
 - **Cấu hình độc lập:** Có thể cấu hình trực tiếp trong app hoặc qua file `update_config.json` đặt cạnh ứng dụng.
 - **Cập nhật 1-chạm:** Khi có bản cập nhật mới, thanh tiêu đề hiển thị huy hiệu xanh lá `vX.Y.Z`. Bấm vào để mở hộp thoại xem Release Notes và bấm "Cập nhật ngay" để tự động tải, giải nén và khởi động lại phiên bản mới.
 
-### 2.8. Đính kèm nhiều tệp & Xem trước (Staged Attachments & File Preview)
+### 2.8. Đính kèm nhiều tệp & Hộp thoại Soi tập tin Đa năng Bento (Bento Smart File Inspector)
 - **Gắn tệp vào khung soạn thảo:** Dán (`Ctrl + V`) ảnh/file từ clipboard hoặc chọn từ nút kẹp giấy. Các tệp đính kèm sẽ hiển thị trực tiếp thành các thẻ thu nhỏ ngay trên thanh nhập liệu, cho phép đính kèm nhiều tệp cùng lúc trước khi bấm gửi.
-- **Xem trước tức thì:** Nhấp vào ảnh đính kèm để mở hộp thoại Lightbox phóng to/thu nhỏ/xoay ảnh; nhấp vào tệp tài liệu để xem thông tin chi tiết trước khi gửi hoặc tải về.
+- **Xem trước thông minh & Soi tập tin đa năng (Smart File Inspector):**
+  - **Đóng nhanh linh hoạt:** Nhấp chuột ra ngoài cửa sổ modal (backdrop tap-to-dismiss) hoặc bấm phím `Esc` để đóng ngay lập tức, không bắt buộc phải bấm nút X.
+  - **Lưới thông tin Bento:** Hiển thị chi tiết MIME type, kích thước định dạng chuẩn, thời gian sửa đổi, quyền tệp (Read/Write/Execute) và ứng dụng mặc định của hệ thống Windows được đăng ký để mở tệp.
+  - **Duyệt tệp nén ZIP thuần Dart:** Đối với tệp `.zip`, `.jar`, `.apk`, người dùng có thể xem danh sách cấu trúc tệp tin/thư mục bên trong, kích thước nén, kích thước gốc và tỷ lệ nén trực tiếp mà không cần giải nén ra đĩa.
+  - **Xem cấu trúc bảng tính Excel:** Đối với tệp `.xlsx`, trích xuất số lượng trang tính (Sheet count), tên danh sách từng Sheet và kích thước nén.
+  - **Băm toàn vẹn SHA-256:** Tự động tính toán mã băm SHA-256 kèm nút 1-chạm sao chép nhanh (`Ctrl + Shift + C`) để kiểm tra tính toàn vẹn tệp tin.
+  - **Trình soi nhị phân Hex Dump:** Xem trước 512 byte đầu tiên theo chuẩn Hex Editor (Offset | Hex | ASCII) với phông Monospace.
+  - **Sao chép tệp vật lý vào Clipboard:** Bấm nút sao chép file hoặc nhấn `Ctrl + C` để copy trực tiếp tệp thật vào khay nhớ tạm Windows, sau đó có thể paste (`Ctrl + V`) ngay vào thư mục Explorer hay ứng dụng bất kỳ.
+  - **Phím tắt hỗ trợ:** `Enter` hoặc `Ctrl + O` để mở tệp bằng ứng dụng mặc định, `Ctrl + C` copy tệp, `Ctrl + Shift + C` copy mã hash SHA-256, `Esc` đóng hộp thoại.
 
 ### 2.9. Bộ gõ tiếng Việt / tiếng Trung tích hợp (Built-in IME)
 - **Hỗ trợ gõ trực tiếp:** Tích hợp bộ gõ **Telex (Tiếng Việt)** và **Pinyin (Tiếng Trung)** ngay trong ứng dụng mà không cần cài đặt phần mềm ngoài.
