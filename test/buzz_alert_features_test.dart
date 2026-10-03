@@ -232,6 +232,8 @@ void main() {
                   return true;
                 case 'isVisible':
                   return false;
+                case 'isFocused':
+                  return true;
                 case 'getBounds':
                   return {
                     'x': 10.0,
@@ -258,7 +260,7 @@ void main() {
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
               .setMockMethodCallHandler(channel, null);
         });
-        coordinator.triggerBuzzAlertForTesting();
+        await coordinator.triggerBuzzAlertForTesting();
         await focused.future.timeout(const Duration(seconds: 3));
         await Future<void>.delayed(Duration.zero);
         expect(coordinator.isCompactMode, false);

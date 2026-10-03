@@ -1,6 +1,6 @@
 # JA LAN Messenger
 
-[![Version](https://img.shields.io/badge/version-1.7.2-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.8.0-blue.svg)](CHANGELOG.md)
 [![Flutter Version](https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter)](https://flutter.dev)
 [![Dart Version](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com/windows)
@@ -13,6 +13,9 @@ A modern, ultra-lightweight, high-performance **Peer-to-Peer (P2P) Office LAN Me
 
 ## ⚡ Key Highlights
 
+- **Flutter Desktop Power & GPU Optimizer**: Eliminates idle GPU draw when window is blurred, minimized or idle. Managed by singleton `AppPowerManager` with 3 tiered `ValueNotifier` channels (`background`, `indicators`, `marquee`). Features direction preservation on animation resume (`MeshOrb`), session epoch & freeze offset for marquee text, native Win32 `WM_ACTIVATE` integration, and in-app settings with 12s / 30s / 60s idle sleep timeout options.
+- **Resilient AI Connection Recovery & Locator**: Automatic network discovery, ping tracking, and transparent reconnection for local AI (Ollama/JA-AI) engines.
+- **Consistent Windows Branding & Metadata**: Shell window caption, Taskbar tooltip, Alt+Tab app switcher, Task Manager, and executable PE metadata consistently display `JA LAN Messenger` (by JA Tech) on Windows 10 & 11 instead of the raw process binary name (`ja_lan_messenger.exe`).
 - **Bento Smart File Inspector & Backdrop Dismissal**: Full-fidelity multi-tab inspection for non-previewable files (binary, office, archives), featuring pure Dart ZIP and Excel sheet structure inspectors, instant SHA-256 integrity checksum calculation with 1-click copy, 512-byte hex dump viewer, native physical file copy to Windows clipboard (`Pasteboard.writeFiles`), full keyboard shortcuts (`Enter`/`Ctrl+C`/`Ctrl+O`/`Ctrl+Shift+C`/`Esc`), and tap-outside backdrop modal dismissal.
 - **Smart 2-Octet Manual IP Suggestion & New Friend Badge**: Automatically extracts the active 2-octet network prefix (`172.21.` or `192.168.`) with trailing cursor and quick suggestion chips, connects with real-time feedback, and prioritizes newly added peers to the top of contact list with an emerald `[Bạn mới]` badge.
 - **Smart Conversation Scroll Restoration**: Seamlessly preserves and restores exact conversation pixel scroll offsets and bottom intent across app restarts and chat switches via `conversation_scroll.json`.

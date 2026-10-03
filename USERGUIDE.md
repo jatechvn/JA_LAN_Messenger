@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.7.2
+# Hướng dẫn sử dụng JA LAN Messenger v1.8.0
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.7.2_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.8.0_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -139,6 +139,22 @@
   - Tin nhắn chỉ được đánh dấu là "đã đọc" khi cửa sổ đang mở active và tin nhắn thực sự nằm trong tầm mắt của bạn tối thiểu 0.5 giây. Nếu app đang bị thu nhỏ hoặc che khuất, tin nhắn vẫn giữ nguyên trạng thái chưa đọc.
 - **Nhắc nhở tin nhắn chưa đọc & Nhấp nháy Taskbar Windows (Persistent Unread Attention):**
   - Biểu tượng khay hệ thống (Tray) tự động luân phiên nhấp nháy và thanh Taskbar Windows nhấp nháy liên tục khi có tin nhắn chưa đọc cho đến khi bạn bấm vào xem.
+
+### 2.17. Tối ưu hóa Năng lượng & Tải GPU Thông minh (Desktop Power & GPU Optimizer)
+- **Tự động giảm tải GPU về 0% khi không thao tác:**
+  - Khi bạn chuyển sang làm việc trên cửa sổ khác (Inactive/Blur) hoặc thu nhỏ app xuống Taskbar/Tray, toàn bộ hiệu ứng chuyển màu động nền kính mờ (`MeshOrb`) sẽ được tạm dừng ngay lập tức. GPU máy tính sẽ trở về mức 0% lý tưởng.
+  - **Bảo toàn hướng chạy khi mở lại:** Khi bạn bấm vào ứng dụng, hoạt ảnh tiếp tục chạy tiếp từ vị trí và theo đúng chiều tiến/lùi trước đó mà không bị giật hay nhảy hình.
+- **Chế độ Ngủ Rảnh Tay (Idle Sleep Mode):**
+  - Khi cửa sổ app vẫn mở trên màn hình nhưng bạn không di chuột hay gõ phím trong một khoảng thời gian, app sẽ tự động đưa hiệu ứng nền vào trạng thái ngủ để tiết kiệm điện và làm mát máy tính.
+  - Ngay khi bạn di chuột hoặc bấm phím, app sẽ thức dậy ngay lập tức.
+- **Tùy chỉnh trong Cài đặt:**
+  - Mở **Cài đặt hệ thống** -> Cuộn tới thẻ **"TỐI ƯU NĂNG LƯỢNG & GPU (POWER OPTIMIZER)"**:
+    - Bật hoặc tắt tính năng **Chế độ ngủ rảnh tay khi không thao tác**.
+    - Lựa chọn thời gian chờ thông minh: **12 giây (Mặc định)**, **30 giây**, hoặc **60 giây**.
+
+### 2.18. Hiển thị Tên Ứng dụng Chuẩn & Nhận diện Windows (Consistent Windows Branding & Metadata)
+- **Tên hiển thị chuyên nghiệp:** Cửa sổ ứng dụng, thanh Taskbar, trình chuyển cửa sổ `Alt + Tab`, và trình quản lý tác vụ Windows Task Manager luôn hiển thị tên chính thức **"JA LAN Messenger"** (phát hành bởi JA Tech) thay vì tên file thực thi kỹ thuật `ja_lan_messenger.exe`.
+- **Tương thích toàn diện:** Áp dụng đồng bộ trên cả Windows 10 (Aero Glass blur) và Windows 11 (Acrylic/Mica), đảm bảo đầy đủ thông tin mô tả chi tiết (File Description, Product Name, Copyright) trong thuộc tính tệp nhị phân.
 
 ---
 

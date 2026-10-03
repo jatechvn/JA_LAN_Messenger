@@ -76,6 +76,11 @@ void main() {
       ScrollController controller() =>
           tester.widget<ListView>(find.byType(ListView).first).controller!;
       expect(controller().position.extentAfter, lessThan(3));
+      // Reaction rows grow the last incoming bubble without adding a message.
+      await c.toggleMessageReaction(a.id, history.last.id, '👍');
+      await tester.pumpAndSettle();
+      expect(controller().position.extentAfter, lessThan(3));
+      expect(find.text('👍'), findsWidgets);
       c.selectPeer(b);
       await tester.pumpAndSettle();
       history.addAll(List.generate(25, (i) => message(60 + i, read: false)));
@@ -90,6 +95,9 @@ void main() {
       controller().jumpTo(350);
       await tester.pumpAndSettle();
       final oldOffset = controller().offset;
+      await c.toggleMessageReaction(a.id, history.last.id, '❤️');
+      await tester.pumpAndSettle();
+      expect(controller().offset, closeTo(oldOffset, 1));
       c.selectPeer(b);
       await tester.pumpAndSettle();
       history.addAll(List.generate(10, (i) => message(100 + i, read: false)));

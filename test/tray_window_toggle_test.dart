@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ja_lan_messenger/modules/services/tray_window_toggle.dart';
+import 'package:ja_lan_messenger/modules/services/app_power_manager.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -14,6 +15,8 @@ void main() {
   late List<String> calls;
   Completer<void>? gate;
   var fail = false;
+  var failHide = false;
+  var focused = true;
 
   setUp(() {
     visible = true;
@@ -21,6 +24,9 @@ void main() {
     calls = [];
     gate = null;
     fail = false;
+    failHide = false;
+    focused = true;
+    AppPowerManager.instance.resetForTesting(enableIdleSleep: false);
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call.method);
       switch (call.method) {
@@ -31,13 +37,18 @@ void main() {
         case 'isMinimized':
           return minimized;
         case 'hide':
+          if (failHide) throw PlatformException(code: 'hide-failed');
           visible = false;
+          focused = false;
         case 'show':
           visible = true;
         case 'restore':
           minimized = false;
         case 'focus':
+          focused = true;
           break;
+        case 'isFocused':
+          return focused;
         default:
           throw StateError('Unexpected window query: ${call.method}');
       }
@@ -45,7 +56,10 @@ void main() {
     });
   });
 
-  tearDown(() => messenger.setMockMethodCallHandler(channel, null));
+  tearDown(() {
+    messenger.setMockMethodCallHandler(channel, null);
+    AppPowerManager.instance.resetForTesting(enableIdleSleep: false);
+  });
 
   test(
     'visible window hides without querying focus, next click shows',
@@ -53,10 +67,12 @@ void main() {
       final toggle = TrayWindowToggle();
       await toggle.toggle();
       expect(visible, isFalse);
+      expect(AppPowerManager.instance.shouldAnimateIndicators, isFalse);
       expect(calls, ['isVisible', 'isMinimized', 'hide']);
       await toggle.toggle();
       expect(visible, isTrue);
       expect(calls, contains('focus'));
+      expect(AppPowerManager.instance.shouldAnimateIndicators, isTrue);
     },
   );
 
@@ -86,5 +102,22 @@ void main() {
     fail = false;
     await toggle.toggle();
     expect(visible, isFalse);
+  });
+  test('hide failure reconciles a still-visible focused window', () async {
+    failHide = true;
+    await expectLater(
+      TrayWindowToggle().toggle(),
+      throwsA(isA<PlatformException>()),
+    );
+    expect(visible, isTrue);
+    expect(AppPowerManager.instance.shouldAnimateIndicators, isTrue);
+  });
+  test('show without focus remains muted until real focus', () async {
+    await AppPowerManager.instance.hideWindow();
+    await AppPowerManager.instance.showWindow(requestFocus: false);
+    expect(visible, isTrue);
+    expect(AppPowerManager.instance.shouldAnimateIndicators, isFalse);
+    AppPowerManager.instance.onWindowFocus();
+    expect(AppPowerManager.instance.shouldAnimateIndicators, isTrue);
   });
 }

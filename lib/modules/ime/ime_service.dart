@@ -409,10 +409,50 @@ class SmartImeInputFormatter extends TextInputFormatter {
 
     // 2. Chế độ Tiếng Việt (Telex Engine):
     if (effective == ImeMode.telex) {
+      if ((oldValue.composing.isValid && !oldValue.composing.isCollapsed) ||
+          (newValue.composing.isValid && !newValue.composing.isCollapsed) ||
+          !oldValue.selection.isValid ||
+          !newValue.selection.isValid ||
+          !oldValue.selection.isCollapsed ||
+          !newValue.selection.isCollapsed) {
+        return newValue;
+      }
+      final oldCursor = oldValue.selection.baseOffset;
+      final cursor = newValue.selection.baseOffset;
+      if (oldCursor > oldValue.text.length || cursor > newValue.text.length) {
+        return newValue;
+      }
+      // Only an exact single-character backward deletion may reposition tone.
+      if (oldCursor > 0 &&
+          cursor == oldCursor - 1 &&
+          VietnameseTelexEngine.extractWordAtCursor(
+            oldValue.text,
+            oldCursor,
+          ).word.isNotEmpty &&
+          newValue.text ==
+              oldValue.text.replaceRange(oldCursor - 1, oldCursor, '')) {
+        final segment = VietnameseTelexEngine.extractWordAtCursor(
+          newValue.text,
+          cursor,
+        );
+        final corrected = VietnameseTelexEngine.repositionAfterDeletion(
+          segment.word,
+        );
+        return newValue.copyWith(
+          text: newValue.text.replaceRange(
+            segment.start,
+            segment.end,
+            corrected,
+          ),
+        );
+      }
       // Chỉ can thiệp khi người dùng gõ thêm đúng 1 ký tự vào văn bản
       if (newValue.text.length == oldValue.text.length + 1 &&
-          newValue.selection.isCollapsed) {
-        final cursor = newValue.selection.baseOffset;
+          cursor == oldCursor + 1 &&
+          newValue.text.substring(0, oldCursor) ==
+              oldValue.text.substring(0, oldCursor) &&
+          newValue.text.substring(cursor) ==
+              oldValue.text.substring(oldCursor)) {
         final keyChar = newValue.text[cursor - 1];
 
         // Lấy từ đang gõ trong oldValue ngay trước khi gõ ký tự này
@@ -421,7 +461,7 @@ class SmartImeInputFormatter extends TextInputFormatter {
           oldValue.selection.baseOffset,
         );
 
-        if (wordSegment.word.isNotEmpty) {
+        {
           final transformedWord = VietnameseTelexEngine.processWord(
             wordSegment.word,
             keyChar,

@@ -163,7 +163,7 @@ bool Win32Window::Create(const std::wstring& title,
   double scale_factor = dpi / 96.0;
 
   HWND window = CreateWindow(
-      window_class, IsWindows11OrGreater() ? title.c_str() : L"", WS_OVERLAPPEDWINDOW,
+      window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
       Scale(origin.x, scale_factor), Scale(origin.y, scale_factor),
       Scale(size.width, scale_factor), Scale(size.height, scale_factor),
       nullptr, nullptr, GetModuleHandle(nullptr), this);
@@ -236,7 +236,7 @@ Win32Window::MessageHandler(HWND hwnd,
     }
 
     case WM_ACTIVATE:
-      if (child_content_ != nullptr) {
+      if (child_content_ != nullptr && LOWORD(wparam) != WA_INACTIVE) {
         SetFocus(child_content_);
       }
       return 0;

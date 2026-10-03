@@ -17,6 +17,7 @@ import 'app_avatar.dart';
 import 'avatar_picker_dialog.dart';
 import 'contact_profile_dialog.dart';
 import 'group_members_dialog.dart';
+import '../../services/app_power_manager.dart';
 
 enum _PeerCategory { all, online, groups }
 
@@ -1842,15 +1843,29 @@ class _ScanActionButtonState extends State<_ScanActionButton>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    if (widget.isScanning) {
+    AppPowerManager.instance.indicatorsAnimationNotifier.addListener(
+      _onPowerStateChanged,
+    );
+    if (widget.isScanning && AppPowerManager.instance.shouldAnimateIndicators) {
       _controller.repeat();
+    }
+  }
+
+  void _onPowerStateChanged() {
+    if (!mounted) return;
+    if (widget.isScanning && AppPowerManager.instance.shouldAnimateIndicators) {
+      if (!_controller.isAnimating) _controller.repeat();
+    } else {
+      if (_controller.isAnimating) _controller.stop();
     }
   }
 
   @override
   void didUpdateWidget(covariant _ScanActionButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isScanning && !_controller.isAnimating) {
+    if (widget.isScanning &&
+        !_controller.isAnimating &&
+        AppPowerManager.instance.shouldAnimateIndicators) {
       _controller.repeat();
     } else if (!widget.isScanning && _controller.isAnimating) {
       _controller.stop();
@@ -1860,6 +1875,9 @@ class _ScanActionButtonState extends State<_ScanActionButton>
 
   @override
   void dispose() {
+    AppPowerManager.instance.indicatorsAnimationNotifier.removeListener(
+      _onPowerStateChanged,
+    );
     _controller.dispose();
     super.dispose();
   }
@@ -1949,7 +1967,22 @@ class _RadarBeaconState extends State<_RadarBeacon>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1600),
-    )..repeat();
+    );
+    AppPowerManager.instance.indicatorsAnimationNotifier.addListener(
+      _onPowerStateChanged,
+    );
+    if (AppPowerManager.instance.shouldAnimateIndicators) {
+      _controller.repeat();
+    }
+  }
+
+  void _onPowerStateChanged() {
+    if (!mounted) return;
+    if (AppPowerManager.instance.shouldAnimateIndicators) {
+      if (!_controller.isAnimating) _controller.repeat();
+    } else {
+      if (_controller.isAnimating) _controller.stop();
+    }
   }
 
   @override
@@ -1959,7 +1992,8 @@ class _RadarBeaconState extends State<_RadarBeacon>
       _controller.duration = Duration(
         milliseconds: widget.isScanning ? 700 : 1600,
       );
-      if (!_controller.isAnimating) {
+      if (AppPowerManager.instance.shouldAnimateIndicators &&
+          !_controller.isAnimating) {
         _controller.repeat();
       }
     }
@@ -1967,6 +2001,9 @@ class _RadarBeaconState extends State<_RadarBeacon>
 
   @override
   void dispose() {
+    AppPowerManager.instance.indicatorsAnimationNotifier.removeListener(
+      _onPowerStateChanged,
+    );
     _controller.dispose();
     super.dispose();
   }

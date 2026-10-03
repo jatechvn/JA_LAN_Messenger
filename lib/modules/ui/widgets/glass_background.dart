@@ -1,8 +1,13 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
+import '../../services/app_power_manager.dart';
 
 /// Single drifting ambient glow orb with Gaussian blur.
+/// Tối ưu hóa năng lượng chuẩn `flutter-power-optimizer`:
+/// - Tự động dừng hoạt ảnh khi Inactive, Minimized hoặc Idle (12s).
+/// - Bảo toàn hướng di chuyển (Direction Preservation): khi resume sẽ tiếp tục
+///   chạy theo đúng chiều `forward` hoặc `reverse` đang dở, không bị giật đổi hướng.
 class MeshOrb extends StatefulWidget {
   const MeshOrb({
     super.key,
@@ -25,52 +30,82 @@ class MeshOrb extends StatefulWidget {
 
 class _MeshOrbState extends State<MeshOrb> with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  late final AppLifecycleListener _lifecycleListener;
+
+  @visibleForTesting
+  AnimationController get controller => _controller;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: widget.duration);
+    _controller.addStatusListener(_onAnimationStatusChanged);
 
-    if (widget.enableAnimation) {
-      _controller.repeat(reverse: true);
-    }
-
-    // Stops drifting while window is minimized or hidden (0% background CPU)
-    _lifecycleListener = AppLifecycleListener(
-      onStateChange: (state) {
-        if (!widget.enableAnimation) return;
-        switch (state) {
-          case AppLifecycleState.hidden:
-          case AppLifecycleState.paused:
-            _controller.stop();
-            break;
-          case AppLifecycleState.resumed:
-            _controller.repeat(reverse: true);
-            break;
-          case AppLifecycleState.inactive:
-          case AppLifecycleState.detached:
-            break;
-        }
-      },
+    AppPowerManager.instance.backgroundAnimationNotifier.addListener(
+      _onPowerStateChanged,
     );
+
+    if (widget.enableAnimation &&
+        AppPowerManager.instance.shouldAnimateBackground) {
+      _controller.forward();
+    }
+  }
+
+  void _onAnimationStatusChanged(AnimationStatus status) {
+    if (!mounted || !widget.enableAnimation) return;
+    if (!AppPowerManager.instance.shouldAnimateBackground) return;
+
+    if (status == AnimationStatus.completed) {
+      _controller.reverse();
+    } else if (status == AnimationStatus.dismissed) {
+      _controller.forward();
+    }
+  }
+
+  void _resumeAnimation() {
+    if (!mounted || !widget.enableAnimation) return;
+    if (!AppPowerManager.instance.shouldAnimateBackground) return;
+
+    // Direction Preservation: Tiếp tục chiều đang chạy dở thay vì luôn ép forward
+    if (_controller.status == AnimationStatus.reverse ||
+        _controller.status == AnimationStatus.completed) {
+      _controller.reverse();
+    } else {
+      _controller.forward();
+    }
+  }
+
+  void _pauseAnimation() {
+    _controller.stop();
+  }
+
+  void _onPowerStateChanged() {
+    if (!mounted || !widget.enableAnimation) return;
+    if (AppPowerManager.instance.shouldAnimateBackground) {
+      _resumeAnimation();
+    } else {
+      _pauseAnimation();
+    }
   }
 
   @override
   void didUpdateWidget(covariant MeshOrb oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.enableAnimation != oldWidget.enableAnimation) {
-      if (widget.enableAnimation) {
-        _controller.repeat(reverse: true);
+      if (widget.enableAnimation &&
+          AppPowerManager.instance.shouldAnimateBackground) {
+        _resumeAnimation();
       } else {
-        _controller.stop();
+        _pauseAnimation();
       }
     }
   }
 
   @override
   void dispose() {
-    _lifecycleListener.dispose();
+    AppPowerManager.instance.backgroundAnimationNotifier.removeListener(
+      _onPowerStateChanged,
+    );
+    _controller.removeStatusListener(_onAnimationStatusChanged);
     _controller.dispose();
     super.dispose();
   }

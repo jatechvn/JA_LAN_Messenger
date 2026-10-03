@@ -41,7 +41,8 @@ Future<void> initGlassWindow({
         await windowManager.focus();
       });
     } else if (Platform.isWindows) {
-      // On Windows: Ensure minimum size constraint without overriding C++ DWM composition
+      // On Windows: Ensure window title and size constraints without overriding C++ DWM composition
+      await windowManager.setTitle(title);
       await windowManager.setMinimumSize(minSize);
       await windowManager.setSize(size);
     }

@@ -74,7 +74,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"ja_lan_messenger", origin, size)) {
+  if (!window.Create(L"JA LAN Messenger", origin, size)) {
     return EXIT_FAILURE;
   }
   ::SetPropW(window.GetHandle(), L"JA_LAN_MESSENGER_INSTANCE", (HANDLE)1);

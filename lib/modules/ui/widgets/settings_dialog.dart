@@ -16,6 +16,7 @@ import '../../models/ai_config_model.dart';
 import '../../ime/ime_service.dart';
 import '../../ime/ime_types.dart';
 import '../../services/ota_update_service.dart';
+import '../../services/app_power_manager.dart';
 import 'glass_dialog.dart';
 import 'glass_update_dialog.dart';
 import 'app_avatar.dart';
@@ -61,6 +62,8 @@ class _SettingsDialogState extends State<SettingsDialog>
   late double _localDialogBlur;
   late double _localDialogOpacity;
   late PerfTierMode _localPerfMode;
+  late bool _localEnableIdleSleep;
+  late int _localIdleTimeoutSeconds;
 
   // Glass tuning initial values for reverting on cancel
   late double _initialCardBlur;
@@ -221,6 +224,9 @@ class _SettingsDialogState extends State<SettingsDialog>
       _localAvailableModels.add(AiModelInfo.findById(_localAiSelectedModel));
     }
 
+    _localEnableIdleSleep = prefs.enableIdleSleep;
+    _localIdleTimeoutSeconds = prefs.idleTimeoutSeconds;
+
     AutostartService.isAutoStartEnabled().then((enabled) {
       if (mounted) setState(() => _autoStartEnabled = enabled);
     });
@@ -236,13 +242,15 @@ class _SettingsDialogState extends State<SettingsDialog>
       final perfMode = _initialPerfMode;
       final theme = _themeProvider;
       scheduleMicrotask(() {
-        theme?.setPerfTierMode(perfMode);
-        theme?.setLiveGlassmorphism(
-          cardBlur: cardBlur,
-          cardOpacity: cardOpacity,
-          dialogBlur: dialogBlur,
-          dialogOpacity: dialogOpacity,
-        );
+        try {
+          theme?.setPerfTierMode(perfMode);
+          theme?.setLiveGlassmorphism(
+            cardBlur: cardBlur,
+            cardOpacity: cardOpacity,
+            dialogBlur: dialogBlur,
+            dialogOpacity: dialogOpacity,
+          );
+        } catch (_) {}
       });
     }
     _tabController.dispose();
@@ -309,6 +317,8 @@ class _SettingsDialogState extends State<SettingsDialog>
       _serverConnectionResult = null;
       _serverConnectionSuccess = null;
       _manualUpdateCheckResult = null;
+      _localEnableIdleSleep = true;
+      _localIdleTimeoutSeconds = 12;
     });
     _themeProvider?.setPerfTierMode(PerfTierMode.auto);
     _themeProvider?.setLiveGlassmorphism(
@@ -460,6 +470,22 @@ class _SettingsDialogState extends State<SettingsDialog>
     final ime = context.read<ImeService>();
 
     theme.setPerfTierMode(_localPerfMode);
+
+    AppPowerManager.instance.configure(
+      enableIdleSleep: _localEnableIdleSleep,
+      idleTimeoutSeconds: _localIdleTimeoutSeconds,
+    );
+
+    final prefs = AppPreferences();
+    try {
+      await prefs.setPowerOptimization(
+        enableIdleSleep: _localEnableIdleSleep,
+        idleTimeoutSeconds: _localIdleTimeoutSeconds,
+      );
+    } catch (e) {
+      debugPrint('[SettingsDialog] Error saving power optimization: $e');
+    }
+
     await theme.saveGlassTuning(
       cardBlur: _localCardBlur,
       cardOpacity: _localCardOpacity,
@@ -467,7 +493,6 @@ class _SettingsDialogState extends State<SettingsDialog>
       dialogOpacity: _localDialogOpacity,
     );
 
-    final prefs = AppPreferences();
     await prefs.setCloseBehavior(_localCloseBehavior);
     unawaited(AutostartService.setAutoStart(_autoStartEnabled));
     await prefs.setAiConfig(
@@ -626,6 +651,35 @@ class _SettingsDialogState extends State<SettingsDialog>
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildIdleTimeoutChip(int seconds, String label, ThemeProvider theme) {
+    final isSelected = _localIdleTimeoutSeconds == seconds;
+    return ChoiceChip(
+      key: ValueKey('idle-timeout-chip-$seconds'),
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          color: isSelected
+              ? Colors.white
+              : (theme.isDark ? Colors.white70 : Colors.black87),
+        ),
+      ),
+      selected: isSelected,
+      selectedColor: theme.colors.accentEmerald,
+      backgroundColor: (theme.isDark ? Colors.white : Colors.black).withValues(
+        alpha: 0.05,
+      ),
+      showCheckmark: false,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      onSelected: (selected) {
+        if (selected) {
+          setState(() => _localIdleTimeoutSeconds = seconds);
+        }
+      },
     );
   }
 
@@ -1100,6 +1154,112 @@ class _SettingsDialogState extends State<SettingsDialog>
                 theme: theme,
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+
+          // 2.1. Power Optimizer & Idle Sleep Mode Card
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: (theme.isDark ? Colors.white : Colors.black).withValues(
+                alpha: theme.isDark ? 0.04 : 0.03,
+              ),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: (theme.isDark ? Colors.white : Colors.black).withValues(
+                  alpha: 0.08,
+                ),
+              ),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.energy_savings_leaf_rounded,
+                        size: 16,
+                        color: theme.colors.accentEmerald,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              lang.tr('powerOptimizerTitle'),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: theme.colors.accentEmerald,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              lang.tr('powerOptimizerDesc'),
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: theme.isDark
+                                    ? Colors.white60
+                                    : Colors.black54,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    key: const ValueKey('power-optimizer-switch-tile'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(
+                      lang.tr('idleSleepTitle'),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(
+                      lang.tr('idleSleepDesc'),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.isDark ? Colors.white60 : Colors.black54,
+                      ),
+                    ),
+                    value: _localEnableIdleSleep,
+                    activeThumbColor: theme.colors.accentEmerald,
+                    onChanged: (val) {
+                      setState(() => _localEnableIdleSleep = val);
+                    },
+                  ),
+                  if (_localEnableIdleSleep) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      lang.tr('idleTimeoutLabel'),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: theme.isDark ? Colors.white70 : Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        _buildIdleTimeoutChip(12, lang.tr('idle12s'), theme),
+                        _buildIdleTimeoutChip(30, lang.tr('idle30s'), theme),
+                        _buildIdleTimeoutChip(60, lang.tr('idle60s'), theme),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 16),
 
@@ -1773,48 +1933,53 @@ class _SettingsDialogState extends State<SettingsDialog>
                 ),
               ),
               const SizedBox(width: 8),
-              DropdownButton<String>(
-                value: _localImeMode,
-                isDense: true,
-                dropdownColor: theme.isDark
-                    ? const Color(0xFF1E293B)
-                    : Colors.white,
-                underline: const SizedBox.shrink(),
-                items: [
-                  DropdownMenuItem(
-                    value: 'auto',
-                    child: Text(
-                      lang.tr('imeAuto'),
-                      style: const TextStyle(fontSize: 12),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 260),
+                child: DropdownButton<String>(
+                  value: _localImeMode,
+                  isDense: true,
+                  isExpanded: true,
+                  dropdownColor: theme.isDark
+                      ? const Color(0xFF1E293B)
+                      : Colors.white,
+                  underline: const SizedBox.shrink(),
+                  items: [
+                    DropdownMenuItem(
+                      value: 'auto',
+                      child: Text(
+                        lang.tr('imeAuto'),
+                        style: const TextStyle(fontSize: 12),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                  DropdownMenuItem(
-                    value: 'telex',
-                    child: Text(
-                      lang.tr('imeTelex'),
-                      style: const TextStyle(fontSize: 12),
+                    DropdownMenuItem(
+                      value: 'telex',
+                      child: Text(
+                        lang.tr('imeTelex'),
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     ),
-                  ),
-                  DropdownMenuItem(
-                    value: 'pinyin',
-                    child: Text(
-                      lang.tr('imePinyin'),
-                      style: const TextStyle(fontSize: 12),
+                    DropdownMenuItem(
+                      value: 'pinyin',
+                      child: Text(
+                        lang.tr('imePinyin'),
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     ),
-                  ),
-                  DropdownMenuItem(
-                    value: 'off',
-                    child: Text(
-                      lang.tr('imeOff'),
-                      style: const TextStyle(fontSize: 12),
+                    DropdownMenuItem(
+                      value: 'off',
+                      child: Text(
+                        lang.tr('imeOff'),
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     ),
-                  ),
-                ],
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() => _localImeMode = val);
-                  }
-                },
+                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _localImeMode = val);
+                    }
+                  },
+                ),
               ),
             ],
           ),

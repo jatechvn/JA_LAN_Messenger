@@ -221,6 +221,13 @@ class AppPreferences extends ChangeNotifier {
   // Cấu hình hiệu năng phần cứng (Hardware Graphic Tier)
   String _perfTierMode = 'auto'; // 'auto', 'ultra', 'balanced', 'lite'
 
+  // Cấu hình tối ưu năng lượng và chế độ ngủ rảnh tay (Power Optimizer)
+  bool _enableIdleSleep = true;
+  int _idleTimeoutSeconds = 12;
+
+  bool get enableIdleSleep => _enableIdleSleep;
+  int get idleTimeoutSeconds => _idleTimeoutSeconds;
+
   // Ảnh đại diện cá nhân (User Avatar)
   String _userAvatarType = 'initials'; // 'initials', 'preset', 'custom'
   String _userAvatarPreset = 'robot';
@@ -335,6 +342,8 @@ class AppPreferences extends ChangeNotifier {
     AiModelInfo.resetDiscoveredModels();
     _cardBlur = null;
     _perfTierMode = 'auto';
+    _enableIdleSleep = true;
+    _idleTimeoutSeconds = 12;
     _userAvatarType = 'initials';
     _userAvatarPreset = 'robot';
     _userAvatarCustomPath = '';
@@ -565,6 +574,12 @@ class AppPreferences extends ChangeNotifier {
           }
           if (data.containsKey('userAvatarBase64')) {
             _userAvatarBase64 = data['userAvatarBase64'] as String? ?? '';
+          }
+          if (data.containsKey('enableIdleSleep')) {
+            _enableIdleSleep = data['enableIdleSleep'] as bool? ?? true;
+          }
+          if (data.containsKey('idleTimeoutSeconds')) {
+            _idleTimeoutSeconds = data['idleTimeoutSeconds'] as int? ?? 12;
           }
           if (data.containsKey('winrmEnabled')) {
             _winrmEnabled = data['winrmEnabled'] as bool? ?? true;
@@ -811,6 +826,16 @@ class AppPreferences extends ChangeNotifier {
     await _save();
   }
 
+  Future<void> setPowerOptimization({
+    bool? enableIdleSleep,
+    int? idleTimeoutSeconds,
+  }) async {
+    if (enableIdleSleep != null) _enableIdleSleep = enableIdleSleep;
+    if (idleTimeoutSeconds != null) _idleTimeoutSeconds = idleTimeoutSeconds;
+    notifyListeners();
+    await _save();
+  }
+
   Future<void> _save() async {
     _loadGeneration++;
     try {
@@ -872,6 +897,8 @@ class AppPreferences extends ChangeNotifier {
       data['otaLastCheckTime'] = _otaLastCheckTime?.toIso8601String();
       data['otaCachedUpdateVersion'] = _otaCachedUpdateVersion;
       data['perfTierMode'] = _perfTierMode;
+      data['enableIdleSleep'] = _enableIdleSleep;
+      data['idleTimeoutSeconds'] = _idleTimeoutSeconds;
       data['userAvatarType'] = _userAvatarType;
       data['userAvatarPreset'] = _userAvatarPreset;
       data['userAvatarCustomPath'] = _userAvatarCustomPath;

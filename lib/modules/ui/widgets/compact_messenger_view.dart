@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:window_manager/window_manager.dart';
+import '../../services/app_power_manager.dart';
 import '../../theme/theme_provider.dart';
 import '../../localization/app_locale.dart';
 import '../../services/messenger_coordinator.dart';
@@ -482,9 +482,9 @@ class _CompactTopBar extends StatelessWidget {
             tooltip: lang.tr('trayExit'),
             color: theme.isDark ? Colors.white60 : Colors.black54,
             size: 26,
-            onPressed: () {
+            onPressed: () async {
               try {
-                windowManager.hide();
+                await AppPowerManager.instance.hideWindow();
               } catch (_) {}
             },
           ),

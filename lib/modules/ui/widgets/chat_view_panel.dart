@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:window_manager/window_manager.dart';
 import 'package:desktop_drop/desktop_drop.dart';
@@ -37,6 +38,7 @@ import '../../services/image_clipboard_helper.dart';
 import '../../services/sticker_service.dart';
 import 'sprite_sticker_widget.dart';
 import 'sticker_picker_popover.dart';
+import '../../services/app_power_manager.dart';
 
 class ChatViewPanel extends StatefulWidget {
   final bool isDetailsOpen;
@@ -74,7 +76,11 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
   void onWindowMinimize() => _resetReadExposure();
 
   Future<void> _checkVisibleRead() async {
-    if (!mounted || _checkingRead) return;
+    if (!mounted ||
+        _checkingRead ||
+        !AppPowerManager.instance.shouldAnimateIndicators) {
+      return;
+    }
     _readKeys.removeWhere((_, key) => key.currentContext == null);
     _visibleSince.removeWhere((m, _) => !_readKeys.containsKey(m));
     if (_readKeys.isEmpty) return;
@@ -152,6 +158,7 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
   Timer? _highlightTimer;
   int _currentPinnedIndex = 0;
   int _prevMessageCount = 0;
+  String _prevReactions = '';
   bool _prevPeerTyping = false;
   String? _lastPeerId;
   String? _lastScrollKey;
@@ -245,11 +252,23 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
     _inputFocusNode = FocusNode();
     _scrollController.addListener(_onScroll);
     windowManager.addListener(this);
-    _readTimer = Timer.periodic(
-      const Duration(milliseconds: 100),
-      (_) => _checkVisibleRead(),
+    AppPowerManager.instance.indicatorsAnimationNotifier.addListener(
+      _syncReadPolling,
     );
+    _syncReadPolling();
     _requestInputFocus();
+  }
+
+  void _syncReadPolling() {
+    _resetReadExposure();
+    _readTimer?.cancel();
+    _readTimer = null;
+    if (AppPowerManager.instance.shouldAnimateIndicators) {
+      _readTimer = Timer.periodic(
+        const Duration(milliseconds: 100),
+        (_) => _checkVisibleRead(),
+      );
+    }
   }
 
   @override
@@ -257,6 +276,9 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
     _saveConversationScroll();
     _scrollSaveTimer?.cancel();
     _readTimer?.cancel();
+    AppPowerManager.instance.indicatorsAnimationNotifier.removeListener(
+      _syncReadPolling,
+    );
     windowManager.removeListener(this);
     _focusTimer?.cancel();
     _manualScrollHideTimer?.cancel();
@@ -633,6 +655,16 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
 
     // Reset replying state & determine scroll target if active peer changed
     final isPeerChanged = _lastPeerId != peer.id;
+    // Models are mutated in place, so retain a value snapshot, not a map reference.
+    final reactions = jsonEncode([
+      for (final message in messages)
+        if (message.reactions.isNotEmpty) [message.id, message.reactions],
+    ]);
+    final reactionsChanged = reactions != _prevReactions;
+    _prevReactions = reactions;
+    final wasAtBottom =
+        _scrollController.hasClients &&
+        _scrollController.position.extentAfter <= 50;
     if (isPeerChanged) {
       _saveConversationScroll();
       _lastPeerId = peer.id;
@@ -797,6 +829,9 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
       }
     }
     _prevPeerTyping = isPeerTyping;
+    if (!isPeerChanged && reactionsChanged && wasAtBottom) {
+      _scrollToBottom(force: true, smooth: true);
+    }
 
     final pinnedMessages = coordinator.getPinnedMessages(peer.id);
 
@@ -1919,11 +1954,29 @@ class _TypingIndicatorBubbleState extends State<_TypingIndicatorBubble>
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
-    )..repeat();
+    );
+    AppPowerManager.instance.indicatorsAnimationNotifier.addListener(
+      _onPowerStateChanged,
+    );
+    if (AppPowerManager.instance.shouldAnimateIndicators) {
+      _animController.repeat();
+    }
+  }
+
+  void _onPowerStateChanged() {
+    if (!mounted) return;
+    if (AppPowerManager.instance.shouldAnimateIndicators) {
+      if (!_animController.isAnimating) _animController.repeat();
+    } else {
+      if (_animController.isAnimating) _animController.stop();
+    }
   }
 
   @override
   void dispose() {
+    AppPowerManager.instance.indicatorsAnimationNotifier.removeListener(
+      _onPowerStateChanged,
+    );
     _animController.dispose();
     super.dispose();
   }

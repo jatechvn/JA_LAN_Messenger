@@ -11,6 +11,7 @@ class AiConnectionResult {
   final List<String> availableModels;
   final List<AiModelInfo> models;
   final String? error;
+  final bool connectionFailed;
 
   const AiConnectionResult({
     required this.success,
@@ -19,6 +20,7 @@ class AiConnectionResult {
     this.availableModels = const [],
     this.models = const [],
     this.error,
+    this.connectionFailed = false,
   });
 }
 
@@ -28,6 +30,7 @@ class AiStreamChunk {
   final bool isDone;
   final int? totalDurationMs;
   final String? errorMessage;
+  final bool connectionFailed;
 
   const AiStreamChunk({
     this.content,
@@ -35,6 +38,7 @@ class AiStreamChunk {
     this.isDone = false,
     this.totalDurationMs,
     this.errorMessage,
+    this.connectionFailed = false,
   });
 }
 
@@ -48,6 +52,7 @@ class AiChatStreamHandle {
 class AiService {
   static final Logger _logger = Logger('AiService');
   String serverUrl;
+  Future<bool> Function(String failedUrl)? recoverConnection;
 
   AiService({this.serverUrl = 'http://172.21.175.20:11434'});
 
@@ -61,6 +66,14 @@ class AiService {
 
   /// Lấy danh sách các model đang khả dụng từ máy chủ Ollama
   Future<List<AiModelInfo>> fetchAvailableModels([String? customUrl]) async {
+    return _fetchAvailableModels(customUrl, retry: true);
+  }
+
+  Future<List<AiModelInfo>> _fetchAvailableModels(
+    String? customUrl, {
+    required bool retry,
+  }) async {
+    final initialUrl = serverUrl;
     final baseUrl = (customUrl != null && customUrl.trim().isNotEmpty)
         ? customUrl.trim().replaceAll(RegExp(r'/+$'), '')
         : normalizedUrl;
@@ -119,6 +132,14 @@ class AiService {
       return AiModelInfo.forServerSelection(result);
     } catch (e) {
       _logger.warning('Ollama fetchAvailableModels failed: $e');
+      client.close(force: true);
+      if (retry &&
+          customUrl == null &&
+          recoverConnection != null &&
+          (e is SocketException || e is TimeoutException) &&
+          await recoverConnection!(initialUrl)) {
+        return _fetchAvailableModels(null, retry: false);
+      }
       return [];
     } finally {
       client.close(force: true);
@@ -225,6 +246,7 @@ class AiService {
         success: false,
         pingMs: stopwatch.elapsedMilliseconds,
         error: e.toString(),
+        connectionFailed: e is SocketException || e is TimeoutException,
       );
     } finally {
       client.close(force: true);
@@ -233,6 +255,81 @@ class AiService {
 
   /// Khởi chạy cuộc hội thoại dạng streaming NDJSON
   AiChatStreamHandle chatStream({
+    required String model,
+    required List<Map<String, dynamic>> messages,
+    bool thinking = false,
+    int numCtx = 4096,
+    Duration timeout = const Duration(seconds: 180),
+  }) {
+    if (recoverConnection == null) {
+      return _chatStream(
+        model: model,
+        messages: messages,
+        thinking: thinking,
+        numCtx: numCtx,
+        timeout: timeout,
+      );
+    }
+    final controller = StreamController<AiStreamChunk>();
+    AiChatStreamHandle? active;
+    var cancelled = false;
+    void abort() {
+      cancelled = true;
+      active?.abort();
+      if (!controller.isClosed) controller.close();
+    }
+
+    controller.onCancel = abort;
+    () async {
+      try {
+        final url = serverUrl;
+        final connection = await testConnection();
+        if (cancelled) return;
+        if (connection.connectionFailed) {
+          final recovered = await recoverConnection!(url);
+          if (cancelled) return;
+          if (!recovered) {
+            controller.add(
+              const AiStreamChunk(
+                isDone: true,
+                errorMessage:
+                    'Không kết nối được máy AI. Hãy kiểm tra máy AI và mạng LAN.',
+              ),
+            );
+            return;
+          }
+        }
+        if (cancelled) return;
+        final activeUrl = serverUrl;
+        active = _chatStream(
+          model: model,
+          messages: messages,
+          thinking: thinking,
+          numCtx: numCtx,
+          timeout: timeout,
+        );
+        await for (final chunk in active!.stream) {
+          if (cancelled) break;
+          controller.add(chunk);
+          if (chunk.connectionFailed && !cancelled) {
+            // Never replay a chat POST: partial output may already exist.
+            await recoverConnection!(activeUrl);
+          }
+        }
+      } catch (e) {
+        if (!cancelled && !controller.isClosed) {
+          controller.add(
+            AiStreamChunk(isDone: true, errorMessage: e.toString()),
+          );
+        }
+      } finally {
+        if (!controller.isClosed) await controller.close();
+      }
+    }();
+    return AiChatStreamHandle(stream: controller.stream, abort: abort);
+  }
+
+  AiChatStreamHandle _chatStream({
     required String model,
     required List<Map<String, dynamic>> messages,
     bool thinking = false,
@@ -420,6 +517,7 @@ class AiService {
               errorMessage: e is TimeoutException
                   ? 'AI không phản hồi trong thời gian cho phép'
                   : 'Kết nối AI bị gián đoạn hoặc phản hồi chưa hoàn tất',
+              connectionFailed: e is SocketException || e is HttpException,
             ),
           );
         }

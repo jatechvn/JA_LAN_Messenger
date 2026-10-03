@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:ja_lan_messenger/modules/services/app_power_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,6 +37,8 @@ void main() {
         await c.historyLoaded;
       });
       var focused = false;
+      AppPowerManager.instance.resetForTesting(enableIdleSleep: false);
+      var focusQueries = 0;
       var visible = true;
       var minimized = false;
       const channel = MethodChannel('window_manager');
@@ -43,6 +46,7 @@ void main() {
           .setMockMethodCallHandler(channel, (call) async {
             switch (call.method) {
               case 'isFocused':
+                focusQueries++;
                 return focused;
               case 'isVisible':
                 return visible;
@@ -55,6 +59,7 @@ void main() {
       final theme = ThemeProvider();
       final lang = LanguageProvider();
       addTearDown(() async {
+        AppPowerManager.instance.resetForTesting(enableIdleSleep: false);
         c.chatHistory.cancelAll();
         c.dispose();
         theme.dispose();
@@ -106,6 +111,17 @@ void main() {
 
       await dwell();
       expect(first.status, MessageStatus.delivered);
+      AppPowerManager.instance.onWindowBlur();
+      await tester.pump();
+      final beforePause = focusQueries;
+      await dwell();
+      expect(
+        focusQueries,
+        beforePause,
+        reason: 'No native read polling while the power gate is inactive',
+      );
+      expect(first.status, MessageStatus.delivered);
+      AppPowerManager.instance.onWindowFocus();
       focused = true;
       visible = false;
       await dwell();

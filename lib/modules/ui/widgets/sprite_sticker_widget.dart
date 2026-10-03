@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../../services/app_power_manager.dart';
 
 /// Widget chuyên dụng chạy Sprite Sheet Animation của Sticker Zalo
 /// Tự động đo kích thước Width/Height, tính số lượng frames và vẽ qua GPU
@@ -46,6 +47,9 @@ class _SpriteStickerWidgetState extends State<SpriteStickerWidget> {
   @override
   void initState() {
     super.initState();
+    AppPowerManager.instance.indicatorsAnimationNotifier.addListener(
+      _onPowerStateChanged,
+    );
     _loadImage();
   }
 
@@ -121,9 +125,22 @@ class _SpriteStickerWidgetState extends State<SpriteStickerWidget> {
     }
   }
 
+  void _onPowerStateChanged() {
+    if (!mounted) return;
+    if (AppPowerManager.instance.shouldAnimateIndicators) {
+      if (widget.autoPlay && widget.loop && _timer == null && _frameCount > 1) {
+        _startAnimation();
+      }
+    } else {
+      _stopAnimation();
+    }
+  }
+
   void _startAnimation() {
     _stopAnimation();
-    if (_frameCount <= 1) return;
+    if (_frameCount <= 1 || !AppPowerManager.instance.shouldAnimateIndicators) {
+      return;
+    }
 
     final intervalMs = (1000 / widget.fps).round();
     _timer = Timer.periodic(Duration(milliseconds: intervalMs), (timer) {
@@ -152,6 +169,9 @@ class _SpriteStickerWidgetState extends State<SpriteStickerWidget> {
 
   @override
   void dispose() {
+    AppPowerManager.instance.indicatorsAnimationNotifier.removeListener(
+      _onPowerStateChanged,
+    );
     _stopAnimation();
     if (_imageStream != null && _streamListener != null) {
       _imageStream!.removeListener(_streamListener!);

@@ -18,6 +18,8 @@ import 'modules/services/ota_update_service.dart';
 import 'modules/ime/ime_service.dart';
 import 'modules/ime/ime_types.dart';
 import 'modules/services/sticker_service.dart';
+import 'modules/services/app_power_manager.dart';
+import 'modules/ui/widgets/app_power_scope.dart';
 
 void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,6 +51,10 @@ void main(List<String> args) async {
     );
   }
   await prefs.load();
+  AppPowerManager.instance.configure(
+    enableIdleSleep: prefs.enableIdleSleep,
+    idleTimeoutSeconds: prefs.idleTimeoutSeconds,
+  );
   // Tự động nạp cấu hình OTA từ update_config.json nếu có
   await OtaUpdateService().syncExternalConfigToPreferences();
 
@@ -73,6 +79,7 @@ void main(List<String> args) async {
         : const Size(minWindowWidth, minWindowHeight),
   );
 
+  await AppPowerManager.instance.synchronizeNative();
   runApp(const JaLanMessengerApp());
 }
 
@@ -104,12 +111,9 @@ class _MessengerAppContent extends StatelessWidget {
     // Đồng bộ ngôn ngữ sang bộ gõ để thích ứng tự động
     context.read<ImeService>().updateAppLanguage(lang.code);
 
-    final effectiveTitle = (!kIsWeb && Platform.isWindows && !theme.isWin11)
-        ? ''
-        : appName;
-
     return MaterialApp(
-      title: effectiveTitle,
+      // Keep the shell/app-switcher title nonempty on every Windows version.
+      title: appName,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -129,6 +133,27 @@ class _MessengerAppContent extends StatelessWidget {
           ),
         ),
       ),
+      builder: (context, child) {
+        return Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) =>
+              AppPowerManager.instance.recordUserInteraction(),
+          onPointerMove: (_) =>
+              AppPowerManager.instance.recordUserInteraction(),
+          onPointerHover: (_) =>
+              AppPowerManager.instance.recordUserInteraction(),
+          onPointerSignal: (_) =>
+              AppPowerManager.instance.recordUserInteraction(),
+          child: Focus(
+            autofocus: false,
+            onKeyEvent: (_, _) {
+              AppPowerManager.instance.recordUserInteraction();
+              return KeyEventResult.ignored;
+            },
+            child: AppPowerScope(child: child ?? const SizedBox.shrink()),
+          ),
+        );
+      },
       home: const MainMessengerWindow(),
     );
   }

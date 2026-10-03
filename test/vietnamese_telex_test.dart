@@ -1,10 +1,121 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
+import 'package:ja_lan_messenger/modules/ime/ime_service.dart';
+import 'package:ja_lan_messenger/modules/ime/ime_types.dart';
 import 'package:ja_lan_messenger/modules/ime/vietnamese_telex_engine.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  test('tone-aware shape transitions and literal undo preserve case', () {
+    const cases = {
+      'uó': 'ướ',
+      'uố': 'ướ',
+      'uớ': 'ướ',
+      'UÓ': 'ƯỚ',
+      'đường': 'đuongw',
+      'ĂN': 'ANw',
+    };
+    for (final entry in cases.entries) {
+      expect(VietnameseTelexEngine.processWord(entry.key, 'w'), entry.value);
+    }
+    expect(VietnameseTelexEngine.processWord('ƯỚ', 'W'), 'UOW');
+    expect(VietnameseTelexEngine.processWord('Đ', 'D'), 'DD');
+    expect(VietnameseTelexEngine.processWord('', 'w'), 'ư');
+    expect(VietnameseTelexEngine.processWord('test', 'w'), null);
+    expect(VietnameseTelexEngine.repositionAfterDeletion('hoà'), 'hòa');
+  });
+  test(
+    'formatter handles deletion and bypasses unrelated or composing edits',
+    () {
+      final ime = ImeService();
+      ime.setMode(ImeMode.telex);
+      ime.setAutoBypassExternal(false);
+      addTearDown(() {
+        ime.setMode(ImeMode.auto);
+        ime.setAutoBypassExternal(true);
+      });
+      TextEditingValue value(
+        String text,
+        int cursor, {
+        TextRange composing = TextRange.empty,
+      }) => TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: cursor),
+        composing: composing,
+      );
+      final old = value('😀 hoàn!', 7);
+      final deleted = value('😀 hoà!', 6);
+      final result = ime.inputFormatter.formatEditUpdate(old, deleted);
+      expect(result.text, '😀 hòa!');
+      expect(result.selection, deleted.selection);
+      final edits = <(TextEditingValue, TextEditingValue)>[
+        (
+          value('a', 1),
+          value('as', 2, composing: const TextRange(start: 0, end: 2)),
+        ),
+        (
+          value('a', 1, composing: const TextRange(start: 0, end: 1)),
+          value('as', 2),
+        ),
+        (value('a', 1), value('aas', 3)),
+        (value('a!', 1), value('a!s', 3)),
+        (
+          const TextEditingValue(
+            text: 'aa',
+            selection: TextSelection(baseOffset: 0, extentOffset: 2),
+          ),
+          value('s', 1),
+        ),
+        (value('an', 1), value('a', 1)),
+      ];
+      for (final edit in edits) {
+        expect(ime.inputFormatter.formatEditUpdate(edit.$1, edit.$2), edit.$2);
+      }
+      expect(
+        ime.inputFormatter.formatEditUpdate(value('', 0), value('W', 1)).text,
+        'Ư',
+      );
+    },
+  );
+  test('deferred circumflex formatter preserves cursor and following text', () {
+    final ime = ImeService();
+    ime.setMode(ImeMode.telex);
+    ime.setAutoBypassExternal(false);
+    addTearDown(() {
+      ime.setMode(ImeMode.auto);
+      ime.setAutoBypassExternal(true);
+    });
+    const cases = {
+      'VANAG': 'VÂNG',
+      'vanag': 'vâng',
+      'tienges': 'tiếng',
+      'CONGOS': 'CỐNG',
+    };
+    for (final entry in cases.entries) {
+      var value = const TextEditingValue(
+        text: 'Hi: !',
+        selection: TextSelection.collapsed(offset: 4),
+      );
+      for (final key in entry.key.split('')) {
+        final cursor = value.selection.baseOffset;
+        final next = TextEditingValue(
+          text: value.text.replaceRange(cursor, cursor, key),
+          selection: TextSelection.collapsed(offset: cursor + 1),
+        );
+        value = ime.inputFormatter.formatEditUpdate(value, next);
+      }
+      expect(value.text, 'Hi: ${entry.value}!');
+      expect(value.selection.baseOffset, 4 + entry.value.length);
+    }
+  });
   group('Vietnamese Telex Engine Tests', () {
     test('Repositions tones while typing actual key sequences', () {
       const cases = {
+        'dduwowngf': 'đường',
+        'DDUWOWNGF': 'ĐƯỜNG',
+        'duoswng': 'dướng',
+        'az': 'az',
+        'asz': 'a',
         'tieesng': 'tiếng',
         'tieengs': 'tiếng',
         'tiseeng': 'tiếng',
@@ -60,6 +171,37 @@ void main() {
       expect(VietnameseTelexEngine.processWord('uo', 'w'), equals('ươ'));
       expect(VietnameseTelexEngine.processWord('duong', 'w'), equals('dương'));
       expect(VietnameseTelexEngine.processWord('đuong', 'w'), equals('đương'));
+    });
+    test('Deferred circumflex keys preserve case and tones across codas', () {
+      const cases = {
+        'VANAG': 'VÂNG',
+        'vanag': 'vâng',
+        'Vanag': 'Vâng',
+        'vanga': 'vâng',
+        'vangas': 'vấng',
+        'vangsa': 'vấng',
+        'tienges': 'tiếng',
+        'tiengse': 'tiếng',
+        'VIETJE': 'VIỆT',
+        'vieetje': 'viete',
+        'congo': 'công',
+        'CONGOS': 'CỐNG',
+      };
+      for (final entry in cases.entries) {
+        var word = '';
+        for (final key in entry.key.split('')) {
+          word = VietnameseTelexEngine.processWord(word, key) ?? '$word$key';
+        }
+        expect(word, entry.value, reason: entry.key);
+      }
+    });
+    test('Deferred key undo and invalid codas do not swallow raw input', () {
+      expect(VietnameseTelexEngine.processWord('VÂNG', 'A'), 'VANGA');
+      expect(VietnameseTelexEngine.processWord('cống', 'o'), 'congo');
+      expect(VietnameseTelexEngine.processWord('test', 'e'), isNull);
+      expect(VietnameseTelexEngine.processWord('banh', 'a'), 'bânh');
+      expect(VietnameseTelexEngine.processWord('tax', 'a'), isNull);
+      expect(VietnameseTelexEngine.processWord('tai', 'a'), isNull);
     });
 
     test('Tone Placement and Rules (EVKey Standard)', () {

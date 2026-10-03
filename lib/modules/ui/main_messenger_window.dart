@@ -13,6 +13,7 @@ import '../services/messenger_coordinator.dart';
 import '../services/app_preferences.dart';
 import '../services/unread_attention_service.dart';
 import '../services/tray_window_toggle.dart';
+import '../services/app_power_manager.dart';
 import '../constants.dart';
 import '../build_info.dart';
 import 'widgets/compact_sidebar.dart';
@@ -41,6 +42,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
   bool _showDetailsPanel = false;
   final _trayWindowToggle = TrayWindowToggle();
   final _unreadAttention = UnreadAttentionService();
+  AppLifecycleListener? _lifecycleListener;
 
   @override
   void initState() {
@@ -51,7 +53,14 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       windowManager.setPreventClose(true);
       _initSystemTray();
+      unawaited(
+        AppPowerManager.instance.synchronizeNative(isAlive: () => mounted),
+      );
     }
+
+    _lifecycleListener = AppLifecycleListener(
+      onStateChange: AppPowerManager.instance.onLifecycleStateChanged,
+    );
 
     // Khởi tạo dịch vụ mạng P2P và lắng nghe cập nhật khay hệ thống
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -75,7 +84,32 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
   }
 
   @override
+  void onWindowFocus() {
+    AppPowerManager.instance.onWindowFocus();
+    super.onWindowFocus();
+  }
+
+  @override
+  void onWindowBlur() {
+    AppPowerManager.instance.onWindowBlur();
+    super.onWindowBlur();
+  }
+
+  @override
+  void onWindowMinimize() {
+    AppPowerManager.instance.onWindowMinimize();
+    super.onWindowMinimize();
+  }
+
+  @override
+  void onWindowRestore() {
+    AppPowerManager.instance.onWindowRestore();
+    super.onWindowRestore();
+  }
+
+  @override
   void dispose() {
+    _lifecycleListener?.dispose();
     _unreadAttention.dispose();
     _observedCoordinator?.removeListener(_onCoordinatorChangedForTray);
     windowManager.removeListener(this);
@@ -201,9 +235,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
   void onTrayMenuItemClick(MenuItem menuItem) async {
     final coordinator = context.read<MessengerCoordinator>();
     if (menuItem.key == 'show_window') {
-      await windowManager.show();
-      await windowManager.restore();
-      await windowManager.focus();
+      await AppPowerManager.instance.showWindow();
     } else if (menuItem.key == 'toggle_compact') {
       if (mounted) {
         coordinator.toggleCompactMode();
@@ -243,6 +275,14 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
   }
 
   bool _exiting = false;
+  Future<void> _hideToTray() async {
+    try {
+      await AppPowerManager.instance.hideWindow();
+    } catch (error) {
+      debugPrint('[Tray] Hide failed; native state reconciled: $error');
+    }
+  }
+
   Future<void> _exitSafely() async {
     if (_exiting || !mounted) return;
     _exiting = true;
@@ -271,7 +311,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
 
     if (prefs.rememberCloseBehavior) {
       if (prefs.closeBehavior == 'minimize') {
-        await windowManager.hide();
+        await _hideToTray();
         return;
       } else if (prefs.closeBehavior == 'exit') {
         await _exitSafely();
@@ -287,7 +327,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
         await prefs.setCloseBehavior(action, remember: true);
       }
       if (action == 'minimize') {
-        await windowManager.hide();
+        await _hideToTray();
       } else {
         await _exitSafely();
       }

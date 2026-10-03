@@ -20,6 +20,8 @@ import '../network/security_service.dart';
 import '../localization/app_locale.dart';
 import '../models/ai_config_model.dart';
 import 'ai_service.dart';
+import 'ai_server_locator.dart';
+import 'app_power_manager.dart';
 import 'ai_queue_manager.dart';
 import 'app_preferences.dart';
 import 'known_devices_registry.dart';
@@ -344,12 +346,15 @@ class MessengerCoordinator extends ChangeNotifier {
 
   bool _isInitialized = false;
   bool _disposed = false;
+  final AiServerLocator _aiLocator;
   Timer? _livenessTimer;
 
   MessengerCoordinator({
     LanTcpServer? tcpServer,
     KnownDevicesRegistry? knownDevices,
+    AiServerLocator? aiServerLocator,
   }) : _tcpServer = tcpServer ?? LanTcpServer(),
+       _aiLocator = aiServerLocator ?? AiServerLocator(),
        knownDevices = knownDevices ?? KnownDevicesRegistry() {
     final prefs = AppPreferences();
     final colorHex = prefs.userAvatarColor.replaceFirst('#', '');
@@ -363,6 +368,7 @@ class MessengerCoordinator extends ChangeNotifier {
     _isCompactMode = prefs.isCompactMode;
     _isAlwaysOnTop = prefs.isAlwaysOnTop;
     aiService = AiService(serverUrl: prefs.aiServerUrl);
+    aiService.recoverConnection = _recoverAiConnection;
     aiQueueManager = AiQueueManager(aiService: aiService);
     _aiPeer.statusDescription = 'Sẵn sàng • ${prefs.aiSelectedModel}';
     _aiPeer.isPinned = prefs.isPeerPinned('__AI_ASSISTANT__');
@@ -3193,16 +3199,10 @@ class MessengerCoordinator extends ChangeNotifier {
     // Proposal D: Auto Bring to Front
     if (prefs.buzzBringToFront) {
       try {
-        if (await windowManager.isMinimized()) {
-          await windowManager.restore();
-        }
         if (_isCompactMode) {
           await toggleCompactMode();
         }
-        if (!await windowManager.isVisible()) {
-          await windowManager.show();
-        }
-        await windowManager.focus();
+        await AppPowerManager.instance.showWindow();
 
         // Tạm thời ghim Always on Top trong 3 giây nếu hiện tại chưa bật
         if (!_isAlwaysOnTop) {
@@ -3268,11 +3268,12 @@ class MessengerCoordinator extends ChangeNotifier {
   }
 
   /// Kích hoạt cảnh báo Buzz cục bộ (dành cho kiểm thử hoặc xem trước hiệu ứng)
-  void triggerBuzzAlertForTesting() {
+  Future<void> triggerBuzzAlertForTesting() {
     lastBuzzTime = DateTime.now();
     _buzzTriggerCount++;
-    unawaited(_triggerNativeBuzzAlert());
+    final work = _triggerNativeBuzzAlert();
     notifyListeners();
+    return work;
   }
 
   /// Xử lý rung chuông Buzz
@@ -3784,11 +3785,7 @@ class MessengerCoordinator extends ChangeNotifier {
 
       notification.onClick = () async {
         try {
-          if (await windowManager.isMinimized()) {
-            await windowManager.restore();
-          }
-          await windowManager.show();
-          await windowManager.focus();
+          await AppPowerManager.instance.showWindow();
           if (peer != null) {
             selectPeer(peer);
           }
@@ -4590,6 +4587,50 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
   List<AiModelInfo> get availableAiModels => AiModelInfo.currentModels;
 
   /// Làm mới và đồng bộ danh sách model từ máy chủ Ollama
+  Future<bool>? _aiRecovery;
+  DateTime? _lastAiRecovery;
+
+  Future<bool> _recoverAiConnection(String failedUrl) {
+    if (_disposed) return Future.value(false);
+    if (aiService.serverUrl != failedUrl) return Future.value(true);
+    if (_aiRecovery != null) return _aiRecovery!;
+    if (_lastAiRecovery != null &&
+        DateTime.now().difference(_lastAiRecovery!) <
+            const Duration(seconds: 30)) {
+      showToast('aiScanNotFound');
+      return Future.value(false);
+    }
+    _aiRecovery = () async {
+      showToast('aiScanSearching');
+      try {
+        final found = await _aiLocator.locate(
+          Uri.parse(failedUrl),
+          enabledAdapters.map((a) => a.subnet).toList(),
+          cancelled: () => _disposed || aiService.serverUrl != failedUrl,
+        );
+        if (_disposed) return false;
+        if (aiService.serverUrl != failedUrl) return true;
+        if (found == null) {
+          showToast('aiScanNotFound');
+          return false;
+        }
+        await AppPreferences().setAiConfig(serverUrl: found.toString());
+        if (_disposed) return false;
+        showToast('aiScanRecovered', [found.host]);
+        return true;
+      } catch (_) {
+        if (!_disposed && aiService.serverUrl == failedUrl) {
+          showToast('aiScanFailed');
+        }
+        return false;
+      } finally {
+        _lastAiRecovery = DateTime.now();
+        _aiRecovery = null;
+      }
+    }();
+    return _aiRecovery!;
+  }
+
   Future<List<AiModelInfo>> refreshAiModels({String? customUrl}) async {
     final models = await aiService.fetchAvailableModels(customUrl);
     if (models.isNotEmpty) {

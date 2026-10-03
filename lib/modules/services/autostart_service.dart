@@ -28,8 +28,11 @@ class AutostartService {
       r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run';
   static const String _appName = 'JA_LAN_Messenger';
 
+  static bool? customAutoStartForTesting;
+
   /// Check if the application is currently registered to launch at Windows startup.
   static Future<bool> isAutoStartEnabled() async {
+    if (customAutoStartForTesting != null) return customAutoStartForTesting!;
     if (!Platform.isWindows) return false;
     try {
       final result = await Process.run('reg', [
@@ -47,6 +50,10 @@ class AutostartService {
 
   /// Enable or disable launching at Windows startup.
   static Future<bool> setAutoStart(bool enable) async {
+    if (customAutoStartForTesting != null) {
+      customAutoStartForTesting = enable;
+      return true;
+    }
     if (!Platform.isWindows) return false;
     try {
       if (enable) {

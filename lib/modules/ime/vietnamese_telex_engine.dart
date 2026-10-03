@@ -123,7 +123,7 @@ class VietnameseTelexEngine {
 
     if (newTone == 0) {
       // Phím 'z' chỉ để xóa dấu
-      return strippedWord;
+      return currentTone == 0 ? null : strippedWord;
     }
 
     // Xác định vị trí nguyên âm chính cần đặt dấu (EVKey standard)
@@ -177,12 +177,7 @@ class VietnameseTelexEngine {
     if (vowelIndices.length == 1) return vowelIndices.first;
 
     final lower = strippedWord.toLowerCase();
-    // u in qu / i in gi belongs to the onset when another vowel follows.
-    if ((lower.startsWith('qu') || lower.startsWith('gi')) &&
-        vowelIndices.first == 1 &&
-        vowelIndices.length > 1) {
-      vowelIndices = vowelIndices.sublist(1);
-    }
+    vowelIndices = _nucleus(strippedWord);
     // ê and ơ carry the tone even before the final consonant is typed.
     for (final index in vowelIndices.reversed) {
       if (lower[index] == 'ê' || lower[index] == 'ơ') return index;
@@ -236,179 +231,97 @@ class VietnameseTelexEngine {
   }
 
   /// Biến đổi mũ và móc: aa, aw, ee, oo, ow, uw, w, dd
+  /// Recalculate the remaining syllable, without reconstructing raw keys.
+  static String repositionAfterDeletion(String word) => _repositionTone(word);
+
+  static List<int> _nucleus(String word) {
+    final indices = <int>[];
+    for (var i = 0; i < word.length; i++) {
+      if (_charToToneInfo.containsKey(word[i])) indices.add(i);
+    }
+    final lower = word.toLowerCase();
+    if (indices.length > 1 &&
+        indices.first == 1 &&
+        (lower.startsWith('qu') || lower.startsWith('gi'))) {
+      indices.removeAt(0);
+    }
+    return indices;
+  }
+
+  static bool _validTail(String word, int lastVowel) {
+    final tail = word.substring(lastVowel + 1).toLowerCase();
+    return tail.isEmpty ||
+        const {'c', 'ch', 'm', 'n', 'ng', 'nh', 'p', 't'}.contains(tail);
+  }
+
+  static String _replaceBase(String word, int index, String base) {
+    final info = _charToToneInfo[word[index]]!;
+    final marked = _vowelToneMap[base]![info.tone];
+    return word.replaceRange(
+      index,
+      index + 1,
+      info.isUpper ? marked.toUpperCase() : marked,
+    );
+  }
+
   static String? _applyVowelModification(String word, String keyChar) {
-    if (word.isEmpty) return null;
-    final lowerKey = keyChar.toLowerCase();
-    final lastChar = word[word.length - 1];
-    final lowerLast = lastChar.toLowerCase();
-
-    // 1. Phím 'd' gõ vào chữ 'd' -> 'đ' (hoặc lặp lại 'đ' + 'd' -> 'dd' để undo)
-    if (lowerKey == 'd') {
-      if (lowerLast == 'd') {
-        final isUpper = lastChar == 'D';
-        return word.substring(0, word.length - 1) + (isUpper ? 'Đ' : 'đ');
+    final key = keyChar.toLowerCase();
+    if (word.isEmpty) {
+      return key == 'w' ? (keyChar == 'W' ? 'Ư' : 'ư') : null;
+    }
+    if (key == 'd') {
+      final last = word[word.length - 1];
+      if (last.toLowerCase() == 'd') {
+        return word.substring(0, word.length - 1) + (last == 'D' ? 'Đ' : 'đ');
       }
-      if (lowerLast == 'đ') {
-        // Undo: đ + d -> dd
-        final isUpper = lastChar == 'Đ';
-        return word.substring(0, word.length - 1) + (isUpper ? 'Dd' : 'dd');
+      if (last.toLowerCase() == 'đ') {
+        return word.substring(0, word.length - 1) +
+            (last == 'Đ' ? 'D' : 'd') +
+            keyChar;
+      }
+      return null;
+    }
+    final vowels = _nucleus(word);
+    if (vowels.isEmpty) {
+      return key == 'w' ? word + (keyChar == 'W' ? 'Ư' : 'ư') : null;
+    }
+    if (!_validTail(word, vowels.last)) return null;
+    final index = vowels.last;
+    final base = _charToToneInfo[word[index]]!.baseVowel;
+    const roofs = {'a': 'â', 'e': 'ê', 'o': 'ô'};
+    final roof = roofs[key];
+    if (roof != null) {
+      if (base == key) return _replaceBase(word, index, roof);
+      if (base == roof) {
+        return _replaceBase(_removeAllTones(word), index, key) + keyChar;
+      }
+      return null;
+    }
+    if (key != 'w') return null;
+    // uo/uô/uơ/ươ are transitions of a vowel pair, independent of tone.
+    if (vowels.length >= 2) {
+      final u = vowels[vowels.length - 2];
+      final o = vowels.last;
+      final uBase = _charToToneInfo[word[u]]!.baseVowel;
+      if (o == u + 1 &&
+          (uBase == 'u' || uBase == 'ư') &&
+          const {'o', 'ô', 'ơ'}.contains(base)) {
+        if (uBase == 'ư' && base == 'ơ') {
+          var result = _removeAllTones(word);
+          result = _replaceBase(result, u, 'u');
+          return _replaceBase(result, o, 'o') + keyChar;
+        }
+        return _replaceBase(_replaceBase(word, u, 'ư'), o, 'ơ');
       }
     }
-
-    // 2. Phím 'a' gõ vào chữ 'a' -> 'â' (hoặc lặp lại 'â' + 'a' -> 'aa' để undo)
-    if (lowerKey == 'a') {
-      final info = _charToToneInfo[lastChar];
-      if (info != null) {
-        if (info.baseVowel == 'a') {
-          // Biến đổi 'a' thành 'â' bảo toàn tone đang có
-          final tone = info.tone;
-          final newChar = _vowelToneMap['â']![tone];
-          return word.substring(0, word.length - 1) +
-              (info.isUpper ? newChar.toUpperCase() : newChar);
-        }
-        if (info.baseVowel == 'â') {
-          // Undo: â + a -> aa (gỡ dấu thanh nếu có để trả lại raw)
-          return _removeAllTones(word.substring(0, word.length - 1)) +
-              (info.isUpper ? 'Aa' : 'aa');
-        }
+    const hooks = {'a': 'ă', 'o': 'ơ', 'u': 'ư'};
+    final hooked = hooks[base];
+    if (hooked != null) return _replaceBase(word, index, hooked);
+    for (final entry in hooks.entries) {
+      if (base == entry.value) {
+        return _replaceBase(_removeAllTones(word), index, entry.key) + keyChar;
       }
     }
-
-    // 3. Phím 'e' gõ vào chữ 'e' -> 'ê' (hoặc lặp lại 'ê' + 'e' -> 'ee' để undo)
-    if (lowerKey == 'e') {
-      final info = _charToToneInfo[lastChar];
-      if (info != null) {
-        if (info.baseVowel == 'e') {
-          final tone = info.tone;
-          final newChar = _vowelToneMap['ê']![tone];
-          return word.substring(0, word.length - 1) +
-              (info.isUpper ? newChar.toUpperCase() : newChar);
-        }
-        if (info.baseVowel == 'ê') {
-          // Undo: ê + e -> ee
-          return _removeAllTones(word.substring(0, word.length - 1)) +
-              (info.isUpper ? 'Ee' : 'ee');
-        }
-      }
-    }
-
-    // 4. Phím 'o' gõ vào chữ 'o' -> 'ô' (hoặc lặp lại 'ô' + 'o' -> 'oo' để undo)
-    if (lowerKey == 'o') {
-      final info = _charToToneInfo[lastChar];
-      if (info != null) {
-        if (info.baseVowel == 'o') {
-          final tone = info.tone;
-          final newChar = _vowelToneMap['ô']![tone];
-          return word.substring(0, word.length - 1) +
-              (info.isUpper ? newChar.toUpperCase() : newChar);
-        }
-        if (info.baseVowel == 'ô') {
-          // Undo: ô + o -> oo
-          return _removeAllTones(word.substring(0, word.length - 1)) +
-              (info.isUpper ? 'Oo' : 'oo');
-        }
-      }
-    }
-
-    // 5. Phím 'w': Biến đổi móc (ă, ơ, ư, ươ)
-    if (lowerKey == 'w') {
-      final lowerWord = word.toLowerCase();
-
-      // 5.1. Undo nếu từ đã có 'ươ' (ví dụ: ươ + w -> uow, đương + w -> duongw)
-      final uoHookIdx = lowerWord.lastIndexOf('ươ');
-      if (uoHookIdx != -1) {
-        final uChar = word[uoHookIdx];
-        final oChar = word[uoHookIdx + 1];
-        final uInfo = _charToToneInfo[uChar];
-        final oInfo = _charToToneInfo[oChar];
-        if (uInfo != null && oInfo != null) {
-          final origU = uInfo.isUpper ? 'U' : 'u';
-          final origO = oInfo.isUpper ? 'O' : 'o';
-          return '${word.substring(0, uoHookIdx)}$origU$origO${word.substring(uoHookIdx + 2)}w';
-        }
-      }
-
-      // 5.2. Chuyển đổi 'uo' -> 'ươ' trong từ (ví dụ: uo -> ươ, duong -> dương, đuong -> đương)
-      final uoIdx = lowerWord.lastIndexOf('uo');
-      if (uoIdx != -1) {
-        final uChar = word[uoIdx];
-        final oChar = word[uoIdx + 1];
-        final uInfo = _charToToneInfo[uChar];
-        final oInfo = _charToToneInfo[oChar];
-        if (uInfo != null &&
-            oInfo != null &&
-            uInfo.baseVowel == 'u' &&
-            oInfo.baseVowel == 'o') {
-          final newU = uInfo.isUpper ? 'Ư' : 'ư';
-          final oTone = oInfo.tone;
-          final newO = _vowelToneMap['ơ']![oTone];
-          return word.substring(0, uoIdx) +
-              newU +
-              (oInfo.isUpper ? newO.toUpperCase() : newO) +
-              word.substring(uoIdx + 2);
-        }
-      }
-
-      // 5.3. Kiểm tra nguyên âm có thể nhận móc/mũ (ă, ơ, ư) từ cuối từ lên
-      int vowelIdx = -1;
-      for (int i = word.length - 1; i >= 0; i--) {
-        final info = _charToToneInfo[word[i]];
-        if (info != null &&
-            (info.baseVowel == 'a' ||
-                info.baseVowel == 'ă' ||
-                info.baseVowel == 'o' ||
-                info.baseVowel == 'ơ' ||
-                info.baseVowel == 'u' ||
-                info.baseVowel == 'ư')) {
-          vowelIdx = i;
-          break;
-        }
-      }
-
-      if (vowelIdx != -1) {
-        final ch = word[vowelIdx];
-        final info = _charToToneInfo[ch]!;
-        // Undo nếu đã có móc/mũ
-        if (info.baseVowel == 'ă') {
-          return '${_removeAllTones(word.substring(0, vowelIdx))}${info.isUpper ? 'Aw' : 'aw'}${word.substring(vowelIdx + 1)}';
-        }
-        if (info.baseVowel == 'ơ') {
-          return '${_removeAllTones(word.substring(0, vowelIdx))}${info.isUpper ? 'Ow' : 'ow'}${word.substring(vowelIdx + 1)}';
-        }
-        if (info.baseVowel == 'ư') {
-          return '${_removeAllTones(word.substring(0, vowelIdx))}${info.isUpper ? 'Uw' : 'uw'}${word.substring(vowelIdx + 1)}';
-        }
-
-        // Thêm móc:
-        if (info.baseVowel == 'a') {
-          final tone = info.tone;
-          final newChar = _vowelToneMap['ă']![tone];
-          return word.substring(0, vowelIdx) +
-              (info.isUpper ? newChar.toUpperCase() : newChar) +
-              word.substring(vowelIdx + 1);
-        }
-        if (info.baseVowel == 'o') {
-          final tone = info.tone;
-          final newChar = _vowelToneMap['ơ']![tone];
-          return word.substring(0, vowelIdx) +
-              (info.isUpper ? newChar.toUpperCase() : newChar) +
-              word.substring(vowelIdx + 1);
-        }
-        if (info.baseVowel == 'u') {
-          final tone = info.tone;
-          final newChar = _vowelToneMap['ư']![tone];
-          return word.substring(0, vowelIdx) +
-              (info.isUpper ? newChar.toUpperCase() : newChar) +
-              word.substring(vowelIdx + 1);
-        }
-      }
-
-      // 5.4. Nếu gõ 'w' đứng độc lập hoặc sau phụ âm (ví dụ: 'w' -> 'ư', 'thw' -> 'thư')
-      final isUpper =
-          keyChar == 'W' || (word.isNotEmpty && word.toUpperCase() == word);
-      return word + (isUpper ? 'Ư' : 'ư');
-    }
-
     return null;
   }
 
