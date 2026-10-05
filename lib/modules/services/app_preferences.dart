@@ -836,7 +836,36 @@ class AppPreferences extends ChangeNotifier {
     await _save();
   }
 
-  Future<void> _save() async {
+  Future<void>? _pendingSave;
+
+  /// OTA/exit must not interrupt a pending preferences replacement.
+  Future<void> flush() async {
+    while (_pendingSave != null) {
+      await _pendingSave;
+    }
+  }
+
+  Future<void> _save() {
+    final previous = _pendingSave;
+    final pending = previous == null
+        ? _writePreferences()
+        : previous.then(
+            (_) => _writePreferences(),
+            onError: (Object error, StackTrace stack) => _writePreferences(),
+          );
+    _pendingSave = pending;
+    void clear() {
+      if (identical(_pendingSave, pending)) _pendingSave = null;
+    }
+
+    pending.then(
+      (_) => clear(),
+      onError: (Object error, StackTrace stack) => clear(),
+    );
+    return pending;
+  }
+
+  Future<void> _writePreferences() async {
     _loadGeneration++;
     try {
       final file = _getPrefFile();
@@ -916,7 +945,9 @@ class AppPreferences extends ChangeNotifier {
       } else {
         data.remove('peerWinrmConfigs');
       }
-      await file.writeAsString(jsonEncode(data), flush: true);
+      final temporary = File('${file.path}.tmp');
+      await temporary.writeAsString(jsonEncode(data), flush: true);
+      await temporary.rename(file.path);
     } catch (e) {
       debugPrint('[AppPreferences] Save error: $e');
     }

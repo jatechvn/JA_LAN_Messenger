@@ -20,9 +20,11 @@ import 'modules/ime/ime_types.dart';
 import 'modules/services/sticker_service.dart';
 import 'modules/services/app_power_manager.dart';
 import 'modules/ui/widgets/app_power_scope.dart';
+import 'modules/services/ota_staging_cleanup.dart';
+import 'modules/power_aware_binding.dart';
 
 void main(List<String> args) async {
-  WidgetsFlutterBinding.ensureInitialized();
+  PowerAwareWidgetsBinding();
 
   if (args.contains('-debug') ||
       args.contains('--debug') ||
@@ -81,6 +83,13 @@ void main(List<String> args) async {
 
   await AppPowerManager.instance.synchronizeNative();
   runApp(const JaLanMessengerApp());
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    try {
+      await OtaStagingCleanup.complete(args);
+    } catch (error) {
+      debugPrint('[OTA] Staging cleanup deferred: $error');
+    }
+  });
 }
 
 class JaLanMessengerApp extends StatelessWidget {

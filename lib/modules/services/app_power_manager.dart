@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:logging/logging.dart';
 
 /// Single Source of Truth cho quản lý năng lượng và tối ưu hóa GPU/CPU trên Desktop.
 /// Quản lý 4 trạng thái cửa sổ (Focus, Inactive, Minimized, Idle 12s) và cung cấp
@@ -23,6 +24,8 @@ class AppPowerManager {
   int _idleTimeoutSeconds = 12;
 
   Timer? _idleTimer;
+  Timer? _nativeMonitor;
+  bool _nativeCheckPending = false;
   int _stateEpoch = 0;
   bool _explicitlyHidden = false;
   Future<void>? _transition;
@@ -64,6 +67,11 @@ class AppPowerManager {
       backgroundAnimationNotifier.value = bgActive;
     }
     if (indicatorsAnimationNotifier.value != active) {
+      Logger('Power').info(
+        'render_active=$active focused=$_isWindowFocused '
+        'visible=$_isWindowVisible minimized=$_isWindowMinimized '
+        'explicit_hide=$_explicitlyHidden',
+      );
       indicatorsAnimationNotifier.value = active;
     }
     if (marqueeAnimationNotifier.value != active) {
@@ -121,7 +129,7 @@ class AppPowerManager {
   void onLifecycleStateChanged(AppLifecycleState state) {
     switch (state) {
       case AppLifecycleState.resumed:
-        onWindowFocus();
+        reconcileActivation();
         break;
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
@@ -135,6 +143,31 @@ class AppPowerManager {
         break;
     }
     _updateNotifiers();
+  }
+
+  /// Lifecycle/focus events during remote reconnect are hints, not visibility proof.
+  void reconcileActivation() {
+    onWindowBlur();
+    unawaited(synchronizeNative());
+  }
+
+  void startNativeMonitoring({bool Function()? isAlive}) {
+    stopNativeMonitoring();
+    _nativeMonitor = Timer.periodic(const Duration(seconds: 2), (_) async {
+      if (_nativeCheckPending || !(isAlive?.call() ?? true)) return;
+      _nativeCheckPending = true;
+      try {
+        await synchronizeNative(isAlive: isAlive);
+      } finally {
+        _nativeCheckPending = false;
+      }
+    });
+  }
+
+  void stopNativeMonitoring() {
+    _stateEpoch++;
+    _nativeMonitor?.cancel();
+    _nativeMonitor = null;
   }
 
   void _markHidden() {
@@ -156,11 +189,17 @@ class AppPowerManager {
         windowManager.isFocused(),
       ]);
       if (epoch != _stateEpoch || !(isAlive?.call() ?? true)) return;
+      final wasActive =
+          _isWindowFocused && _isWindowVisible && !_isWindowMinimized;
       _isWindowVisible = state[0] && !_explicitlyHidden;
       _isWindowMinimized = state[1];
       _isWindowFocused = state[2] && _isWindowVisible && !state[1];
-      _isUserIdle = false;
-      _resetIdleTimer();
+      final active =
+          _isWindowFocused && _isWindowVisible && !_isWindowMinimized;
+      if (!active || !wasActive) {
+        _isUserIdle = false;
+        _resetIdleTimer();
+      }
       _updateNotifiers();
     } catch (_) {
       // Stay conservative if the native state cannot be queried.
@@ -280,6 +319,7 @@ class AppPowerManager {
     int idleTimeoutSeconds = 12,
   }) {
     _stateEpoch++;
+    stopNativeMonitoring();
     _explicitlyHidden = false;
     _idleTimer?.cancel();
     _idleTimer = null;

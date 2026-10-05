@@ -24,6 +24,27 @@ void main() {
     expect(prefs.closeBehavior, 'ask');
     expect(prefs.rememberCloseBehavior, false);
   });
+  test(
+    'concurrent saves and flush preserve remembered tray choice on restart',
+    () async {
+      final prefs = AppPreferences();
+      await Future.wait([
+        prefs.setCloseBehavior('minimize', remember: true),
+        prefs.setPeerPinned('peer-a', true),
+        prefs.setPowerOptimization(
+          enableIdleSleep: true,
+          idleTimeoutSeconds: 30,
+        ),
+      ]);
+      await prefs.flush();
+      prefs.setCustomFileForTesting(tempFile);
+      await prefs.load();
+      expect(prefs.rememberCloseBehavior, isTrue);
+      expect(prefs.closeBehavior, 'minimize');
+      expect(prefs.idleTimeoutSeconds, 30);
+      expect(File('${tempFile.path}.tmp').existsSync(), isFalse);
+    },
+  );
 
   test(
     'AppPreferences persists closeBehavior and rememberChoice across instances',

@@ -1,5 +1,5 @@
 const String appName = 'JA LAN Messenger';
-const String appVersion = '1.8.0';
+const String appVersion = '1.8.1';
 const String appId = 'com.jatech.lan_messenger';
 
 // Mạng P2P & Cổng mặc định (Đối chiếu BeeBEEP)

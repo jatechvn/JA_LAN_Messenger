@@ -56,6 +56,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
       unawaited(
         AppPowerManager.instance.synchronizeNative(isAlive: () => mounted),
       );
+      AppPowerManager.instance.startNativeMonitoring(isAlive: () => mounted);
     }
 
     _lifecycleListener = AppLifecycleListener(
@@ -85,7 +86,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
 
   @override
   void onWindowFocus() {
-    AppPowerManager.instance.onWindowFocus();
+    AppPowerManager.instance.reconcileActivation();
     super.onWindowFocus();
   }
 
@@ -104,11 +105,13 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
   @override
   void onWindowRestore() {
     AppPowerManager.instance.onWindowRestore();
+    AppPowerManager.instance.reconcileActivation();
     super.onWindowRestore();
   }
 
   @override
   void dispose() {
+    AppPowerManager.instance.stopNativeMonitoring();
     _lifecycleListener?.dispose();
     _unreadAttention.dispose();
     _observedCoordinator?.removeListener(_onCoordinatorChangedForTray);
@@ -275,11 +278,13 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
   }
 
   bool _exiting = false;
+  bool _closePending = false;
   Future<void> _hideToTray() async {
     try {
       await AppPowerManager.instance.hideWindow();
     } catch (error) {
       debugPrint('[Tray] Hide failed; native state reconciled: $error');
+      rethrow;
     }
   }
 
@@ -288,6 +293,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
     _exiting = true;
     final coordinator = context.read<MessengerCoordinator>();
     try {
+      await AppPreferences().flush();
       await coordinator.flushHistoryBeforeExit();
       await windowManager.destroy();
       exit(0);
@@ -307,30 +313,48 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
 
   @override
   void onWindowClose() async {
-    final prefs = AppPreferences();
+    if (_closePending || _exiting || !mounted) return;
+    _closePending = true;
+    try {
+      final prefs = AppPreferences();
 
-    if (prefs.rememberCloseBehavior) {
-      if (prefs.closeBehavior == 'minimize') {
-        await _hideToTray();
-        return;
-      } else if (prefs.closeBehavior == 'exit') {
-        await _exitSafely();
+      if (prefs.rememberCloseBehavior) {
+        if (prefs.closeBehavior == 'minimize') {
+          await _hideToTray();
+          return;
+        } else if (prefs.closeBehavior == 'exit') {
+          await _exitSafely();
+          return;
+        }
       }
-    }
 
-    if (!mounted) return;
-    final result = await CloseActionDialog.show(context);
-    if (result != null) {
-      final action = result['action'] as String;
-      final remember = result['remember'] as bool;
-      if (remember) {
-        await prefs.setCloseBehavior(action, remember: true);
+      if (!mounted) return;
+      final result = await CloseActionDialog.show(context);
+      if (result != null) {
+        final action = result['action'] as String;
+        final remember = result['remember'] as bool;
+        if (remember) {
+          await prefs.setCloseBehavior(action, remember: true);
+        }
+        if (action == 'minimize') {
+          await _hideToTray();
+        } else {
+          await _exitSafely();
+        }
       }
-      if (action == 'minimize') {
-        await _hideToTray();
-      } else {
-        await _exitSafely();
+    } catch (error) {
+      debugPrint('[Window] Close action failed: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${context.read<LanguageProvider>().tr('error')}: $error',
+            ),
+          ),
+        );
       }
+    } finally {
+      _closePending = false;
     }
   }
 

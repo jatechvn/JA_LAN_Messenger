@@ -89,7 +89,9 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500)); // flips to reverse
-      await tester.pump(const Duration(milliseconds: 500)); // advances in reverse
+      await tester.pump(
+        const Duration(milliseconds: 500),
+      ); // advances in reverse
 
       expect(controller.status, equals(AnimationStatus.reverse));
       final double revValue1 = controller.value;

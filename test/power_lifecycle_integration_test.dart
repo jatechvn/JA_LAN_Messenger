@@ -47,6 +47,39 @@ void main() {
     manager.resetForTesting(enableIdleSleep: false);
     messenger.setMockMethodCallHandler(channel, null);
   });
+  testWidgets(
+    'remote resumed/restore while hidden or unfocused cannot restart tickers; monitor does not reset idle',
+    (tester) async {
+      var visible = false;
+      var focused = true;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'isVisible') return visible;
+        if (call.method == 'isFocused') return focused;
+        if (call.method == 'isMinimized') return false;
+        return null;
+      });
+      manager.onLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(manager.shouldAnimateIndicators, isFalse);
+      visible = true;
+      focused = false;
+      manager.reconcileActivation();
+      await tester.pump();
+      expect(manager.shouldAnimateIndicators, isFalse);
+      focused = true;
+      manager.startNativeMonitoring();
+      await tester.pump(const Duration(seconds: 2));
+      expect(manager.shouldAnimateIndicators, isTrue);
+      manager.configure(enableIdleSleep: true, idleTimeoutSeconds: 12);
+      await tester.pump(const Duration(seconds: 12));
+      expect(manager.shouldAnimateBackground, isFalse);
+      expect(manager.shouldAnimateIndicators, isTrue);
+      focused = false;
+      await tester.pump(const Duration(seconds: 2));
+      expect(manager.shouldAnimateIndicators, isFalse);
+      manager.stopNativeMonitoring();
+    },
+  );
   test(
     'initial hidden snapshot and late native focus cannot undo hide/blur/dispose',
     () async {

@@ -2,6 +2,28 @@
 
 All notable changes to the **JA LAN Messenger** project will be documented in this file.
 
+## [1.8.1] - 2026-10-05
+
+### 🚀 Nâng cấp & Tính năng mới
+- **Cổng Khóa Khung Hình Tầng Scheduler (Scheduler Frame Gate & Zero Inactive GPU)**:
+  - Tích hợp mixin `PowerFrameGate` trên `PowerAwareWidgetsBinding` kế thừa `WidgetsFlutterBinding`, trực tiếp kiểm soát thuộc tính `framesEnabled` của Flutter SchedulerBinding.
+  - Khi cửa sổ ở trạng thái không hoạt động (Inactive, Mất tiêu điểm Blur, Thu nhỏ Minimized), `framesEnabled` lập tức chuyển về `false`. Khắc phục triệt để lỗi các timer ngầm, con trỏ văn bản caret, hoặc lệnh `setState` từ logic nghiệp vụ tiếp tục kích hoạt vẽ lại màn hình gây hao tốn GPU trên Desktop/RDP/VNC.
+  - Khi cửa sổ active trở lại, tự động phát lệnh `scheduleFrame()` để vẽ lại giao diện tích lũy (dirty UI replay) mượt mà mà không sinh các sự kiện vòng đời giả tạo.
+- **Đối soát Ảnh chụp Trạng thái Cửa sổ Native & Bảo vệ Phiên Remote (Native Snapshot Reconcile & Remote Guard)**:
+  - Khắc phục sự cố kết nối lại qua Remote Desktop (RDP / VNC / AnyDesk) khiến cửa sổ nhận sự kiện `resumed` ảo dù thực tế đang bị ẩn hoặc thu nhỏ: chuyển các sự kiện vòng đời thành gợi ý kích hoạt (`reconcileActivation()`) và đối soát trực tiếp qua API Win32 thực tế (`isFocused`, `isVisible`, `isMinimized`).
+  - Thêm luồng kiểm tra nền chu kỳ 2 giây (`startNativeMonitoring`) để tự động bắt kịp trạng thái cửa sổ thực tế mà không làm tái kích hoạt (re-arm) bộ đếm giờ Idle Sleep.
+- **Gia cố Thao tác Đóng Cửa sổ & Tránh Treo Hiệu ứng Kính Mờ (Close-to-Tray UI Hardening)**:
+  - Bổ sung cờ chặn `_closePending` ngăn chặn hiện tượng người dùng nhấp nút X liên tục gây xếp chồng nhiều hộp thoại xác nhận.
+  - Hộp thoại `CloseActionDialog` tự động phát hiện khi cổng ticker đang tắt để dựng hình ngay lập tức, loại bỏ hiệu ứng mờ/scale chuyển động có thể bị treo trong suốt.
+- **Bền vững Cấu hình Người Dùng (`AppPreferences` Durability & Atomic Flush)**:
+  - Tuần tự hóa toàn bộ tiến trình lưu file cấu hình người dùng qua file tạm `.tmp` rồi đổi tên nguyên tử (`atomic rename`), triệt tiêu rủi ro hỏng file JSON hoặc mất cài đặt (chế độ đóng cửa sổ, nhớ lựa chọn, theme) khi tắt máy đột ngột.
+  - Bổ sung hàm `flush()` ép ghi toàn bộ dữ liệu xuống đĩa trước khi thoát app hoặc khởi chạy cập nhật OTA.
+- **Tự động Dọn dẹp Vùng đệm Cập nhật OTA (`OtaStagingCleanup`)**:
+  - Tích hợp lớp `OtaStagingCleanup` tự động kiểm tra cờ `--ota-session` khi phiên bản mới khởi chạy thành công và xóa sạch file `update.zip` cùng thư mục giải nén tạm trong `%TEMP%`, tiết kiệm dung lượng ổ cứng trong khi vẫn bảo toàn bản backup và log rollback.
+
+### 📦 Phát hành
+- Đồng bộ version 1.8.1+18 trong pubspec.yaml, constants.dart, Runner.rc, installer.iss, install.bat, ABOUT.txt, USERGUIDE.md, README.md, RELEASE_NOTES.md.
+
 ## [1.8.0] - 2026-10-03
 
 ### 🚀 Nâng cấp & Tính năng mới

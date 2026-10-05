@@ -1,12 +1,16 @@
 ================================================================================
 JA LAN Messenger - Lightweight P2P Office LAN Messenger
 ================================================================================
-Version: 1.8.0+17
+Version: 1.8.1+18
 Developer: JA Team
 Language: Dart / Flutter Desktop
 Architecture: Pure Dart P2P Sockets (UDP Broadcast/Multicast + TCP Streaming)
 Protocol: Dual-Mode (BeeBEEP Compatible + JA Modern Packet)
 Features:
+- Scheduler Frame Gating & Zero Inactive GPU: PowerFrameGate overrides WidgetsBinding framesEnabled when inactive, blurred or minimized to eliminate rogue timer/setState repaints, and replays dirty UI seamlessly upon return
+- Native Window Snapshot Reconcile & Remote Session Guard: Verifies genuine Win32 window focus and visibility to recover from missed RDP/VNC remote reconnect events without re-arming idle sleep
+- Close-to-Tray Hardening & Atomic Preferences Durability: Prevents duplicated close prompts, displays close dialog without frozen transparent transitions, and serializes user settings via atomic flush/rename (.tmp)
+- OTA Staging Auto-Cleanup: Safely purges temporary update ZIPs and staging folders upon verified launch of new version while preserving backup snapshots and rollback logs
 - Flutter Desktop Power & GPU Optimizer: Single-source AppPowerManager managing 4 window states (Focus, Blur, Minimized, Idle Sleep 12s/30s/60s), 3 tiered ValueNotifiers, MeshOrb animation resume direction preservation, BounceMarquee freeze scroll offset & session epoch, native Win32 WM_ACTIVATE handling, and user power optimization settings UI
 - Consistent Windows Branding & Metadata: Native window title bar, Taskbar tooltip, Task Manager and executable metadata display 'JA LAN Messenger' (by JA Tech) consistently across Windows 10 & 11 instead of the raw process binary name ('ja_lan_messenger.exe')
 - Resilient AI Connection Recovery & Locator: Automatic discovery, ping tracking and background reconnection for Ollama/JA-AI engines

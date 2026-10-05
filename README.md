@@ -1,6 +1,6 @@
 # JA LAN Messenger
 
-[![Version](https://img.shields.io/badge/version-1.8.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.8.1-blue.svg)](CHANGELOG.md)
 [![Flutter Version](https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter)](https://flutter.dev)
 [![Dart Version](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com/windows)
@@ -13,6 +13,11 @@ A modern, ultra-lightweight, high-performance **Peer-to-Peer (P2P) Office LAN Me
 
 ## ⚡ Key Highlights
 
+- **Scheduler Frame Gate & Zero Inactive GPU**: Overrides Flutter's `WidgetsBinding.framesEnabled` via `PowerFrameGate` on `PowerAwareWidgetsBinding`. Completely halts frame rendering when inactive, blurred or minimized, eliminating rogue timer/caret/setState GPU draw on local Desktop and Remote Desktop (RDP/VNC). Replays dirty UI seamlessly on resume.
+- **Native Window Snapshot Reconcile & Remote Guard**: Verifies genuine Win32 window focus, visibility, and minimization state to protect against false `resumed` lifecycle signals during Remote Desktop reconnections, with a background 2s monitor that avoids re-arming idle sleep.
+- **Close-to-Tray UI Hardening & Zero-Frozen Transition**: Guards against rapid duplicate close requests and renders the close prompt directly without frozen transparent transitions when tickers are paused.
+- **Atomic Preferences Durability & Flush**: Serializes all configuration writes through temporary `.tmp` files and atomic renames, with explicit flush hooks before exit and OTA handoff.
+- **OTA Staging Auto-Cleanup**: Automatically cleans up temporary update ZIPs and staging directories upon successful launch of the new version while preserving backup snapshots and rollback logs.
 - **Flutter Desktop Power & GPU Optimizer**: Eliminates idle GPU draw when window is blurred, minimized or idle. Managed by singleton `AppPowerManager` with 3 tiered `ValueNotifier` channels (`background`, `indicators`, `marquee`). Features direction preservation on animation resume (`MeshOrb`), session epoch & freeze offset for marquee text, native Win32 `WM_ACTIVATE` integration, and in-app settings with 12s / 30s / 60s idle sleep timeout options.
 - **Resilient AI Connection Recovery & Locator**: Automatic network discovery, ping tracking, and transparent reconnection for local AI (Ollama/JA-AI) engines.
 - **Consistent Windows Branding & Metadata**: Shell window caption, Taskbar tooltip, Alt+Tab app switcher, Task Manager, and executable PE metadata consistently display `JA LAN Messenger` (by JA Tech) on Windows 10 & 11 instead of the raw process binary name (`ja_lan_messenger.exe`).

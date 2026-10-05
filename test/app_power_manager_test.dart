@@ -1,14 +1,29 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ja_lan_messenger/modules/services/app_power_manager.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('AppPowerManager Tests', () {
     late AppPowerManager manager;
 
     setUp(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('window_manager'),
+            (call) async => call.method != 'isMinimized',
+          );
       manager = AppPowerManager.instance;
       manager.resetForTesting();
+    });
+    tearDown(() {
+      manager.resetForTesting();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('window_manager'),
+            null,
+          );
     });
 
     test(
@@ -138,7 +153,7 @@ void main() {
       expect(manager.idleTimeoutSeconds, equals(30));
     });
 
-    test('onLifecycleStateChanged maps states correctly', () {
+    test('onLifecycleStateChanged maps states correctly', () async {
       manager.onLifecycleStateChanged(AppLifecycleState.inactive);
       expect(manager.isWindowFocused, isFalse);
       expect(manager.shouldAnimateBackground, isFalse);
@@ -151,17 +166,22 @@ void main() {
       expect(manager.shouldAnimateBackground, isFalse);
 
       manager.onLifecycleStateChanged(AppLifecycleState.resumed);
+      expect(manager.shouldAnimateBackground, isFalse);
+      await manager.synchronizeNative();
       expect(manager.isWindowVisible, isTrue);
       expect(manager.shouldAnimateBackground, isTrue);
     });
-    test('inactive then resumed restores focus; hidden/paused reset focus', () {
+    test('resumed requires native focus; hidden/paused reset focus', () async {
       manager.onLifecycleStateChanged(AppLifecycleState.inactive);
       manager.onLifecycleStateChanged(AppLifecycleState.resumed);
+      expect(manager.shouldAnimateIndicators, isFalse);
+      await manager.synchronizeNative();
       expect(manager.shouldAnimateIndicators, isTrue);
       manager.onLifecycleStateChanged(AppLifecycleState.hidden);
       expect(manager.isWindowFocused, isFalse);
       expect(manager.shouldAnimateIndicators, isFalse);
       manager.onLifecycleStateChanged(AppLifecycleState.resumed);
+      await manager.synchronizeNative();
       expect(manager.shouldAnimateIndicators, isTrue);
       manager.onLifecycleStateChanged(AppLifecycleState.paused);
       expect(manager.shouldAnimateIndicators, isFalse);

@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import '../constants.dart';
 import 'app_preferences.dart';
 import 'chat_history_service.dart';
+import 'ota_staging_cleanup.dart';
 
 /// Quản lý phân tích và so sánh số phiên bản SemVer (Semantic Versioning)
 class SemanticVersion implements Comparable<SemanticVersion> {
@@ -1230,6 +1231,7 @@ try {
     final currentExe = File(Platform.resolvedExecutable);
     final targetAppDir = currentExe.parent;
     final currentPid = pid;
+    await OtaStagingCleanup.register(tempBase, currentExe.path);
 
     // 5. Sinh script apply_update.bat độc lập
     final batFile = File('${tempBase.path}\\apply_update.bat');
@@ -1246,6 +1248,7 @@ try {
 
     // 6. Kích hoạt apply_update.bat ở chế độ Detached và thoát tiến trình hiện tại
     if (Platform.isWindows) {
+      await AppPreferences().flush();
       await ChatHistoryService().flush();
       final launch = await _runPowerShell(
         "Start-Process -FilePath 'cmd.exe' -ArgumentList ${_psLiteral('/c ""${batFile.path}""')} -WindowStyle Hidden",
@@ -1314,7 +1317,7 @@ robocopy "%SRC_DIR%" "%DST_DIR%" /E /IS /IT /NP /R:5 /W:2 /XD logs conversations
 if errorlevel 8 goto rollback
 
 echo [3/3] Khoi chay ung dung moi...
-start "" "%DST_DIR%\\%EXE_NAME%"
+start "" "%DST_DIR%\\%EXE_NAME%" "--ota-session=%~dp0."
 
 :: Cho 2s roi dong cua so
 timeout /t 2 /nobreak >nul

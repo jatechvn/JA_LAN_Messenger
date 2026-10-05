@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.8.0
+# Hướng dẫn sử dụng JA LAN Messenger v1.8.1
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.8.0_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.8.1_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -155,6 +155,11 @@
 ### 2.18. Hiển thị Tên Ứng dụng Chuẩn & Nhận diện Windows (Consistent Windows Branding & Metadata)
 - **Tên hiển thị chuyên nghiệp:** Cửa sổ ứng dụng, thanh Taskbar, trình chuyển cửa sổ `Alt + Tab`, và trình quản lý tác vụ Windows Task Manager luôn hiển thị tên chính thức **"JA LAN Messenger"** (phát hành bởi JA Tech) thay vì tên file thực thi kỹ thuật `ja_lan_messenger.exe`.
 - **Tương thích toàn diện:** Áp dụng đồng bộ trên cả Windows 10 (Aero Glass blur) và Windows 11 (Acrylic/Mica), đảm bảo đầy đủ thông tin mô tả chi tiết (File Description, Product Name, Copyright) trong thuộc tính tệp nhị phân.
+
+### 2.19. Cổng Khóa Khung Hình Tầng Scheduler & Chặn GPU Tuyệt Đối (Scheduler Frame Gate)
+- **Khóa khung hình ở mức sâu nhất (Zero Inactive GPU):** Trực tiếp kiểm soát `framesEnabled` trên Flutter Scheduler. Khi bạn chuyển sang ứng dụng khác hoặc thu nhỏ app, toàn bộ lệnh vẽ màn hình bị ngắt hoàn toàn ngay cả khi có timer hay sự kiện ngầm, đảm bảo GPU ở mức 0% tuyệt đối trên cả máy trạm trực tiếp và phiên Remote Desktop (RDP / VNC).
+- **Hồi phục giao diện tích lũy mượt mà:** Ngay khi cửa sổ nhận lại tiêu điểm, app tự động dựng lại khung hình hoàn chỉnh mà không bị giật hay chậm trễ.
+- **Bảo toàn cấu hình bền vững & Dọn rác OTA:** Cấu hình cá nhân được lưu nguyên tử (`atomic write`) chống mất cài đặt khi tắt máy; vùng nhớ đệm cập nhật OTA được tự động dọn dẹp sạch sẽ sau khi khởi chạy thành công bản mới.
 
 ---
 
