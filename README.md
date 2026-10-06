@@ -1,6 +1,6 @@
 # JA LAN Messenger
 
-[![Version](https://img.shields.io/badge/version-1.8.1-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.9.0-blue.svg)](CHANGELOG.md)
 [![Flutter Version](https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter)](https://flutter.dev)
 [![Dart Version](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com/windows)
@@ -13,6 +13,10 @@ A modern, ultra-lightweight, high-performance **Peer-to-Peer (P2P) Office LAN Me
 
 ## ⚡ Key Highlights
 
+- **LAN Attachment Batches & Shared Bubble**: Files and images sent together in one batch automatically group inside a cohesive shared chat bubble. Features independent transfer tracking, context menus, and send error isolation where a single failing file does not abort the remaining queue. Backward compatible with BeeBEEP via the 15th protocol field.
+- **Compact Adaptive Attachment Image Grid**: Smart responsive image layout using Wrap tiles (2x2 for 4 photos, 2 columns for 2, 3 columns for 3 or 5+ photos on >= 400px bubbles) with memory-bounded tile decoding to save RAM/GPU, mixed-file row ordering, and full-resolution lightbox viewer.
+- **Attachment Delivered & Read Receipts**: Real-time 'Delivered' (transfer ACK) and 'Seen' (BEE-READ protocol extension) status indicators for individual and batched files/images across both direct peer and group conversations.
+- **Unified Batch Footer**: Consolidated bottom-right footer displaying shared timestamp and aggregated delivery/seen status or failure count without duplicate per-file timestamps.
 - **Scheduler Frame Gate & Zero Inactive GPU**: Overrides Flutter's `WidgetsBinding.framesEnabled` via `PowerFrameGate` on `PowerAwareWidgetsBinding`. Completely halts frame rendering when inactive, blurred or minimized, eliminating rogue timer/caret/setState GPU draw on local Desktop and Remote Desktop (RDP/VNC). Replays dirty UI seamlessly on resume.
 - **Native Window Snapshot Reconcile & Remote Guard**: Verifies genuine Win32 window focus, visibility, and minimization state to protect against false `resumed` lifecycle signals during Remote Desktop reconnections, with a background 2s monitor that avoids re-arming idle sleep.
 - **Close-to-Tray UI Hardening & Zero-Frozen Transition**: Guards against rapid duplicate close requests and renders the close prompt directly without frozen transparent transitions when tickers are paused.

@@ -228,6 +228,102 @@ void main() {
   );
 
   test(
+    'received attachment read uses transfer ID and originating session only',
+    () {
+      hello('192.0.2.1');
+      hello('192.0.2.1', port: 6477, bee: true);
+      final peer = c.peersMap['192.0.2.1:6475']!;
+      final incoming = MessageModel(
+        id: 'file_192.0.2.1:6475/501',
+        senderId: peer.id,
+        senderName: 'Alice',
+        recipientId: 'me',
+        text: '',
+        isMine: false,
+        sourceSession: 'alice-ja',
+        status: MessageStatus.sending,
+        fileAttachment: const FileAttachmentInfo(
+          fileName: 'photo.png',
+          fileSize: 10,
+        ),
+      );
+      c.conversationsMap[peer.id] = [incoming];
+      final before = server.sent.length;
+      c.markMessagesAsRead(peer.id, {incoming});
+      expect(incoming.status, MessageStatus.sending);
+      expect(server.sent.length, before);
+      incoming.status = MessageStatus.delivered;
+      c.markMessagesAsRead(peer.id, {incoming});
+      expect(incoming.status, MessageStatus.read);
+      expect(server.sent.last.endpoint, '192.0.2.1:6475');
+      expect(server.sent.last.message['header'], ProtocolBeebeep.headerRead);
+      expect(server.sent.last.message['text'], 'file_501');
+      c.markMessagesAsRead(peer.id, {incoming});
+      expect(server.sent.length, before + 1);
+    },
+  );
+
+  test(
+    'direct and group file receipts match each recipient and survive JSON',
+    () {
+      hello('192.0.2.1');
+      hello('192.0.2.2', account: 'bob', host: 'PC-B');
+      final alice = c.peersMap['192.0.2.1:6475']!;
+      final bob = c.peersMap['192.0.2.2:6475']!;
+      final direct = MessageModel(
+        id: 'file_501',
+        senderId: 'me',
+        senderName: 'Me',
+        recipientId: alice.id,
+        text: '',
+        isMine: true,
+        status: MessageStatus.delivered,
+        fileAttachment: const FileAttachmentInfo(
+          fileName: 'one.txt',
+          fileSize: 1,
+        ),
+      );
+      c.conversationsMap[alice.id] = [direct];
+      server.onRead!(bob.id, 'file_501');
+      expect(direct.status, MessageStatus.delivered);
+      server.onRead!(alice.id, 'file_501');
+      expect(direct.status, MessageStatus.read);
+      final group = MessageModel(
+        id: 'file_multi_600',
+        senderId: 'me',
+        senderName: 'Me',
+        recipientId: 'group_files',
+        text: '',
+        isMine: true,
+        status: MessageStatus.delivered,
+        fileAttachment: const FileAttachmentInfo(
+          fileName: 'two.txt',
+          fileSize: 2,
+        ),
+        attachmentTransfers: {alice.id: '601', bob.id: '602'},
+        attachmentRecipientStatuses: {
+          alice.id: MessageStatus.delivered,
+          bob.id: MessageStatus.delivered,
+        },
+      );
+      c.conversationsMap['group_files'] = [group];
+      server.onRead!(bob.id, 'file_601');
+      expect(
+        group.attachmentRecipientStatuses[alice.id],
+        MessageStatus.delivered,
+      );
+      server.onRead!(alice.id, 'file_601');
+      expect(group.status, MessageStatus.delivered);
+      server.onRead!(bob.id, 'file_602');
+      expect(group.status, MessageStatus.read);
+      final restored = MessageModel.fromJson(group.toJson());
+      restored.updateAttachmentRecipient(alice.id, MessageStatus.delivered);
+      expect(restored.status, MessageStatus.read);
+      expect(restored.attachmentTransfers, group.attachmentTransfers);
+    },
+  );
+
+  test(
     'traffic cannot override advertised offline or revive a closed session',
     () {
       hello('192.0.2.1');

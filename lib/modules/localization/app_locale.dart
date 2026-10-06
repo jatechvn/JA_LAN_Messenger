@@ -271,6 +271,7 @@ class LanguageProvider extends ChangeNotifier {
       'revokeConfirm': 'Bạn có chắc chắn muốn thu hồi tin nhắn này không?',
       'typing': 'đang soạn tin...',
       'seen': 'Đã xem',
+      'attachmentReceived': 'Đã nhận',
       'newMessageNotification': 'Tin nhắn mới từ',
       'copy': 'Sao chép',
       // Truyền tệp
@@ -818,6 +819,7 @@ class LanguageProvider extends ChangeNotifier {
       'revokeConfirm': 'Are you sure you want to recall this message?',
       'typing': 'is typing...',
       'seen': 'Seen',
+      'attachmentReceived': 'Received',
       'newMessageNotification': 'New message from',
       'copy': 'Copy',
       // Transfers
@@ -1357,6 +1359,7 @@ class LanguageProvider extends ChangeNotifier {
       'revokeConfirm': '确定要撤回这条消息吗？',
       'typing': '正在输入...',
       'seen': '已读',
+      'attachmentReceived': '已接收',
       'newMessageNotification': '新消息来自',
       'copy': '复制',
       // 文件传输

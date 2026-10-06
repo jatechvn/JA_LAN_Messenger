@@ -545,7 +545,7 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
     });
 
     if (filesToSend.isNotEmpty) {
-      coordinator.sendFiles(filesToSend, text: text, replyTo: replying);
+      unawaited(_sendAttachments(coordinator, filesToSend, text, replying));
     } else {
       coordinator.sendMessage(text, replyTo: replying);
     }
@@ -556,6 +556,23 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
         _inputFocusNode.requestFocus();
       }
     });
+  }
+
+  Future<void> _sendAttachments(
+    MessengerCoordinator coordinator,
+    List<File> files,
+    String text,
+    MessageModel? replying,
+  ) async {
+    try {
+      await coordinator.sendFiles(files, text: text, replyTo: replying);
+    } catch (error) {
+      if (!mounted) return;
+      final lang = context.read<LanguageProvider>();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${lang.tr('transferFailed')}: $error')),
+      );
+    }
   }
 
   void _handleSendSticker(
@@ -937,12 +954,44 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
                                   itemBuilder: (context, index) {
                                     if (index < messages.length) {
                                       final msg = messages[index];
+                                      final separatorId =
+                                          _activeUnreadSeparatorMessageId;
+                                      if (index > 0 &&
+                                          msg.id != separatorId &&
+                                          messages[index - 1]
+                                              .sharesAttachmentBatch(msg)) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      final batch = <MessageModel>[msg];
+                                      for (
+                                        var j = index + 1;
+                                        j < messages.length;
+                                        j++
+                                      ) {
+                                        if (messages[j].id == separatorId ||
+                                            !msg.sharesAttachmentBatch(
+                                              messages[j],
+                                            )) {
+                                          break;
+                                        }
+                                        batch.add(messages[j]);
+                                      }
                                       final isFirstUnread =
                                           msg.id ==
                                           _activeUnreadSeparatorMessageId;
+                                      final batchImageCount = batch
+                                          .where(
+                                            (m) =>
+                                                MessengerCoordinator.isImageFile(
+                                                  m.fileAttachment?.fileName ??
+                                                      '',
+                                                ),
+                                          )
+                                          .length;
                                       final bubble = Listener(
                                         key:
-                                            !msg.isMine &&
+                                            batch.length == 1 &&
+                                                !msg.isMine &&
                                                 msg.status != MessageStatus.read
                                             ? _readKeys.putIfAbsent(
                                                 msg,
@@ -950,19 +999,162 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
                                               )
                                             : null,
                                         behavior: HitTestBehavior.translucent,
-                                        child: _MessageBubble(
-                                          message: msg,
-                                          isHighlighted:
-                                              msg.id == _highlightedMessageId,
-                                          onReply: (m) {
-                                            setState(() {
-                                              _replyingToMessage = m;
-                                            });
-                                            _inputFocusNode.requestFocus();
-                                          },
-                                          onScrollToMessage: (id) =>
-                                              _scrollToMessage(id, messages),
-                                        ),
+                                        child: batch.length > 1
+                                            ? Align(
+                                                alignment: msg.isMine
+                                                    ? Alignment.centerRight
+                                                    : Alignment.centerLeft,
+                                                child: Container(
+                                                  key: ValueKey(
+                                                    'attachment-batch-${msg.id}',
+                                                  ),
+                                                  width:
+                                                      batchImageCount >= 3 &&
+                                                          batchImageCount != 4
+                                                      ? 420
+                                                      : 360,
+                                                  margin:
+                                                      const EdgeInsets.symmetric(
+                                                        vertical: 6,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: msg.isMine
+                                                        ? ThemeProvider.of(
+                                                            context,
+                                                          ).colors.accentBlue
+                                                        : ThemeProvider.of(
+                                                            context,
+                                                          ).colors.cardBg,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          14,
+                                                        ),
+                                                  ),
+                                                  child: LayoutBuilder(
+                                                    builder: (context, constraints) {
+                                                      final columns =
+                                                          batchImageCount >=
+                                                                  3 &&
+                                                              batchImageCount !=
+                                                                  4 &&
+                                                              constraints
+                                                                      .maxWidth >=
+                                                                  400
+                                                          ? 3
+                                                          : 2;
+                                                      final tileWidth =
+                                                          (constraints
+                                                                  .maxWidth -
+                                                              6 *
+                                                                  (columns -
+                                                                      1)) /
+                                                          columns;
+                                                      return Column(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .stretch,
+                                                        children: [
+                                                          Wrap(
+                                                            key: ValueKey(
+                                                              'attachment-grid-${msg.id}',
+                                                            ),
+                                                            spacing: 6,
+                                                            runSpacing: 6,
+                                                            children: [
+                                                              for (final member
+                                                                  in batch)
+                                                                SizedBox(
+                                                                  key: ValueKey(
+                                                                    'attachment-tile-${member.id}',
+                                                                  ),
+                                                                  width:
+                                                                      MessengerCoordinator.isImageFile(
+                                                                        member
+                                                                            .fileAttachment!
+                                                                            .fileName,
+                                                                      )
+                                                                      ? tileWidth
+                                                                      : constraints
+                                                                            .maxWidth,
+                                                                  child: Listener(
+                                                                    behavior:
+                                                                        HitTestBehavior
+                                                                            .translucent,
+                                                                    key:
+                                                                        !member.isMine &&
+                                                                            member.status !=
+                                                                                MessageStatus.read
+                                                                        ? _readKeys.putIfAbsent(
+                                                                            member,
+                                                                            () =>
+                                                                                GlobalKey(),
+                                                                          )
+                                                                        : null,
+                                                                    child: _MessageBubble(
+                                                                      message:
+                                                                          member,
+                                                                      embedded:
+                                                                          true,
+                                                                      thumbnailExtent:
+                                                                          MessengerCoordinator.isImageFile(
+                                                                            member.fileAttachment!.fileName,
+                                                                          )
+                                                                          ? tileWidth -
+                                                                                12
+                                                                          : null,
+                                                                      isHighlighted:
+                                                                          member
+                                                                              .id ==
+                                                                          _highlightedMessageId,
+                                                                      onReply: (m) {
+                                                                        setState(
+                                                                          () => _replyingToMessage =
+                                                                              m,
+                                                                        );
+                                                                        _inputFocusNode
+                                                                            .requestFocus();
+                                                                      },
+                                                                      onScrollToMessage:
+                                                                          (
+                                                                            id,
+                                                                          ) => _scrollToMessage(
+                                                                            id,
+                                                                            messages,
+                                                                          ),
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                            ],
+                                                          ),
+                                                          _AttachmentBatchFooter(
+                                                            messages: batch,
+                                                          ),
+                                                        ],
+                                                      );
+                                                    },
+                                                  ),
+                                                ),
+                                              )
+                                            : _MessageBubble(
+                                                message: msg,
+                                                isHighlighted:
+                                                    msg.id ==
+                                                    _highlightedMessageId,
+                                                onReply: (m) {
+                                                  setState(() {
+                                                    _replyingToMessage = m;
+                                                  });
+                                                  _inputFocusNode
+                                                      .requestFocus();
+                                                },
+                                                onScrollToMessage: (id) =>
+                                                    _scrollToMessage(
+                                                      id,
+                                                      messages,
+                                                    ),
+                                              ),
                                       );
 
                                       if (isFirstUnread) {
@@ -2180,12 +2372,16 @@ class _QuoteCard extends StatelessWidget {
 
 class _MessageBubble extends StatefulWidget {
   final MessageModel message;
+  final bool embedded;
+  final double? thumbnailExtent;
   final bool isHighlighted;
   final ValueChanged<MessageModel>? onReply;
   final ValueChanged<String>? onScrollToMessage;
 
   const _MessageBubble({
     required this.message,
+    this.embedded = false,
+    this.thumbnailExtent,
     this.isHighlighted = false,
     this.onReply,
     this.onScrollToMessage,
@@ -2863,6 +3059,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
         attachment != null &&
         MessengerCoordinator.isImageFile(attachment.fileName);
     final isPureImage =
+        !widget.embedded &&
         isImg &&
         fileExists &&
         message.replyToText == null &&
@@ -3357,10 +3554,19 @@ class _MessageBubbleState extends State<_MessageBubble> {
                                               : Colors.white70,
                                         ),
                                         if (message.status ==
-                                            MessageStatus.read) ...[
+                                                MessageStatus.read ||
+                                            (message.hasAttachment &&
+                                                message.status ==
+                                                    MessageStatus
+                                                        .delivered)) ...[
                                           const SizedBox(width: 3),
                                           Text(
-                                            lang.tr('seen'),
+                                            lang.tr(
+                                              message.status ==
+                                                      MessageStatus.read
+                                                  ? 'seen'
+                                                  : 'attachmentReceived',
+                                            ),
                                             style: const TextStyle(
                                               fontSize: 9.5,
                                               fontWeight: FontWeight.w600,
@@ -3482,10 +3688,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
         final targetWidth = isWide
             ? (availableWidth * 0.85).clamp(420.0, 950.0)
             : (availableWidth * 0.68).clamp(320.0, 620.0);
-        final maxBubbleWidth = math.min(
-          targetWidth,
-          math.max(260.0, availableWidth - 32.0),
-        );
+        final maxBubbleWidth = widget.embedded
+            ? availableWidth
+            : math.min(targetWidth, math.max(260.0, availableWidth - 32.0));
 
         Widget bubbleColumn = Column(
           crossAxisAlignment: isMine
@@ -3506,21 +3711,28 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     curve: Curves.easeOut,
-                    margin: const EdgeInsets.only(top: 8, bottom: 4),
+                    margin: widget.embedded
+                        ? EdgeInsets.zero
+                        : const EdgeInsets.only(top: 8, bottom: 4),
+                    width: widget.embedded ? double.infinity : null,
                     constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 9,
-                    ),
+                    padding: widget.thumbnailExtent != null
+                        ? const EdgeInsets.all(6)
+                        : const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 9,
+                          ),
                     decoration: BoxDecoration(
-                      color: bubbleBg,
+                      color: widget.embedded ? Colors.transparent : bubbleBg,
                       borderRadius: BorderRadius.only(
                         topLeft: const Radius.circular(14),
                         topRight: const Radius.circular(14),
                         bottomLeft: Radius.circular(isMine ? 14 : 2),
                         bottomRight: Radius.circular(isMine ? 2 : 14),
                       ),
-                      border: widget.isHighlighted
+                      border: widget.embedded
+                          ? null
+                          : widget.isHighlighted
                           ? Border.all(color: Colors.amberAccent, width: 2.0)
                           : (isMine
                                 ? null
@@ -3543,22 +3755,26 @@ class _MessageBubbleState extends State<_MessageBubble> {
                                                 width: 1.0,
                                               )
                                             : null))),
-                      boxShadow: [
-                        if (widget.isHighlighted)
-                          BoxShadow(
-                            color: Colors.amberAccent.withValues(alpha: 0.5),
-                            blurRadius: 12,
-                            spreadRadius: 2,
-                          )
-                        else
-                          BoxShadow(
-                            color: Colors.black.withValues(
-                              alpha: theme.isDark ? 0.30 : 0.04,
-                            ),
-                            blurRadius: theme.isDark ? 8 : 4,
-                            offset: const Offset(0, 2),
-                          ),
-                      ],
+                      boxShadow: widget.embedded
+                          ? []
+                          : [
+                              if (widget.isHighlighted)
+                                BoxShadow(
+                                  color: Colors.amberAccent.withValues(
+                                    alpha: 0.5,
+                                  ),
+                                  blurRadius: 12,
+                                  spreadRadius: 2,
+                                )
+                              else
+                                BoxShadow(
+                                  color: Colors.black.withValues(
+                                    alpha: theme.isDark ? 0.30 : 0.04,
+                                  ),
+                                  blurRadius: theme.isDark ? 8 : 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                            ],
                     ),
                     child: Column(
                       crossAxisAlignment: isMine
@@ -3695,6 +3911,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
                           _AttachmentPreview(
                             attachment: message.fileAttachment!,
                             isMine: isMine,
+                            thumbnailExtent: widget.thumbnailExtent,
                           ),
                         ],
 
@@ -3709,116 +3926,124 @@ class _MessageBubbleState extends State<_MessageBubble> {
 
                         const SizedBox(height: 3),
                         // Timestamp & Delivery/Read Status
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              timeStr,
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: isMine
-                                    ? Colors.white70
-                                    : (theme.isDark
-                                          ? const Color(0xFF94A3B8)
-                                          : Colors.black38),
-                              ),
-                            ),
-                            if (message.aiModelTag != null) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 5,
-                                  vertical: 1,
+                        if (!widget.embedded)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                timeStr,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isMine
+                                      ? Colors.white70
+                                      : (theme.isDark
+                                            ? const Color(0xFF94A3B8)
+                                            : Colors.black38),
                                 ),
-                                decoration: BoxDecoration(
-                                  color:
-                                      (theme.isDark
-                                              ? Colors.purple.shade900
-                                              : Colors.purple.shade50)
-                                          .withValues(alpha: 0.5),
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(
+                              ),
+                              if (message.aiModelTag != null) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
                                     color:
                                         (theme.isDark
-                                                ? Colors.purple.shade400
-                                                : Colors.purple.shade300)
-                                            .withValues(alpha: 0.4),
-                                    width: 0.8,
+                                                ? Colors.purple.shade900
+                                                : Colors.purple.shade50)
+                                            .withValues(alpha: 0.5),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color:
+                                          (theme.isDark
+                                                  ? Colors.purple.shade400
+                                                  : Colors.purple.shade300)
+                                              .withValues(alpha: 0.4),
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    message.aiModelTag!,
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w600,
+                                      color: theme.isDark
+                                          ? const Color(0xFFD8B4FE)
+                                          : const Color(0xFF7E22CE),
+                                    ),
                                   ),
                                 ),
-                                child: Text(
-                                  message.aiModelTag!,
-                                  style: TextStyle(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w600,
-                                    color: theme.isDark
-                                        ? const Color(0xFFD8B4FE)
-                                        : const Color(0xFF7E22CE),
-                                  ),
-                                ),
-                              ),
-                            ],
-                            if (isMine) ...[
-                              const SizedBox(width: 4),
-                              if (coordinator.canRetryMessage(message))
-                                InkWell(
-                                  onTap: () =>
-                                      coordinator.retrySendMessage(message),
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: Tooltip(
-                                    message: lang.tr('messageFailedTooltip'),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.error_outline_rounded,
-                                          size: 12.5,
-                                          color: Color(0xFFF87171),
-                                        ),
-                                        const SizedBox(width: 2),
-                                        Text(
-                                          lang.tr('retrySend'),
-                                          style: const TextStyle(
-                                            fontSize: 9.5,
-                                            fontWeight: FontWeight.w600,
+                              ],
+                              if (isMine) ...[
+                                const SizedBox(width: 4),
+                                if (coordinator.canRetryMessage(message))
+                                  InkWell(
+                                    onTap: () =>
+                                        coordinator.retrySendMessage(message),
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: Tooltip(
+                                      message: lang.tr('messageFailedTooltip'),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                            Icons.error_outline_rounded,
+                                            size: 12.5,
                                             color: Color(0xFFF87171),
                                           ),
-                                        ),
-                                      ],
+                                          const SizedBox(width: 2),
+                                          Text(
+                                            lang.tr('retrySend'),
+                                            style: const TextStyle(
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFFF87171),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
+                                  )
+                                else ...[
+                                  Icon(
+                                    message.status == MessageStatus.read
+                                        ? Icons.done_all_rounded
+                                        : (message.status ==
+                                                  MessageStatus.delivered
+                                              ? Icons.done_all_rounded
+                                              : (message.status ==
+                                                        MessageStatus.sent
+                                                    ? Icons.done_rounded
+                                                    : Icons.schedule_rounded)),
+                                    size: 12.5,
+                                    color: message.status == MessageStatus.read
+                                        ? const Color(0xFF67E8F9)
+                                        : Colors.white70,
                                   ),
-                                )
-                              else ...[
-                                Icon(
-                                  message.status == MessageStatus.read
-                                      ? Icons.done_all_rounded
-                                      : (message.status ==
-                                                MessageStatus.delivered
-                                            ? Icons.done_all_rounded
-                                            : (message.status ==
-                                                      MessageStatus.sent
-                                                  ? Icons.done_rounded
-                                                  : Icons.schedule_rounded)),
-                                  size: 12.5,
-                                  color: message.status == MessageStatus.read
-                                      ? const Color(0xFF67E8F9)
-                                      : Colors.white70,
-                                ),
-                                if (message.status == MessageStatus.read) ...[
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    lang.tr('seen'),
-                                    style: const TextStyle(
-                                      fontSize: 9.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF67E8F9),
+                                  if (message.status == MessageStatus.read ||
+                                      (message.hasAttachment &&
+                                          message.status ==
+                                              MessageStatus.delivered)) ...[
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      lang.tr(
+                                        message.status == MessageStatus.read
+                                            ? 'seen'
+                                            : 'attachmentReceived',
+                                      ),
+                                      style: const TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF67E8F9),
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ],
                               ],
                             ],
-                          ],
-                        ),
+                          ),
                       ],
                     ),
                   ),
@@ -3866,7 +4091,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
           ],
         );
 
-        if (isGroupOrBroadcast && senderPeer != null) {
+        if (!widget.embedded && isGroupOrBroadcast && senderPeer != null) {
           bubbleColumn = Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -3889,6 +4114,75 @@ class _MessageBubbleState extends State<_MessageBubble> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Presentation aggregate only. Each attachment retains its own read receipt.
+class _AttachmentBatchFooter extends StatelessWidget {
+  final List<MessageModel> messages;
+  const _AttachmentBatchFooter({required this.messages});
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = context.watch<LanguageProvider>();
+    final theme = ThemeProvider.of(context);
+    final first = messages.first;
+    final statuses = messages.map((m) => m.status).toList();
+    final status = statuses.every((s) => s == MessageStatus.read)
+        ? MessageStatus.read
+        : statuses.every(
+            (s) => s == MessageStatus.delivered || s == MessageStatus.read,
+          )
+        ? MessageStatus.delivered
+        : statuses.contains(MessageStatus.failed)
+        ? MessageStatus.failed
+        : statuses.contains(MessageStatus.sending)
+        ? MessageStatus.sending
+        : MessageStatus.sent;
+    final time = first.timestamp.toLocal();
+    final timeText =
+        '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    final color = first.isMine ? Colors.white70 : theme.colors.textMuted;
+    final stateColor = status == MessageStatus.read
+        ? const Color(0xFF67E8F9)
+        : status == MessageStatus.failed
+        ? const Color(0xFFF87171)
+        : color;
+    final label = status == MessageStatus.read
+        ? lang.tr('seen')
+        : status == MessageStatus.delivered
+        ? lang.tr('attachmentReceived')
+        : status == MessageStatus.failed
+        ? '${lang.tr('transferFailed')} (${statuses.where((s) => s == MessageStatus.failed).length}/${messages.length})'
+        : null;
+    return Padding(
+      key: ValueKey('attachment-batch-footer-${first.id}'),
+      padding: const EdgeInsets.fromLTRB(10, 3, 10, 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text(timeText, style: TextStyle(fontSize: 10, color: color)),
+          if (first.isMine) ...[
+            const SizedBox(width: 5),
+            Icon(
+              status == MessageStatus.read || status == MessageStatus.delivered
+                  ? Icons.done_all_rounded
+                  : status == MessageStatus.failed
+                  ? Icons.error_outline_rounded
+                  : status == MessageStatus.sent
+                  ? Icons.done_rounded
+                  : Icons.schedule_rounded,
+              size: 13,
+              color: stateColor,
+            ),
+            if (label != null) ...[
+              const SizedBox(width: 3),
+              Text(label, style: TextStyle(fontSize: 10, color: stateColor)),
+            ],
+          ],
+        ],
+      ),
     );
   }
 }
@@ -4420,8 +4714,13 @@ void _showAttachmentLightbox(
 class _AttachmentPreview extends StatelessWidget {
   final FileAttachmentInfo attachment;
   final bool isMine;
+  final double? thumbnailExtent;
 
-  const _AttachmentPreview({required this.attachment, required this.isMine});
+  const _AttachmentPreview({
+    required this.attachment,
+    required this.isMine,
+    this.thumbnailExtent,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -4433,6 +4732,31 @@ class _AttachmentPreview extends StatelessWidget {
         : null;
     final fileExists = file != null && file.existsSync();
 
+    if (isImg && !fileExists && thumbnailExtent != null) {
+      return SizedBox.square(
+        dimension: thumbnailExtent!,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.image_outlined,
+              color: isMine ? Colors.white70 : theme.colors.textSecondary,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              attachment.fileName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10,
+                color: isMine ? Colors.white70 : theme.colors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     // 1. Image Preview with Thumbnail & Lightbox Zoom Viewer
     if (isImg && fileExists) {
       return InkWell(
@@ -4442,12 +4766,17 @@ class _AttachmentPreview extends StatelessWidget {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(10),
           child: Container(
-            constraints: const BoxConstraints(
-              maxWidth: 280,
-              maxHeight: 200,
-              minWidth: 140,
-              minHeight: 90,
-            ),
+            constraints: thumbnailExtent != null
+                ? BoxConstraints.tightFor(
+                    width: thumbnailExtent,
+                    height: thumbnailExtent,
+                  )
+                : const BoxConstraints(
+                    maxWidth: 280,
+                    maxHeight: 200,
+                    minWidth: 140,
+                    minHeight: 90,
+                  ),
             decoration: BoxDecoration(
               color: (isMine ? Colors.black : Colors.white).withValues(
                 alpha: 0.15,
@@ -4459,6 +4788,10 @@ class _AttachmentPreview extends StatelessWidget {
               children: [
                 Image.file(
                   file,
+                  cacheWidth:
+                      ((thumbnailExtent ?? 280) *
+                              MediaQuery.devicePixelRatioOf(context))
+                          .ceil(),
                   fit: BoxFit.cover,
                   width: double.infinity,
                   height: double.infinity,

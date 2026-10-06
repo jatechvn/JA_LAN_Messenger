@@ -257,6 +257,7 @@ class MessengerCoordinator extends ChangeNotifier {
   final LanDiscoveryService _discovery = LanDiscoveryService();
   final LanTcpServer _tcpServer;
   final FileTransferEngine _fileEngine = FileTransferEngine();
+  int _lastAttachmentBatchId = 0;
   final SecurityService security = SecurityService();
   final KnownDevicesRegistry knownDevices;
   final ChatHistoryService chatHistory = ChatHistoryService();
@@ -414,15 +415,33 @@ class MessengerCoordinator extends ChangeNotifier {
       for (final entry in _conversations.entries) {
         for (final message in entry.value) {
           if (message.id == 'file_${task.id}') {
-            message.status = task.status == TransferStatus.completed
+            final status = task.status == TransferStatus.completed
                 ? MessageStatus.delivered
                 : task.status == TransferStatus.failed ||
                       task.status == TransferStatus.cancelled
                 ? MessageStatus.failed
                 : MessageStatus.sending;
+            if (message.status != MessageStatus.read) message.status = status;
             if (task.status == TransferStatus.completed ||
                 task.status == TransferStatus.failed ||
                 task.status == TransferStatus.cancelled) {
+              chatHistory.scheduleSave(entry.key, entry.value);
+            }
+          }
+          if (task.isUpload) {
+            final recipient = message.attachmentTransfers.entries
+                .where((e) => e.value == task.id)
+                .firstOrNull;
+            if (recipient != null) {
+              message.updateAttachmentRecipient(
+                recipient.key,
+                task.status == TransferStatus.completed
+                    ? MessageStatus.delivered
+                    : task.status == TransferStatus.failed ||
+                          task.status == TransferStatus.cancelled
+                    ? MessageStatus.failed
+                    : MessageStatus.sending,
+              );
               chatHistory.scheduleSave(entry.key, entry.value);
             }
           }
@@ -3458,24 +3477,34 @@ class MessengerCoordinator extends ChangeNotifier {
       for (final m in list) {
         if (visibleMessages.contains(m) &&
             !m.isMine &&
+            (m.fileAttachment == null || m.status == MessageStatus.delivered) &&
             m.status != MessageStatus.read) {
           m.status = MessageStatus.read;
           hadUnread = true;
-          if (peerId != '__ALL_USERS__' &&
-              !_groups.containsKey(peerId) &&
-              int.tryParse(m.id) != null) {
+          final fileId = m.fileAttachment != null
+              ? RegExp(r'^file_.+/(\d+)$').firstMatch(m.id)?.group(1)
+              : null;
+          final receiptId = fileId != null ? 'file_$fileId' : m.id;
+          final receiptPeer = fileId != null ? m.senderId : peerId;
+          if (fileId != null ||
+              (peerId != '__ALL_USERS__' &&
+                  !_groups.containsKey(peerId) &&
+                  int.tryParse(m.id) != null)) {
             final sessions = _peerSessions
-                .forConversation(peerId)
+                .forConversation(receiptPeer)
                 .where((s) => s.available && s.hash == m.sourceSession);
             if (m.sourceSession != null) {
               if (sessions.isNotEmpty) {
                 _tcpServer.send(
                   sessions.first.endpoint,
-                  ProtocolBeebeep.buildReadPacket(m.id),
+                  ProtocolBeebeep.buildReadPacket(receiptId),
                 );
               }
             } else {
-              _sendToPeer(peerId, ProtocolBeebeep.buildReadPacket(m.id));
+              _sendToPeer(
+                receiptPeer,
+                ProtocolBeebeep.buildReadPacket(receiptId),
+              );
             }
           }
         }
@@ -3564,6 +3593,28 @@ class MessengerCoordinator extends ChangeNotifier {
   /// Xử lý tín hiệu đã xem (read receipt) nhận được
   void _handleIncomingReadReceipt(String senderIp, String messageId) {
     if (_disposed) return;
+    if (RegExp(r'^file_\d+$').hasMatch(messageId)) {
+      final sender = _incomingPeer(senderIp);
+      if (sender == null) return;
+      final transferId = messageId.substring(5);
+      for (final entry in _conversations.entries) {
+        for (final message in entry.value) {
+          if (!message.isMine || message.fileAttachment == null) continue;
+          if (message.attachmentTransfers[sender.id] == transferId) {
+            message.updateAttachmentRecipient(sender.id, MessageStatus.read);
+          } else if (entry.key == sender.id &&
+              message.id == messageId &&
+              message.status == MessageStatus.delivered) {
+            message.status = MessageStatus.read;
+          } else {
+            continue;
+          }
+          chatHistory.scheduleSave(entry.key, entry.value);
+          notifyListeners();
+        }
+      }
+      return;
+    }
     final peer =
         _incomingPeer(senderIp) ??
         PeerModel(
@@ -4667,6 +4718,7 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
     File file, {
     String? caption,
     PeerModel? recipient,
+    String? attachmentBatchId,
   }) async {
     final selected = recipient ?? _selectedPeer;
     if (selected == null) return;
@@ -4742,6 +4794,7 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
       final fileSize = await file.length();
       final msgText = hasCaption ? caption.trim() : '📁 $fileName';
       multiMsg = MessageModel(
+        attachmentBatchId: attachmentBatchId,
         id: 'file_multi_${DateTime.now().microsecondsSinceEpoch}',
         senderId: 'me',
         senderName: localUsername,
@@ -4749,6 +4802,7 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
         text: msgText,
         isMine: true,
         status: MessageStatus.sending,
+        attachmentTransfers: {for (final target in targets) target.id: ''},
         fileAttachment: FileAttachmentInfo(
           fileName: fileName,
           fileSize: fileSize,
@@ -4797,8 +4851,18 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
         peerName: peer.name,
         file: file,
         groupId: selected.isGroup && !selected.isAllUsers ? selected.id : null,
+        attachmentBatchId: attachmentBatchId,
       );
       if (_disposed) return;
+      if (multiMsg != null) {
+        multiMsg.attachmentTransfers[peer.id] = task.id;
+        multiMsg.updateAttachmentRecipient(
+          peer.id,
+          task.status == TransferStatus.failed
+              ? MessageStatus.failed
+              : MessageStatus.sending,
+        );
+      }
       if (task.status != TransferStatus.failed) {
         anySuccess = true;
       }
@@ -4807,7 +4871,14 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
             ? caption.trim()
             : '📁 ${task.fileName} → ${peer.displayName}';
         final msg = MessageModel(
+          attachmentBatchId: attachmentBatchId,
           id: 'file_${task.id}',
+          attachmentTransfers: {peer.id: task.id},
+          attachmentRecipientStatuses: {
+            peer.id: task.status == TransferStatus.failed
+                ? MessageStatus.failed
+                : MessageStatus.sending,
+          },
           senderId: 'me',
           senderName: localUsername,
           recipientId: selected.id,
@@ -4835,8 +4906,10 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
       }
     }
     if (isMultiRecipient && multiMsg != null) {
-      multiMsg.status = anySuccess ? MessageStatus.sent : MessageStatus.failed;
+      if (!anySuccess) multiMsg.status = MessageStatus.failed;
+      chatHistory.scheduleSave(selected.id, _conversations[selected.id]!);
       notifyListeners();
+      if (!anySuccess) throw StateError('No file offer was accepted');
     }
   }
 
@@ -4851,6 +4924,11 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
 
     final trimmedText = text?.trim();
     final hasText = trimmedText != null && trimmedText.isNotEmpty;
+    final now = DateTime.now().microsecondsSinceEpoch;
+    _lastAttachmentBatchId = now > _lastAttachmentBatchId
+        ? now
+        : _lastAttachmentBatchId + 1;
+    final batchId = files.length > 1 ? 'batch_$_lastAttachmentBatchId' : null;
 
     if (files.isEmpty) {
       if (hasText) {
@@ -4880,6 +4958,7 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
         final fileName = f.path.split(Platform.pathSeparator).last;
         final fileSize = await f.length();
         final msg = MessageModel(
+          attachmentBatchId: batchId,
           id: 'ai_file_${DateTime.now().microsecondsSinceEpoch}_$i',
           senderId: 'me',
           senderName: localUsername,
@@ -4898,6 +4977,7 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
       }
       _aiPeer.lastMessage = plainText;
       _aiPeer.lastMessageTime = DateTime.now();
+      chatHistory.scheduleSave(_aiPeer.id, _conversations[_aiPeer.id]!);
       notifyListeners();
       _dispatchAiResponse(
         plainText,
@@ -4908,19 +4988,67 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
 
     if (hasText && replyTo != null) {
       await sendMessage(trimmedText, replyTo: replyTo);
-      for (final file in files) {
-        await sendFile(file, recipient: selected);
-      }
-    } else if (hasText) {
-      await sendFile(files.first, caption: trimmedText, recipient: selected);
-      for (int i = 1; i < files.length; i++) {
-        await sendFile(files[i], recipient: selected);
-      }
-    } else {
-      for (final file in files) {
-        await sendFile(file, recipient: selected);
+    }
+    var failedCount = 0;
+    for (var i = 0; i < files.length; i++) {
+      if (_disposed) return;
+      final before = Set<MessageModel>.of(_conversations[selected.id] ?? []);
+      try {
+        await sendFile(
+          files[i],
+          caption: i == 0 && hasText && replyTo == null ? trimmedText : null,
+          recipient: selected,
+          attachmentBatchId: batchId,
+        );
+      } catch (_) {
+        if (_disposed) return;
+        failedCount++;
+        final recorded = (_conversations[selected.id] ?? <MessageModel>[])
+            .where(
+              (m) =>
+                  !before.contains(m) &&
+                  m.isMine &&
+                  m.fileAttachment?.localPath == files[i].path &&
+                  m.attachmentBatchId == batchId,
+            )
+            .firstOrNull;
+        if (recorded != null) {
+          for (final recipient in recorded.attachmentTransfers.entries) {
+            if (recipient.value.isEmpty) {
+              recorded.attachmentRecipientStatuses[recipient.key] =
+                  MessageStatus.failed;
+            }
+          }
+          recorded.status = MessageStatus.failed;
+          chatHistory.scheduleSave(selected.id, _conversations[selected.id]!);
+          notifyListeners();
+        } else {
+          final file = files[i];
+          _conversations
+              .putIfAbsent(selected.id, () => [])
+              .add(
+                MessageModel(
+                  id: 'file_failed_${DateTime.now().microsecondsSinceEpoch}_$i',
+                  senderId: 'me',
+                  senderName: localUsername,
+                  recipientId: selected.id,
+                  text: i == 0 && hasText && replyTo == null ? trimmedText : '',
+                  isMine: true,
+                  status: MessageStatus.failed,
+                  attachmentBatchId: batchId,
+                  fileAttachment: FileAttachmentInfo(
+                    fileName: file.path.split(Platform.pathSeparator).last,
+                    fileSize: 0,
+                    localPath: file.path,
+                  ),
+                ),
+              );
+          chatHistory.scheduleSave(selected.id, _conversations[selected.id]!);
+          notifyListeners();
+        }
       }
     }
+    if (failedCount > 0) throw StateError('$failedCount/${files.length}');
   }
 
   /// Trích xuất danh sách tệp hoặc ảnh chụp màn hình từ Clipboard mà không gửi ngay
@@ -5620,6 +5748,8 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
 
     final msg = MessageModel(
       id: 'file_${task.id}',
+      attachmentBatchId: task.attachmentBatchId,
+      sourceSession: _incomingHash(task.peerId, senderPeer),
       senderId: senderPeer.id,
       senderName: senderPeer.displayName,
       recipientId: group?.id ?? 'me',

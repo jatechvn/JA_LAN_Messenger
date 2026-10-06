@@ -17,6 +17,7 @@ class _BatchCoordinator extends MessengerCoordinator {
     File file, {
     String? caption,
     PeerModel? recipient,
+    String? attachmentBatchId,
   }) async {
     recipients.add(recipient?.id ?? selectedPeer?.id);
     selectPeer(other);

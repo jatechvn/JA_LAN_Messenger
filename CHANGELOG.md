@@ -2,6 +2,27 @@
 
 All notable changes to the **JA LAN Messenger** project will be documented in this file.
 
+## [1.9.0] - 2026-10-06
+
+### 🚀 Nâng cấp & Tính năng mới
+- **Gộp Bong Bóng Đính Kèm Theo Mẻ (LAN Attachment Batches & Shared Bubble)**:
+  - Khi gửi nhiều tệp tin hoặc hình ảnh cùng một lúc, các tệp liền kề thuộc cùng một mẻ (`attachmentBatchId`) tự động gộp chung trong một bong bóng tin nhắn duy nhất, mang lại giao diện tinh gọn, hiện đại tương tự các ứng dụng nhắn tin hàng đầu.
+  - Mỗi tệp trong mẻ vẫn duy trì đầy đủ tiến trình tải, trạng thái truyền, menu thao tác chuột phải, và bộ phím nhận diện đã đọc độc lập.
+  - **Cách ly lỗi gửi tệp (Send Error Isolation)**: Khi một tệp trong mẻ bị lỗi hoặc không tồn tại, hệ thống không hủy toàn bộ mẻ mà tiếp tục gửi các tệp còn lại, ghi nhận chính xác tệp lỗi và báo cáo số lượng thất bại.
+  - **Mở rộng Giao thức BeeBEEP an toàn**: Bổ sung trường thứ 15 lưu `attachmentBatchId` trong gói tin chào file (`file offer`), giữ tương thích ngược tuyệt đối với các máy BeeBEEP C++ và bản cũ (vốn chỉ đọc 13 trường đầu).
+- **Lưới Ảnh Thích Ứng Thu Nhỏ Co Giãn (Compact Adaptive Attachment Image Grid)**:
+  - Tự động sắp xếp các hình ảnh đính kèm theo lưới thu nhỏ linh hoạt (`Wrap tiles`): 2 ảnh chia 2 cột, 4 ảnh xếp lưới 2x2 vuông vức, 3 ảnh hoặc 5+ ảnh hiển thị 3 cột khi bong bóng rộng >= 400px (hoặc 2 cột trên màn hình hẹp).
+  - Tệp tài liệu thông thường trong mẻ hỗn hợp giữ nguyên dạng hàng ngang đầy đủ theo đúng thứ tự lựa chọn.
+  - Thu nhỏ và giới hạn giải mã thumbnail theo kích thước hiển thị * tỷ lệ pixel thiết bị (DPR), tiết kiệm đáng kể bộ nhớ RAM và GPU, nhấp vào ảnh vẫn mở Lightbox xem độ phân giải gốc.
+- **Xác Nhận Đã Nhận & Đã Xem Cho Tệp Tin & Ảnh (Attachment Received & Read Receipts)**:
+  - Bổ sung trạng thái **Đã nhận** (khi đối phương tải xong file và gửi ACK hoàn tất) và **Đã xem** (`seen` / phát sự kiện `BEE-READ`) trên từng tệp tin và ảnh gửi đi.
+  - Hỗ trợ đầy đủ cho cả cuộc trò chuyện trực tiếp (Direct) và trò chuyện nhóm (Group chat - tổng hợp chỉ đánh dấu Đã nhận/Đã xem khi tất cả thành viên đáp ứng).
+- **Chân Bong Bóng Gộp Chung Thống Nhất (Shared Attachment Batch Footer)**:
+  - Loại bỏ việc lặp lại tem thời gian (timestamp) và nhãn trạng thái ở từng tệp lẻ. Toàn bộ mẻ đính kèm hiển thị một chân footer góc dưới bên phải thống nhất, phản ánh trạng thái tổng hợp của cả mẻ.
+
+### 📦 Phát hành
+- Đồng bộ version 1.9.0+19 trong pubspec.yaml, constants.dart, Runner.rc, installer.iss, install.bat, ABOUT.txt, USERGUIDE.md, README.md, RELEASE_NOTES.md.
+
 ## [1.8.1] - 2026-10-05
 
 ### 🚀 Nâng cấp & Tính năng mới

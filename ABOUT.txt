@@ -1,12 +1,16 @@
 ================================================================================
 JA LAN Messenger - Lightweight P2P Office LAN Messenger
 ================================================================================
-Version: 1.8.1+18
+Version: 1.9.0+19
 Developer: JA Team
 Language: Dart / Flutter Desktop
 Architecture: Pure Dart P2P Sockets (UDP Broadcast/Multicast + TCP Streaming)
 Protocol: Dual-Mode (BeeBEEP Compatible + JA Modern Packet)
 Features:
+- LAN Attachment Batches & Shared Bubble: Adjacent files and images sent together in one batch share a single cohesive chat bubble with independent transfer progress, actions, and per-file send error isolation
+- Compact Adaptive Image Grid: Responsive Wrap image grid (2x2 for 4 photos, 2 columns for 2, 3 columns for 3 or 5+ photos on >= 400px bubbles) with memory-bounded tile thumbnails and full-size lightbox viewer
+- Attachment Delivered & Read Receipts: Full support for 'Delivered' (file transfer ACK) and 'Seen' (BEE-READ protocol extension) on outgoing files and images across both direct peer and group conversations
+- Unified Batch Footer: Consolidated bottom-right footer displaying shared timestamp and aggregated delivery/seen status or failure count without duplicate per-file timestamps
 - Scheduler Frame Gating & Zero Inactive GPU: PowerFrameGate overrides WidgetsBinding framesEnabled when inactive, blurred or minimized to eliminate rogue timer/setState repaints, and replays dirty UI seamlessly upon return
 - Native Window Snapshot Reconcile & Remote Session Guard: Verifies genuine Win32 window focus and visibility to recover from missed RDP/VNC remote reconnect events without re-arming idle sleep
 - Close-to-Tray Hardening & Atomic Preferences Durability: Prevents duplicated close prompts, displays close dialog without frozen transparent transitions, and serializes user settings via atomic flush/rename (.tmp)

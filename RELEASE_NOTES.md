@@ -1,24 +1,23 @@
-TAG=v1.8.1
-TITLE=JA LAN Messenger v1.8.1 — Scheduler Frame Gate, Zero Inactive GPU, Remote Session Guard & OTA Cleanup
+TAG=v1.9.0
+TITLE=JA LAN Messenger v1.9.0 — LAN Attachment Batches, Adaptive Image Grid, File Read Receipts & Shared Footer
 BODY=
-## JA LAN Messenger v1.8.1 — Scheduler Frame Gate, Zero Inactive GPU, Remote Session Guard & OTA Cleanup
+## JA LAN Messenger v1.9.0 — LAN Attachment Batches, Adaptive Image Grid, File Read Receipts & Shared Footer
 
-- **Cổng Khóa Khung Hình Tầng Scheduler (Scheduler Frame Gate & Zero Inactive GPU)**:
-  - Tích hợp `PowerFrameGate` trên `PowerAwareWidgetsBinding` kiểm soát trực tiếp `framesEnabled` của Flutter Engine.
-  - Ngắt tuyệt đối mọi thao tác dựng hình khi cửa sổ Inactive / Blur / Minimized, giải quyết triệt để lỗi các timer hoặc `setState` ngầm tiêu tốn tài nguyên GPU trên Desktop / RDP / VNC.
-  - Tự động phát lệnh `scheduleFrame()` để vẽ lại giao diện tích lũy (dirty UI replay) mượt mà ngay khi cửa sổ active trở lại.
-- **Đối soát Ảnh chụp Trạng thái Cửa sổ Native & Bảo vệ Phiên Remote (Native Snapshot Reconcile & Remote Guard)**:
-  - Khắc phục sự cố Remote Desktop (RDP / VNC / AnyDesk) kích hoạt nhầm sự kiện `resumed`: đối soát với trạng thái Win32 thực tế (`isFocused`, `isVisible`, `isMinimized`) trước khi cấp quyền vẽ.
-  - Thêm luồng kiểm tra nền chu kỳ 2 giây (`startNativeMonitoring`) đồng bộ trạng thái thực tế mà không làm re-arm bộ đếm giờ Idle Sleep.
-- **Gia cố Thao tác Đóng Cửa sổ & Tránh Treo Hiệu ứng Kính Mờ (Close-to-Tray UI Hardening)**:
-  - Bổ sung cờ chặn `_closePending` ngăn chặn người dùng nhấp nút X liên tục gây xếp chồng hộp thoại xác nhận.
-  - Hộp thoại `CloseActionDialog` render tức thì không qua animation fade/scale khi ticker đang tắt, tránh treo trong suốt.
-- **Bền vững Cấu hình Người Dùng (`AppPreferences` Durability & Atomic Flush)**:
-  - Tuần tự hóa tiến trình lưu cấu hình qua file tạm `.tmp` rồi đổi tên nguyên tử (`atomic rename`), chống mất cài đặt khi tắt máy đột ngột.
-  - Hàm `flush()` ép ghi toàn bộ dữ liệu xuống đĩa trước khi thoát app hoặc khởi chạy cập nhật OTA.
-- **Tự động Dọn dẹp Vùng đệm Cập nhật OTA (`OtaStagingCleanup`)**:
-  - Tự động xóa file `update.zip` và thư mục giải nén tạm sau khi app mới khởi động thành công (nhận diện qua cờ `--ota-session`), bảo toàn bản backup và log rollback.
-- **Đồng bộ Toàn diện Phiên bản**: Cập nhật `v1.8.1+18` vào toàn bộ mã nguồn, metadata Windows Runner, tài liệu hướng dẫn và bộ cài đặt.
+- **Gộp Bong Bóng Đính Kèm Theo Mẻ (LAN Attachment Batches & Shared Bubble)**:
+  - Khi gửi nhiều tệp tin hoặc ảnh cùng lúc, các tệp liền kề trong cùng mẻ tự động gom vào chung một bong bóng chat tinh gọn.
+  - Tách biệt hoàn toàn tiến trình tải, trạng thái truyền, menu thao tác chuột phải, và bộ phím nhận diện đã đọc của từng tệp.
+  - **Cách ly lỗi gửi tệp (Send Error Isolation)**: Một tệp lỗi không làm ảnh hưởng đến các tệp còn lại trong mẻ.
+  - **Tương thích BeeBEEP an toàn**: Bổ sung trường thứ 15 mang `attachmentBatchId` trong gói chào tệp tin, tương thích ngược 100% với BeeBEEP C++ và bản cũ.
+- **Lưới Ảnh Thích Ứng Thu Nhỏ Co Giãn (Compact Adaptive Attachment Image Grid)**:
+  - Tự động sắp xếp ảnh theo lưới thu nhỏ co giãn (2 ảnh chia 2 cột, 4 ảnh xếp 2x2, 3 hoặc 5+ ảnh chia 3 cột trên khung rộng >= 400px).
+  - Tệp tài liệu trong mẻ hỗn hợp giữ nguyên dạng hàng ngang đầy đủ theo đúng thứ tự.
+  - Giới hạn giải mã thumbnail theo kích thước hiển thị * DPR giúp tiết kiệm bộ nhớ RAM và GPU, hỗ trợ Lightbox xem full-size khi nhấp.
+- **Xác Nhận Đã Nhận & Đã Xem Cho Tệp Tin & Ảnh (Attachment Received & Read Receipts)**:
+  - Bổ sung trạng thái Đã nhận (khi đối phương tải xong file) và Đã xem (`seen` qua giao thức `BEE-READ`) trên từng tệp tin và ảnh gửi đi.
+  - Hỗ trợ đầy đủ cho cả cuộc trò chuyện trực tiếp và trò chuyện nhóm.
+- **Chân Bong Bóng Gộp Chung Thống Nhất (Shared Attachment Batch Footer)**:
+  - Một chân footer chung góc dưới bên phải hiển thị tem thời gian và nhãn trạng thái tổng hợp cho cả mẻ đính kèm.
+- **Đồng bộ Toàn diện Phiên bản**: Cập nhật `v1.9.0+19` vào toàn bộ mã nguồn, metadata Windows Runner, tài liệu hướng dẫn và bộ cài đặt.
 
 ### Cài đặt
 Chạy file `install.bat` để cài đặt ứng dụng vào Windows (có shortcut Desktop & Start Menu, đăng ký Control Panel), hoặc chạy trực tiếp `ja_lan_messenger.exe` để sử dụng dạng portable. Xem file `USERGUIDE.md` đính kèm để biết thêm chi tiết.

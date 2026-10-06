@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.8.1
+# Hướng dẫn sử dụng JA LAN Messenger v1.9.0
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.8.1_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.9.0_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -160,6 +160,12 @@
 - **Khóa khung hình ở mức sâu nhất (Zero Inactive GPU):** Trực tiếp kiểm soát `framesEnabled` trên Flutter Scheduler. Khi bạn chuyển sang ứng dụng khác hoặc thu nhỏ app, toàn bộ lệnh vẽ màn hình bị ngắt hoàn toàn ngay cả khi có timer hay sự kiện ngầm, đảm bảo GPU ở mức 0% tuyệt đối trên cả máy trạm trực tiếp và phiên Remote Desktop (RDP / VNC).
 - **Hồi phục giao diện tích lũy mượt mà:** Ngay khi cửa sổ nhận lại tiêu điểm, app tự động dựng lại khung hình hoàn chỉnh mà không bị giật hay chậm trễ.
 - **Bảo toàn cấu hình bền vững & Dọn rác OTA:** Cấu hình cá nhân được lưu nguyên tử (`atomic write`) chống mất cài đặt khi tắt máy; vùng nhớ đệm cập nhật OTA được tự động dọn dẹp sạch sẽ sau khi khởi chạy thành công bản mới.
+
+### 2.20. Gộp Mẻ Đính Kèm & Lưới Ảnh Co Giãn Thông Minh (LAN Attachment Batches & Image Grid)
+- **Gộp bong bóng chung cho mẻ tệp tin:** Khi gửi nhiều file hoặc hình ảnh cùng lúc, các tệp tự động gộp chung trong một bong bóng chat gọn gàng. Nếu một file gặp lỗi, hệ thống vẫn tiếp tục gửi các file còn lại và hiển thị cảnh báo lỗi cụ thể cho file đó mà không hủy cả hàng đợi.
+- **Lưới ảnh co giãn thích ứng (Image Grid):** Các ảnh đính kèm tự động chia cột thông minh (lưới 2x2 cho 4 ảnh, 2 cột cho 2 ảnh, 3 cột cho 3 hoặc 5+ ảnh). Nhấp vào bất kỳ ảnh nào để xem toàn màn hình qua Lightbox.
+- **Xác nhận Đã nhận & Đã xem:** Tệp tin và ảnh gửi đi hiển thị trạng thái "Đã nhận" (khi người nhận tải xong) và "Đã xem" (khi người nhận đã mở xem trên màn hình).
+- **Chân footer chung:** Toàn bộ mẻ có chung một chân thời gian và trạng thái tổng hợp dưới góc phải, không lặp lại tem thời gian ở từng tệp lẻ.
 
 ---
 

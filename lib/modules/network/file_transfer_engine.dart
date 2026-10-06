@@ -16,6 +16,7 @@ class FileTransferEngine {
   final Duration inactivityTimeout;
   FileTransferEngine({this.inactivityTimeout = const Duration(seconds: 45)});
   final _tasks = <String, FileTransferTask>{};
+  int _lastOfferId = 0;
   final _offers = <String, Map<String, dynamic>>{};
   final _sessions = <BeebeepSession>{};
   final _taskSessions = <String, BeebeepSession>{};
@@ -84,6 +85,10 @@ class FileTransferEngine {
       'name': message['text'],
       'fields': fields,
       'groupId': groupIdFromFields(fields),
+      'attachmentBatchId':
+          fields.length > 14 && groupIdPattern.hasMatch(fields[14])
+          ? fields[14]
+          : null,
     };
   }
 
@@ -168,9 +173,14 @@ class FileTransferEngine {
     required String peerName,
     required File file,
     String? groupId,
+    String? attachmentBatchId,
   }) async {
-    final id = '${DateTime.now().microsecondsSinceEpoch}';
+    _lastOfferId = max(_lastOfferId + 1, DateTime.now().microsecondsSinceEpoch);
+    final id = '$_lastOfferId';
     final stat = await file.stat();
+    if (stat.type != FileSystemEntityType.file) {
+      throw FileSystemException('Attachment is not a regular file', file.path);
+    }
     final task = FileTransferTask(
       id: id,
       fileName: p.basename(file.path),
@@ -182,6 +192,11 @@ class FileTransferEngine {
       peerIp: peerIp,
       groupId: groupId != null && groupIdPattern.hasMatch(groupId)
           ? groupId
+          : null,
+      attachmentBatchId:
+          attachmentBatchId != null &&
+              groupIdPattern.hasMatch(attachmentBatchId)
+          ? attachmentBatchId
           : null,
     );
     final random = Random.secure();
@@ -207,7 +222,9 @@ class FileTransferEngine {
         '0',
         '0',
         '-1',
-        if (task.groupId != null) task.groupId!,
+        if (task.groupId != null || task.attachmentBatchId != null)
+          task.groupId ?? '',
+        if (task.attachmentBatchId != null) task.attachmentBatchId!,
       ],
     };
     _tasks[id] = task;
@@ -375,6 +392,7 @@ class FileTransferEngine {
       peerName: peerName,
       peerIp: peerIp,
       groupId: offer['groupId'] as String?,
+      attachmentBatchId: offer['attachmentBatchId'] as String?,
     );
     _tasks[id] = task;
     _update(task);

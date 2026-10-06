@@ -87,6 +87,96 @@ void main() {
     }
   });
 
+  test(
+    'simultaneous encrypted attachments preserve batch and file bytes',
+    () async {
+      final temp = await Directory.systemTemp.createTemp('ja_parallel_files_');
+      final a = FileTransferEngine(), b = FileTransferEngine();
+      final done = Completer<void>();
+      final downloads = <String, FileTransferTask>{};
+      final uploads = <String, FileTransferTask>{};
+      void updated(FileTransferTask t) {
+        if (t.status == TransferStatus.completed ||
+            t.status == TransferStatus.failed) {
+          (t.isUpload ? uploads : downloads)[t.id] = t;
+          if (uploads.length == 3 &&
+              downloads.length == 3 &&
+              !done.isCompleted) {
+            done.complete();
+          }
+        }
+      }
+
+      a.helloBuilder = (key) => hello(key, 51001);
+      b.helloBuilder = (key) => hello(key, 51002);
+      a.isPeerConnected = (id) => id == '127.0.0.1:51002';
+      b.isPeerConnected = (id) => id == '127.0.0.1:51001';
+      b.downloadDirectory = '${temp.path}/downloads';
+      a.onTransferUpdated = updated;
+      b.onTransferUpdated = updated;
+      a.sendOffer = (_, packet) {
+        unawaited(
+          b.receiveOffer(
+            '127.0.0.1:51001',
+            '127.0.0.1',
+            'Sender',
+            ProtocolBeebeep.parseMessage(utf8.decode(packet))!,
+          ),
+        );
+        return true;
+      };
+      try {
+        await a.startServer(port: 0);
+        await b.startServer(port: 0);
+        final files = <File>[];
+        for (var i = 0; i < 3; i++) {
+          final folder = await Directory('${temp.path}/$i').create();
+          files.add(
+            await File(
+              '${folder.path}/same.png',
+            ).writeAsBytes(List.filled(70000 + i, i + 1)),
+          );
+        }
+        final tasks = await Future.wait(
+          files.map(
+            (file) => a.sendFile(
+              peerId: '127.0.0.1:51002',
+              peerIp: '127.0.0.1',
+              peerName: 'Receiver',
+              file: file,
+              attachmentBatchId: 'batch_parallel',
+            ),
+          ),
+        );
+        expect(tasks.map((t) => t.id).toSet(), hasLength(3));
+        await done.future.timeout(const Duration(seconds: 20));
+        expect(downloads.values.map((t) => t.filePath).toSet(), hasLength(3));
+        for (final upload in tasks) {
+          final download = downloads['127.0.0.1:51001/${upload.id}']!;
+          expect(
+            upload.status,
+            TransferStatus.completed,
+            reason: upload.errorMessage,
+          );
+          expect(
+            download.status,
+            TransferStatus.completed,
+            reason: download.errorMessage,
+          );
+          expect(download.attachmentBatchId, 'batch_parallel');
+          expect(download.groupId, isNull);
+          expect(
+            await File(download.filePath).readAsBytes(),
+            await File(upload.filePath).readAsBytes(),
+          );
+        }
+      } finally {
+        await a.stop();
+        await b.stop();
+      }
+    },
+  );
+
   for (final size in [0, 15, 16, 65539, 150001]) {
     test('confirmed encrypted transfer $size bytes', () async {
       final temp = await Directory.systemTemp.createTemp('ja-file-test-');

@@ -11,6 +11,7 @@ class FileTransferTask {
   final String peerName;
   final String peerIp;
   final String? groupId;
+  final String? attachmentBatchId;
   double speedBytesPerSec;
   TransferStatus status;
   String? errorMessage;
@@ -27,6 +28,7 @@ class FileTransferTask {
     required this.peerName,
     required this.peerIp,
     this.groupId,
+    this.attachmentBatchId,
     this.speedBytesPerSec = 0,
     this.status = TransferStatus.pending,
     this.errorMessage,

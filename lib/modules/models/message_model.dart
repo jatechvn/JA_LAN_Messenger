@@ -58,6 +58,9 @@ class MessageModel {
   // null denotes legacy history without per-recipient delivery bookkeeping.
   Set<String>? pendingRecipients;
   final FileAttachmentInfo? fileAttachment;
+  final String? attachmentBatchId;
+  final Map<String, String> attachmentTransfers;
+  final Map<String, MessageStatus> attachmentRecipientStatuses;
   bool isRevoked;
   DateTime? revokedAt;
   String? thinkingContent;
@@ -88,6 +91,9 @@ class MessageModel {
     this.pendingRecipients,
     this.sourceSession,
     this.fileAttachment,
+    this.attachmentBatchId,
+    Map<String, String>? attachmentTransfers,
+    Map<String, MessageStatus>? attachmentRecipientStatuses,
     this.isRevoked = false,
     DateTime? revokedAt,
     this.thinkingContent,
@@ -101,9 +107,45 @@ class MessageModel {
     Map<String, List<String>>? reactions,
   }) : timestamp = (timestamp ?? DateTime.now()).toLocal(),
        revokedAt = revokedAt?.toLocal(),
-       reactions = reactions ?? {};
+       reactions = reactions ?? {},
+       attachmentTransfers = attachmentTransfers ?? {},
+       attachmentRecipientStatuses = attachmentRecipientStatuses ?? {};
+
+  void updateAttachmentRecipient(String peerId, MessageStatus value) {
+    if (!attachmentTransfers.containsKey(peerId)) return;
+    final previous = attachmentRecipientStatuses[peerId];
+    if (previous == MessageStatus.read ||
+        (previous == MessageStatus.delivered &&
+            value == MessageStatus.sending)) {
+      return;
+    }
+    attachmentRecipientStatuses[peerId] = value;
+    final states = attachmentTransfers.keys
+        .map((id) => attachmentRecipientStatuses[id] ?? MessageStatus.sending)
+        .toList();
+    status = states.every((s) => s == MessageStatus.read)
+        ? MessageStatus.read
+        : states.every(
+            (s) => s == MessageStatus.read || s == MessageStatus.delivered,
+          )
+        ? MessageStatus.delivered
+        : states.any((s) => s == MessageStatus.failed)
+        ? MessageStatus.failed
+        : MessageStatus.sending;
+  }
 
   bool get hasAttachment => fileAttachment != null && !isRevoked;
+
+  /// Explicit batches only; proximity in time must not merge unrelated sends.
+  bool sharesAttachmentBatch(MessageModel other) =>
+      attachmentBatchId != null &&
+      attachmentBatchId == other.attachmentBatchId &&
+      hasAttachment &&
+      other.hasAttachment &&
+      senderId == other.senderId &&
+      recipientId == other.recipientId &&
+      sourceSession == other.sourceSession &&
+      isMine == other.isMine;
   bool get isReply => replyToText != null && replyToText!.isNotEmpty;
   String get conversationId => isMine ? recipientId : senderId;
 
@@ -154,6 +196,13 @@ class MessageModel {
     if (pendingRecipients != null)
       'pendingRecipients': pendingRecipients!.toList(),
     if (fileAttachment != null) 'fileAttachment': fileAttachment!.toJson(),
+    if (attachmentBatchId != null) 'attachmentBatchId': attachmentBatchId,
+    if (attachmentTransfers.isNotEmpty)
+      'attachmentTransfers': attachmentTransfers,
+    if (attachmentRecipientStatuses.isNotEmpty)
+      'attachmentRecipientStatuses': attachmentRecipientStatuses.map(
+        (k, v) => MapEntry(k, v.name),
+      ),
     'isRevoked': isRevoked,
     if (revokedAt != null) 'revokedAt': revokedAt!.toIso8601String(),
     if (thinkingContent != null) 'thinkingContent': thinkingContent,
@@ -212,6 +261,12 @@ class MessageModel {
       fileAttachment: attachmentJson != null
           ? FileAttachmentInfo.fromJson(attachmentJson)
           : null,
+      attachmentBatchId: json['attachmentBatchId'] as String?,
+      attachmentTransfers: (json['attachmentTransfers'] as Map?)?.map(
+        (k, v) => MapEntry(k.toString(), v.toString()),
+      ),
+      attachmentRecipientStatuses: (json['attachmentRecipientStatuses'] as Map?)
+          ?.map((k, v) => MapEntry(k.toString(), parseStatus(v as String?))),
       isRevoked: json['isRevoked'] as bool? ?? false,
       revokedAt: revAt,
       thinkingContent: json['thinkingContent'] as String?,
