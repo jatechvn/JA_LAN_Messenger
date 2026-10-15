@@ -374,6 +374,24 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
         const SingleActivator(LogicalKeyboardKey.keyM, control: true): () {
           coordinator.toggleCompactMode();
         },
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
+          if (_activeTab != MainViewTab.chats) {
+            setState(() => _activeTab = MainViewTab.chats);
+          }
+          coordinator.requestSidebarSearchFocus();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
+          if (_activeTab != MainViewTab.chats) {
+            setState(() => _activeTab = MainViewTab.chats);
+          }
+          coordinator.requestChatSearchFocus();
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true): () {
+          coordinator.selectAdjacentPeer(-1);
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowDown, alt: true): () {
+          coordinator.selectAdjacentPeer(1);
+        },
       },
       child: Focus(
         autofocus: true,

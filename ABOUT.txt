@@ -1,12 +1,19 @@
 ================================================================================
 JA LAN Messenger - Lightweight P2P Office LAN Messenger
 ================================================================================
-Version: 1.9.0+19
+Version: 1.10.0+20
 Developer: JA Team
 Language: Dart / Flutter Desktop
 Architecture: Pure Dart P2P Sockets (UDP Broadcast/Multicast + TCP Streaming)
 Protocol: Dual-Mode (BeeBEEP Compatible + JA Modern Packet)
 Features:
+- In-Chat Message Search (Ctrl+F): Real-time search bar inside conversations with match counter (1/N), Enter/Shift+Enter navigation, auto-scroll, and highlight
+- Per-Peer Message Drafts: Automatically saves and restores unsent text per contact/group with an amber [Nháp]/[Draft]/[草稿] badge in Sidebar and Compact Mode
+- Folder Drag & Drop Auto-Zip: Dragging a folder into chat automatically compresses it into a .zip archive via native tar.exe / PowerShell fallback and stages it for sending
+- Forward Message & Attachment Dialog: Multi-recipient glass dialog for forwarding text, stickers, or files to multiple peers/groups simultaneously with an optional note
+- Date Separator Chips & Consecutive Message Grouping: Displays Today / Yesterday / dd/MM/yyyy separators and tightens vertical spacing for consecutive messages from the same sender within 2 minutes
+- Fast Keyboard Shortcuts & Compact 320px Dock Polish: Ctrl+F (in-chat search), Ctrl+K (sidebar search), Alt+Up/Down (adjacent chat switch), Esc (dismiss), and overflow-free 320px compact toolbar
+- High-Efficiency Rendering & History I/O: O(1) reactionRevision counter replacing per-frame jsonEncode, virtualized ListView.builder sidebar, single-pass JSON history writes, and parallel startup loading
 - LAN Attachment Batches & Shared Bubble: Adjacent files and images sent together in one batch share a single cohesive chat bubble with independent transfer progress, actions, and per-file send error isolation
 - Compact Adaptive Image Grid: Responsive Wrap image grid (2x2 for 4 photos, 2 columns for 2, 3 columns for 3 or 5+ photos on >= 400px bubbles) with memory-bounded tile thumbnails and full-size lightbox viewer
 - Attachment Delivered & Read Receipts: Full support for 'Delivered' (file transfer ACK) and 'Seen' (BEE-READ protocol extension) on outgoing files and images across both direct peer and group conversations

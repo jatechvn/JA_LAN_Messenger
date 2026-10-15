@@ -126,28 +126,32 @@ class ChatHistoryService {
     _pending.clear();
   }
 
-  /// Ghi ngay lập tức danh sách tin nhắn vào file tương ứng
+  /// Ghi ngay lập tức danh sách tin nhắn vào file tương ứng (encode danh sách tin nhắn 1 lần duy nhất cho cả alias)
   Future<void> saveImmediately(
     String conversationId,
     List<MessageModel> messages, {
     bool mirrorAliases = true,
   }) async {
     if (!AppPreferences().chatHistoryEnabled) return;
-    if (mirrorAliases) {
-      for (final alias in _aliases[conversationId] ?? <String>{}) {
-        if (alias != conversationId) {
-          await saveImmediately(alias, messages, mirrorAliases: false);
-        }
-      }
+
+    final targetIds = <String>{
+      if (mirrorAliases)
+        for (final alias in _aliases[conversationId] ?? const <String>{})
+          if (alias != conversationId) alias,
+      conversationId,
+    };
+
+    for (final targetId in targetIds) {
+      _debounceTimers.remove(targetId)?.cancel();
+      _pending.remove(targetId);
     }
 
-    _debounceTimers.remove(conversationId)?.cancel();
-    _pending.remove(conversationId);
+    // Lọc bỏ tin nhắn AI đang trong trạng thái gõ dở (chưa xong token stream)
+    // và chỉ giữ lại tối đa maxMessagesPerConversation tin nhắn gần nhất.
+    // Chỉ thực hiện lọc và jsonEncode mảng messages 1 lần duy nhất cho mọi alias.
+    late final String messagesJson;
+    late final String nowIso;
     try {
-      final file = _getFileForConversation(conversationId);
-
-      // Lọc bỏ tin nhắn AI đang trong trạng thái gõ dở (chưa xong token stream)
-      // và chỉ giữ lại tối đa maxMessagesPerConversation tin nhắn gần nhất
       final completedMessages = messages
           .where((m) => !(m.isStreaming && m.text.isEmpty))
           .toList();
@@ -157,27 +161,42 @@ class ChatHistoryService {
           ? completedMessages.length - maxMessagesPerConversation
           : 0;
       final toPersist = completedMessages.sublist(startIndex);
-
-      final payload = {
-        'version': 1,
-        'conversationId': conversationId,
-        'lastUpdated': DateTime.now().toIso8601String(),
-        'messages': toPersist.map((m) => m.toJson()).toList(),
-      };
-
-      final jsonStr = jsonEncode(payload);
-      await _enqueue(() async {
-        final temporary = File('${file.path}.tmp');
-        await temporary.writeAsString(jsonStr, flush: true);
-        await temporary.rename(file.path);
-        _writeErrors.remove(conversationId);
-      });
+      messagesJson = jsonEncode(toPersist.map((m) => m.toJson()).toList());
+      nowIso = DateTime.now().toIso8601String();
     } catch (e) {
-      _writeErrors[conversationId] = e;
-      _pending[conversationId] = messages;
+      for (final targetId in targetIds) {
+        _writeErrors[targetId] = e;
+        _pending[targetId] = messages;
+      }
       debugPrint(
-        '[ChatHistoryService] Error saving conversation $conversationId: $e',
+        '[ChatHistoryService] Error encoding conversation $conversationId: $e',
       );
+      return;
+    }
+
+    for (final targetId in targetIds) {
+      try {
+        final file = _getFileForConversation(targetId);
+        final headerJson = jsonEncode({
+          'version': 1,
+          'conversationId': targetId,
+          'lastUpdated': nowIso,
+        });
+        final jsonStr =
+            '${headerJson.substring(0, headerJson.length - 1)},"messages":$messagesJson}';
+        await _enqueue(() async {
+          final temporary = File('${file.path}.tmp');
+          await temporary.writeAsString(jsonStr, flush: true);
+          await temporary.rename(file.path);
+          _writeErrors.remove(targetId);
+        });
+      } catch (e) {
+        _writeErrors[targetId] = e;
+        _pending[targetId] = messages;
+        debugPrint(
+          '[ChatHistoryService] Error saving conversation $targetId: $e',
+        );
+      }
     }
   }
 
@@ -212,19 +231,24 @@ class ChatHistoryService {
     return [];
   }
 
-  /// Nạp toàn bộ các cuộc trò chuyện đã lưu trên ổ đĩa khi khởi động app
+  /// Nạp toàn bộ các cuộc trò chuyện đã lưu trên ổ đĩa khi khởi động app (song song hóa I/O)
   Future<Map<String, List<MessageModel>>> loadAllConversations() async {
     final Map<String, List<MessageModel>> result = {};
     try {
       final dir = getStorageDirectory();
       if (!await dir.exists()) return result;
 
-      final entries = dir.listSync();
-      for (final entry in entries) {
-        if (entry is File && entry.path.endsWith('.json')) {
+      final jsonFiles = dir
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.json'))
+          .toList();
+
+      final loadedEntries = await Future.wait(
+        jsonFiles.map((file) async {
           try {
-            final content = await entry.readAsString();
-            if (content.trim().isEmpty) continue;
+            final content = await file.readAsString();
+            if (content.trim().isEmpty) return null;
 
             final dynamic decoded = jsonDecode(content);
             if (decoded is Map<String, dynamic> &&
@@ -237,14 +261,21 @@ class ChatHistoryService {
                   .map((item) => MessageModel.fromJson(item))
                   .toList();
               if (convId.isNotEmpty && list.isNotEmpty) {
-                result[convId] = list;
+                return MapEntry(convId, list);
               }
             }
           } catch (err) {
             debugPrint(
-              '[ChatHistoryService] Skip corrupt file ${entry.path}: $err',
+              '[ChatHistoryService] Skip corrupt file ${file.path}: $err',
             );
           }
+          return null;
+        }),
+      );
+
+      for (final entry in loadedEntries) {
+        if (entry != null) {
+          result[entry.key] = entry.value;
         }
       }
     } catch (e) {

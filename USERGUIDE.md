@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.9.0
+# Hướng dẫn sử dụng JA LAN Messenger v1.10.0
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.9.0_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.10.0_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -166,6 +166,13 @@
 - **Lưới ảnh co giãn thích ứng (Image Grid):** Các ảnh đính kèm tự động chia cột thông minh (lưới 2x2 cho 4 ảnh, 2 cột cho 2 ảnh, 3 cột cho 3 hoặc 5+ ảnh). Nhấp vào bất kỳ ảnh nào để xem toàn màn hình qua Lightbox.
 - **Xác nhận Đã nhận & Đã xem:** Tệp tin và ảnh gửi đi hiển thị trạng thái "Đã nhận" (khi người nhận tải xong) và "Đã xem" (khi người nhận đã mở xem trên màn hình).
 - **Chân footer chung:** Toàn bộ mẻ có chung một chân thời gian và trạng thái tổng hợp dưới góc phải, không lặp lại tem thời gian ở từng tệp lẻ.
+
+### 2.21. Tìm kiếm Trong Hội Thoại, Lưu Bản Nháp, Kéo-Thả Thư Mục Tự Nén & Chuyển Tiếp Tin Nhắn
+- **Tìm kiếm tin nhắn trong hội thoại (`Ctrl + F`):** Nhấn `Ctrl + F` hoặc biểu tượng kính lúp trên tiêu đề khung chat để mở thanh tìm kiếm nội bộ. Nhập từ khóa để đếm số lượng kết quả (`1/N`), nhấn `Enter` / `Shift + Enter` để nhảy qua từng tin nhắn khớp và tự động cuộn làm nổi bật.
+- **Lưu bản nháp theo từng người nhận (`[Nháp]`):** Khi bạn đang gõ dở tin nhắn và chuyển sang hội thoại khác, nội dung sẽ tự động được bảo toàn và gắn nhãn `[Nháp]` màu vàng cam trên danh bạ để bạn quay lại gửi tiếp bất kỳ lúc nào.
+- **Kéo-thả thư mục tự động nén `.zip`:** Khi kéo-thả trực tiếp một thư mục từ Windows Explorer vào khung chat, ứng dụng tự động nén thư mục đó thành tệp `.zip` và đưa vào thanh đính kèm sẵn sàng gửi.
+- **Chuyển tiếp tin nhắn & tệp đính kèm (Forward):** Nhấp chuột phải vào tin nhắn bất kỳ và chọn **"Chuyển tiếp"**, tích chọn một hoặc nhiều đồng nghiệp/nhóm cùng lời nhắn kèm theo để gửi nhanh.
+- **Phím tắt điều hướng nhanh:** `Ctrl + K` (tìm liên hệ ở danh bạ), `Alt + Mũi tên Lên/Xuống` (chuyển nhanh hội thoại liền kề), `Esc` (đóng tìm kiếm hoặc hủy trích dẫn).
 
 ---
 

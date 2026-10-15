@@ -62,11 +62,14 @@ class _CompactConversationList extends StatefulWidget {
 class _CompactConversationListState extends State<_CompactConversationList> {
   _CompactFilter _activeFilter = _CompactFilter.all;
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  int _lastHandledSearchFocusId = -1;
   String _searchQuery = '';
 
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -75,6 +78,22 @@ class _CompactConversationListState extends State<_CompactConversationList> {
     final theme = ThemeProvider.of(context);
     final lang = context.watch<LanguageProvider>();
     final coordinator = context.watch<MessengerCoordinator>();
+
+    final focusReqId = coordinator.sidebarSearchFocusRequestId;
+    if (_lastHandledSearchFocusId == -1) {
+      _lastHandledSearchFocusId = focusReqId;
+    } else if (focusReqId != _lastHandledSearchFocusId) {
+      _lastHandledSearchFocusId = focusReqId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _searchFocusNode.requestFocus();
+          _searchController.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: _searchController.text.length,
+          );
+        }
+      });
+    }
 
     final allPeers = coordinator.peers;
     final groups = coordinator.groups;
@@ -140,6 +159,7 @@ class _CompactConversationListState extends State<_CompactConversationList> {
             ),
             child: TextField(
               controller: _searchController,
+              focusNode: _searchFocusNode,
               style: TextStyle(
                 fontSize: 12,
                 color: theme.isDark ? Colors.white : Colors.black87,
@@ -522,6 +542,8 @@ class _CompactPeerItemTileState extends State<_CompactPeerItemTile> {
     final isTyping =
         !peer.isAllUsers && !peer.isGroup && coordinator.isPeerTyping(peer.id);
     final isGroupTyping = peer.isGroup && coordinator.isGroupTyping(peer.id);
+    final hasDraft =
+        !isTyping && !isGroupTyping && coordinator.hasDraft(peer.id);
 
     final effectiveName = peer.effectiveDisplayName(lang);
 
@@ -531,6 +553,9 @@ class _CompactPeerItemTileState extends State<_CompactPeerItemTile> {
     } else if (isGroupTyping) {
       lastMessageSnippet =
           coordinator.getGroupTypingText(peer.id, lang) ?? lang.tr('typing');
+    } else if (hasDraft) {
+      lastMessageSnippet =
+          '${lang.tr('draftPrefix')} ${coordinator.getDraft(peer.id).trim()}';
     } else if (peer.lastMessage != null && peer.lastMessage!.isNotEmpty) {
       lastMessageSnippet = peer.lastMessage!;
     } else if (peer.isAllUsers) {
@@ -633,18 +658,20 @@ class _CompactPeerItemTileState extends State<_CompactPeerItemTile> {
                         lastMessageSnippet,
                         style: TextStyle(
                           fontSize: 11,
-                          fontWeight: isTyping
+                          fontWeight: (isTyping || hasDraft)
                               ? FontWeight.w600
                               : FontWeight.normal,
                           color: isTyping
                               ? theme.colors.accentBlue
-                              : (peer.unreadCount > 0
-                                    ? (theme.isDark
-                                          ? Colors.white70
-                                          : Colors.black87)
-                                    : (theme.isDark
-                                          ? Colors.white38
-                                          : Colors.black45)),
+                              : (hasDraft
+                                    ? theme.colors.accentAmber
+                                    : (peer.unreadCount > 0
+                                          ? (theme.isDark
+                                                ? Colors.white70
+                                                : Colors.black87)
+                                          : (theme.isDark
+                                                ? Colors.white38
+                                                : Colors.black45))),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

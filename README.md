@@ -1,6 +1,6 @@
 # JA LAN Messenger
 
-[![Version](https://img.shields.io/badge/version-1.9.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.10.0-blue.svg)](CHANGELOG.md)
 [![Flutter Version](https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter)](https://flutter.dev)
 [![Dart Version](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com/windows)
@@ -13,6 +13,11 @@ A modern, ultra-lightweight, high-performance **Peer-to-Peer (P2P) Office LAN Me
 
 ## ⚡ Key Highlights
 
+- **In-Chat Message Search (`Ctrl+F`)**: Built-in conversation search bar with live match counter (`1/N`), `Enter`/`Shift+Enter` (`↑`/`↓`) navigation, smooth auto-scroll, and message bubble highlighting.
+- **Per-Peer Message Drafts**: Automatically preserves unsent text per conversation when switching chats and displays an amber `[Nháp]` / `[Draft]` / `[草稿]` indicator in both Standard and Compact views.
+- **Folder Drag & Drop Auto-Zip**: Dragging any directory into the chat window automatically compresses it into a `.zip` archive via native `tar.exe` (with PowerShell fallback) and stages it as an attachment.
+- **Multi-Recipient Message & File Forwarding**: Right-click any message or attachment to forward it to multiple contacts and groups simultaneously with an optional accompanying note.
+- **Date Separator Chips, Keyboard Shortcuts & Performance Optimizations**: Displays `Today` / `Yesterday` / `dd/MM/yyyy` date chips, groups consecutive messages from the same sender, supports `Ctrl+K` / `Alt+Up/Down` navigation, fixes 320px Compact Mode toolbar overflow, virtualizes `PeerListView`, and replaces per-frame reaction serialization with an $O(1)$ `reactionRevision` counter.
 - **LAN Attachment Batches & Shared Bubble**: Files and images sent together in one batch automatically group inside a cohesive shared chat bubble. Features independent transfer tracking, context menus, and send error isolation where a single failing file does not abort the remaining queue. Backward compatible with BeeBEEP via the 15th protocol field.
 - **Compact Adaptive Attachment Image Grid**: Smart responsive image layout using Wrap tiles (2x2 for 4 photos, 2 columns for 2, 3 columns for 3 or 5+ photos on >= 400px bubbles) with memory-bounded tile decoding to save RAM/GPU, mixed-file row ordering, and full-resolution lightbox viewer.
 - **Attachment Delivered & Read Receipts**: Real-time 'Delivered' (transfer ACK) and 'Seen' (BEE-READ protocol extension) status indicators for individual and batched files/images across both direct peer and group conversations.

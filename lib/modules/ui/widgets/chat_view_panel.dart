@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:window_manager/window_manager.dart';
 import 'package:desktop_drop/desktop_drop.dart';
@@ -39,6 +38,8 @@ import '../../services/sticker_service.dart';
 import 'sprite_sticker_widget.dart';
 import 'sticker_picker_popover.dart';
 import '../../services/app_power_manager.dart';
+import '../../services/folder_archive_helper.dart';
+import 'forward_message_dialog.dart';
 
 class ChatViewPanel extends StatefulWidget {
   final bool isDetailsOpen;
@@ -158,7 +159,7 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
   Timer? _highlightTimer;
   int _currentPinnedIndex = 0;
   int _prevMessageCount = 0;
-  String _prevReactions = '';
+  int _prevReactionRevision = 0;
   bool _prevPeerTyping = false;
   String? _lastPeerId;
   String? _lastScrollKey;
@@ -166,6 +167,14 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
   Timer? _scrollSaveTimer;
   final _savedScrollPositions =
       <String, ({double offset, bool atBottom, String? separator})>{};
+
+  // In-chat search state (F1)
+  bool _isSearchBarVisible = false;
+  String _inChatSearchQuery = '';
+  int _inChatSearchMatchIndex = 0;
+  int _lastHandledChatSearchFocusId = -1;
+  final TextEditingController _inChatSearchController = TextEditingController();
+  final FocusNode _inChatSearchFocusNode = FocusNode();
 
   void _saveConversationScroll() {
     final id = _lastPeerId;
@@ -285,10 +294,69 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
     _scrollController.removeListener(_onScroll);
     _typingDebounceTimer?.cancel();
     _highlightTimer?.cancel();
+    _inChatSearchFocusNode.dispose();
+    _inChatSearchController.dispose();
     _inputFocusNode.dispose();
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  List<MessageModel> _computeSearchMatches(List<MessageModel> messages) {
+    final q = _inChatSearchQuery.trim().toLowerCase();
+    if (q.isEmpty) return const <MessageModel>[];
+    return [
+      for (final msg in messages)
+        if (!msg.isRevoked &&
+            (msg.text.toLowerCase().contains(q) ||
+                (msg.fileAttachment?.fileName.toLowerCase().contains(q) ??
+                    false)))
+          msg,
+    ];
+  }
+
+  void _toggleInChatSearch() {
+    setState(() {
+      _isSearchBarVisible = !_isSearchBarVisible;
+      if (!_isSearchBarVisible) {
+        _inChatSearchQuery = '';
+        _inChatSearchController.clear();
+        _inChatSearchMatchIndex = 0;
+        _highlightedMessageId = null;
+      }
+    });
+    if (_isSearchBarVisible) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _inChatSearchFocusNode.canRequestFocus) {
+          _inChatSearchFocusNode.requestFocus();
+        }
+      });
+    } else {
+      _requestInputFocus();
+    }
+  }
+
+  void _closeInChatSearch() {
+    if (!_isSearchBarVisible) return;
+    setState(() {
+      _isSearchBarVisible = false;
+      _inChatSearchQuery = '';
+      _inChatSearchController.clear();
+      _inChatSearchMatchIndex = 0;
+      _highlightedMessageId = null;
+    });
+    _requestInputFocus();
+  }
+
+  void _navigateSearchMatch(int delta, List<MessageModel> messages) {
+    final matches = _computeSearchMatches(messages);
+    if (matches.isEmpty) return;
+    final nextIdx =
+        (_inChatSearchMatchIndex + delta + matches.length) % matches.length;
+    setState(() {
+      _inChatSearchMatchIndex = nextIdx;
+    });
+    _scrollToMessage(matches[nextIdx].id, messages);
   }
 
   void _onScroll() {
@@ -477,6 +545,10 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
   }
 
   void _onTextChanged(String text, MessengerCoordinator coordinator) {
+    final activePeerId = coordinator.selectedPeer?.id;
+    if (activePeerId != null) {
+      coordinator.setDraft(activePeerId, text);
+    }
     if (text.trim().isNotEmpty) {
       coordinator.sendTypingStatus(true);
       _typingDebounceTimer?.cancel();
@@ -494,17 +566,61 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
 
   Future<void> _stageDroppedFiles(DropDoneDetails details) async {
     final coordinator = context.read<MessengerCoordinator>();
+    final lang = context.read<LanguageProvider>();
     final peerId = coordinator.selectedPeer?.id;
     setState(() => _draggingFiles = false);
     final files = <File>[];
     for (final item in details.files) {
       final file = File(item.path);
-      if (await file.exists()) files.add(file);
+      if (await file.exists()) {
+        files.add(file);
+      } else if (FolderArchiveHelper.isDirectory(item.path)) {
+        final rawName = item.path
+            .replaceAll(RegExp(r'[\\/]+$'), '')
+            .split(RegExp(r'[\\/]'))
+            .last;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(lang.tr('zippingFolder', [rawName])),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        final zipPath = await FolderArchiveHelper.zipDirectory(item.path);
+        if (zipPath != null) {
+          final zippedFile = File(zipPath);
+          if (await zippedFile.exists()) {
+            files.add(zippedFile);
+            if (mounted) {
+              final zipName = zippedFile.path.split(RegExp(r'[\\/]')).last;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(lang.tr('folderZippedReady', [zipName])),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
+          }
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(lang.tr('folderZipFailed')),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
     }
     if (!mounted || peerId == null || coordinator.selectedPeer?.id != peerId) {
       return;
     }
-    setState(() => _stagedAttachments.addAll(files));
+    if (files.isNotEmpty) {
+      setState(() => _stagedAttachments.addAll(files));
+    }
     _inputFocusNode.requestFocus();
   }
 
@@ -532,6 +648,9 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
     if (!hasText && !hasAttachments) return;
 
     _inputController.clear();
+    if (coordinator.selectedPeer != null) {
+      coordinator.setDraft(coordinator.selectedPeer!.id, '');
+    }
     final replying = _replyingToMessage;
 
     final filesToSend = List<File>.from(_stagedAttachments);
@@ -655,6 +774,18 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
       _requestInputFocus();
     }
 
+    if (coordinator.chatSearchFocusRequestId != _lastHandledChatSearchFocusId) {
+      _lastHandledChatSearchFocusId = coordinator.chatSearchFocusRequestId;
+      if (!_isSearchBarVisible) {
+        _isSearchBarVisible = true;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _inChatSearchFocusNode.canRequestFocus) {
+          _inChatSearchFocusNode.requestFocus();
+        }
+      });
+    }
+
     final messages = coordinator.currentMessages;
     if (_lastPeerId != peer.id) {
       _resetReadExposure();
@@ -672,13 +803,10 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
 
     // Reset replying state & determine scroll target if active peer changed
     final isPeerChanged = _lastPeerId != peer.id;
-    // Models are mutated in place, so retain a value snapshot, not a map reference.
-    final reactions = jsonEncode([
-      for (final message in messages)
-        if (message.reactions.isNotEmpty) [message.id, message.reactions],
-    ]);
-    final reactionsChanged = reactions != _prevReactions;
-    _prevReactions = reactions;
+    // O(1) reaction change check via coordinator.reactionRevision
+    final currentReactionRev = coordinator.reactionRevision;
+    final reactionsChanged = currentReactionRev != _prevReactionRevision;
+    _prevReactionRevision = currentReactionRev;
     final wasAtBottom =
         _scrollController.hasClients &&
         _scrollController.position.extentAfter <= 50;
@@ -694,6 +822,19 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
       _currentPinnedIndex = 0;
       _prevMessageCount = messages.length;
       _prevPeerTyping = isPeerTyping;
+      _isSearchBarVisible = false;
+      _inChatSearchQuery = '';
+      _inChatSearchController.clear();
+      _inChatSearchMatchIndex = 0;
+
+      // Restore per-peer draft (F2)
+      final restoredDraft = coordinator.getDraft(peer.id);
+      if (_inputController.text != restoredDraft) {
+        _inputController.value = TextEditingValue(
+          text: restoredDraft,
+          selection: TextSelection.collapsed(offset: restoredDraft.length),
+        );
+      }
 
       // Telegram-style: Check if there are unread messages in this conversation
       final firstUnreadId =
@@ -851,6 +992,12 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
     }
 
     final pinnedMessages = coordinator.getPinnedMessages(peer.id);
+    final searchMatches = _isSearchBarVisible
+        ? _computeSearchMatches(messages)
+        : const <MessageModel>[];
+    final safeSearchIndex = searchMatches.isEmpty
+        ? 0
+        : _inChatSearchMatchIndex.clamp(0, searchMatches.length - 1);
 
     return DropTarget(
       onDragEntered: (_) => setState(() => _draggingFiles = true),
@@ -886,7 +1033,36 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
                   onToggleDetails: widget.onToggleDetails,
                   isCompact: widget.isCompact,
                   onBackToList: widget.onBackToList,
+                  isSearchOpen: _isSearchBarVisible,
+                  onToggleSearch: _toggleInChatSearch,
                 ),
+
+                // In-Chat Message Search Bar (F1)
+                if (_isSearchBarVisible)
+                  _InChatSearchBar(
+                    controller: _inChatSearchController,
+                    focusNode: _inChatSearchFocusNode,
+                    query: _inChatSearchQuery,
+                    matchCount: searchMatches.length,
+                    currentMatchIndex: safeSearchIndex,
+                    onQueryChanged: (val) {
+                      setState(() {
+                        _inChatSearchQuery = val;
+                        _inChatSearchMatchIndex = 0;
+                      });
+                      final matches = _computeSearchMatches(messages);
+                      if (matches.isNotEmpty) {
+                        final newestIdx = matches.length - 1;
+                        setState(() => _inChatSearchMatchIndex = newestIdx);
+                        _scrollToMessage(matches[newestIdx].id, messages);
+                      } else {
+                        setState(() => _highlightedMessageId = null);
+                      }
+                    },
+                    onPrevMatch: () => _navigateSearchMatch(-1, messages),
+                    onNextMatch: () => _navigateSearchMatch(1, messages),
+                    onClose: _closeInChatSearch,
+                  ),
 
                 // Pinned Messages Banner
                 if (pinnedMessages.isNotEmpty)
@@ -979,6 +1155,31 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
                                       final isFirstUnread =
                                           msg.id ==
                                           _activeUnreadSeparatorMessageId;
+                                      final localTs = msg.timestamp.toLocal();
+                                      final prevLocalTs = index > 0
+                                          ? messages[index - 1].timestamp
+                                                .toLocal()
+                                          : null;
+                                      final showDateSeparator =
+                                          prevLocalTs == null ||
+                                          prevLocalTs.year != localTs.year ||
+                                          prevLocalTs.month != localTs.month ||
+                                          prevLocalTs.day != localTs.day;
+                                      final isGroupedWithPrev =
+                                          !showDateSeparator &&
+                                          !isFirstUnread &&
+                                          index > 0 &&
+                                          messages[index - 1].isMine ==
+                                              msg.isMine &&
+                                          messages[index - 1].senderId ==
+                                              msg.senderId &&
+                                          messages[index - 1].senderName ==
+                                              msg.senderName &&
+                                          localTs
+                                                  .difference(prevLocalTs)
+                                                  .inMinutes
+                                                  .abs() <
+                                              2;
                                       final batchImageCount = batch
                                           .where(
                                             (m) =>
@@ -1139,6 +1340,8 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
                                               )
                                             : _MessageBubble(
                                                 message: msg,
+                                                isCompactTopSpacing:
+                                                    isGroupedWithPrev,
                                                 isHighlighted:
                                                     msg.id ==
                                                     _highlightedMessageId,
@@ -1157,14 +1360,19 @@ class _ChatViewPanelState extends State<ChatViewPanel> with WindowListener {
                                               ),
                                       );
 
-                                      if (isFirstUnread) {
+                                      if (showDateSeparator || isFirstUnread) {
                                         return Column(
-                                          key: _unreadSeparatorKey,
+                                          key: isFirstUnread
+                                              ? _unreadSeparatorKey
+                                              : null,
                                           mainAxisSize: MainAxisSize.min,
                                           crossAxisAlignment:
                                               CrossAxisAlignment.stretch,
                                           children: [
-                                            const _UnreadSeparatorBanner(),
+                                            if (showDateSeparator)
+                                              _DateSeparatorChip(date: localTs),
+                                            if (isFirstUnread)
+                                              const _UnreadSeparatorBanner(),
                                             bubble,
                                           ],
                                         );
@@ -1251,6 +1459,8 @@ class _ChatHeader extends StatelessWidget {
   final VoidCallback? onToggleDetails;
   final bool isCompact;
   final VoidCallback? onBackToList;
+  final bool isSearchOpen;
+  final VoidCallback? onToggleSearch;
 
   const _ChatHeader({
     required this.peer,
@@ -1260,6 +1470,8 @@ class _ChatHeader extends StatelessWidget {
     this.onToggleDetails,
     this.isCompact = false,
     this.onBackToList,
+    this.isSearchOpen = false,
+    this.onToggleSearch,
   });
 
   @override
@@ -1818,6 +2030,18 @@ class _ChatHeader extends StatelessWidget {
           ),
 
           // Action Buttons
+          if (onToggleSearch != null) ...[
+            GlassIconButton(
+              icon: Icons.search_rounded,
+              tooltip: lang.tr('searchInChat'),
+              color: isSearchOpen
+                  ? theme.colors.accentBlue
+                  : (theme.isDark ? Colors.white70 : Colors.black87),
+              size: isCompact ? 28 : btnSize,
+              onPressed: onToggleSearch!,
+            ),
+            SizedBox(width: isCompact ? 3 : btnGap),
+          ],
           if (!isCompact) ...[
             if (isAi) ...[
               GlassIconButton(
@@ -2375,6 +2599,7 @@ class _MessageBubble extends StatefulWidget {
   final bool embedded;
   final double? thumbnailExtent;
   final bool isHighlighted;
+  final bool isCompactTopSpacing;
   final ValueChanged<MessageModel>? onReply;
   final ValueChanged<String>? onScrollToMessage;
 
@@ -2383,6 +2608,7 @@ class _MessageBubble extends StatefulWidget {
     this.embedded = false,
     this.thumbnailExtent,
     this.isHighlighted = false,
+    this.isCompactTopSpacing = false,
     this.onReply,
     this.onScrollToMessage,
   });
@@ -2584,6 +2810,21 @@ class _MessageBubbleState extends State<_MessageBubble> {
             ],
           ),
         ),
+        if (!widget.message.isRevoked)
+          PopupMenuItem<String>(
+            value: 'forward',
+            height: 36,
+            child: Row(
+              children: [
+                const Icon(Icons.shortcut_rounded, size: 15),
+                const SizedBox(width: 8),
+                Text(
+                  lang.tr('forwardMessage'),
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ],
+            ),
+          ),
         PopupMenuItem<String>(
           value: 'pin',
           height: 36,
@@ -2829,6 +3070,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
       coordinator.retrySendMessage(widget.message);
     } else if (value == 'reply') {
       widget.onReply?.call(widget.message);
+    } else if (value == 'forward') {
+      await ForwardMessageDialog.show(context, widget.message);
     } else if (value == 'pin') {
       coordinator.togglePinMessage(
         widget.message.conversationId,
@@ -3713,7 +3956,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
                     curve: Curves.easeOut,
                     margin: widget.embedded
                         ? EdgeInsets.zero
-                        : const EdgeInsets.only(top: 8, bottom: 4),
+                        : EdgeInsets.only(
+                            top: widget.isCompactTopSpacing ? 2 : 8,
+                            bottom: 4,
+                          ),
                     width: widget.embedded ? double.infinity : null,
                     constraints: BoxConstraints(maxWidth: maxBubbleWidth),
                     padding: widget.thumbnailExtent != null
@@ -3781,7 +4027,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
                           ? CrossAxisAlignment.end
                           : CrossAxisAlignment.start,
                       children: [
-                        if (isGroupOrBroadcast) ...[
+                        if (isGroupOrBroadcast &&
+                            !widget.isCompactTopSpacing) ...[
                           Padding(
                             padding: const EdgeInsets.only(bottom: 4),
                             child: Text(
@@ -5202,7 +5449,7 @@ class _ChatInputDockState extends State<_ChatInputDock> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 1. Emoji Popover (Compact 340px x 220px, high-density 22px icons)
+                  // 1. Emoji Popover (Compact max 340px x 220px, high-density 22px icons)
                   AnimatedSize(
                     duration: const Duration(milliseconds: 200),
                     curve: Curves.easeOutCubic,
@@ -5212,140 +5459,149 @@ class _ChatInputDockState extends State<_ChatInputDock> {
                             child: Align(
                               alignment: Alignment.centerLeft,
                               child: _dismissiblePicker(
-                                Container(
-                                  width: 340,
-                                  height: 220,
-                                  decoration: BoxDecoration(
-                                    color:
-                                        (theme.isDark
-                                                ? const Color(0xFF1E293B)
-                                                : const Color(0xFFF7F8FA))
-                                            .withValues(alpha: 0.98),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 340,
+                                  ),
+                                  child: Container(
+                                    width: double.infinity,
+                                    height: 220,
+                                    decoration: BoxDecoration(
                                       color:
                                           (theme.isDark
-                                                  ? const Color(0x1FFFFFFF)
-                                                  : Colors.black)
-                                              .withValues(
-                                                alpha: theme.isDark
-                                                    ? 0.8
-                                                    : 0.08,
-                                              ),
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(
-                                          alpha: theme.isDark ? 0.35 : 0.08,
-                                        ),
-                                        blurRadius: 12,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                          12,
-                                          8,
-                                          8,
-                                          6,
-                                        ),
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              lang.tr('emojis'),
-                                              style: TextStyle(
-                                                fontSize: 11.5,
-                                                fontWeight: FontWeight.w600,
-                                                color: theme.isDark
-                                                    ? Colors.white70
-                                                    : Colors.black87,
-                                              ),
-                                            ),
-                                            InkWell(
-                                              onTap: () => setState(
-                                                () => _showEmojiPicker = false,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              child: Padding(
-                                                padding: const EdgeInsets.all(
-                                                  3,
-                                                ),
-                                                child: Icon(
-                                                  Icons.close_rounded,
-                                                  size: 15,
-                                                  color: theme.isDark
-                                                      ? Colors.white54
-                                                      : Colors.black45,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Divider(
-                                        height: 1,
-                                        thickness: 0.8,
+                                                  ? const Color(0xFF1E293B)
+                                                  : const Color(0xFFF7F8FA))
+                                              .withValues(alpha: 0.98),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
                                         color:
                                             (theme.isDark
-                                                    ? Colors.white
+                                                    ? const Color(0x1FFFFFFF)
                                                     : Colors.black)
                                                 .withValues(
                                                   alpha: theme.isDark
-                                                      ? 0.08
-                                                      : 0.06,
+                                                      ? 0.8
+                                                      : 0.08,
                                                 ),
                                       ),
-                                      Expanded(
-                                        child: Scrollbar(
-                                          child: GridView.builder(
-                                            padding: const EdgeInsets.all(6),
-                                            gridDelegate:
-                                                const SliverGridDelegateWithFixedCrossAxisCount(
-                                                  crossAxisCount: 8,
-                                                  mainAxisSpacing: 3,
-                                                  crossAxisSpacing: 3,
-                                                  childAspectRatio: 1.0,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(
+                                            alpha: theme.isDark ? 0.35 : 0.08,
+                                          ),
+                                          blurRadius: 12,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.fromLTRB(
+                                            12,
+                                            8,
+                                            8,
+                                            6,
+                                          ),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                lang.tr('emojis'),
+                                                style: TextStyle(
+                                                  fontSize: 11.5,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: theme.isDark
+                                                      ? Colors.white70
+                                                      : Colors.black87,
                                                 ),
-                                            itemCount: _commonEmojis.length,
-                                            itemBuilder: (context, idx) {
-                                              final emoji = _commonEmojis[idx];
-                                              return Material(
-                                                color: Colors.transparent,
-                                                child: InkWell(
-                                                  borderRadius:
-                                                      BorderRadius.circular(6),
-                                                  hoverColor:
-                                                      (theme.isDark
-                                                              ? Colors.white
-                                                              : Colors.black)
-                                                          .withValues(
-                                                            alpha: 0.08,
-                                                          ),
-                                                  onTap: () =>
-                                                      _insertEmoji(emoji),
-                                                  child: Center(
-                                                    child: Text(
-                                                      emoji,
-                                                      style: const TextStyle(
-                                                        fontSize: 22,
+                                              ),
+                                              InkWell(
+                                                onTap: () => setState(
+                                                  () =>
+                                                      _showEmojiPicker = false,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                child: Padding(
+                                                  padding: const EdgeInsets.all(
+                                                    3,
+                                                  ),
+                                                  child: Icon(
+                                                    Icons.close_rounded,
+                                                    size: 15,
+                                                    color: theme.isDark
+                                                        ? Colors.white54
+                                                        : Colors.black45,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Divider(
+                                          height: 1,
+                                          thickness: 0.8,
+                                          color:
+                                              (theme.isDark
+                                                      ? Colors.white
+                                                      : Colors.black)
+                                                  .withValues(
+                                                    alpha: theme.isDark
+                                                        ? 0.08
+                                                        : 0.06,
+                                                  ),
+                                        ),
+                                        Expanded(
+                                          child: Scrollbar(
+                                            child: GridView.builder(
+                                              padding: const EdgeInsets.all(6),
+                                              gridDelegate:
+                                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                                    crossAxisCount: 8,
+                                                    mainAxisSpacing: 3,
+                                                    crossAxisSpacing: 3,
+                                                    childAspectRatio: 1.0,
+                                                  ),
+                                              itemCount: _commonEmojis.length,
+                                              itemBuilder: (context, idx) {
+                                                final emoji =
+                                                    _commonEmojis[idx];
+                                                return Material(
+                                                  color: Colors.transparent,
+                                                  child: InkWell(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          6,
+                                                        ),
+                                                    hoverColor:
+                                                        (theme.isDark
+                                                                ? Colors.white
+                                                                : Colors.black)
+                                                            .withValues(
+                                                              alpha: 0.08,
+                                                            ),
+                                                    onTap: () =>
+                                                        _insertEmoji(emoji),
+                                                    child: Center(
+                                                      child: Text(
+                                                        emoji,
+                                                        style: const TextStyle(
+                                                          fontSize: 22,
+                                                        ),
                                                       ),
                                                     ),
                                                   ),
-                                                ),
-                                              );
-                                            },
+                                                );
+                                              },
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
@@ -5364,13 +5620,20 @@ class _ChatInputDockState extends State<_ChatInputDock> {
                             child: Align(
                               alignment: Alignment.centerLeft,
                               child: _dismissiblePicker(
-                                StickerPickerPopover(
-                                  onSelectSticker: (sticker) {
-                                    setState(() => _showStickerPicker = false);
-                                    widget.onSendSticker?.call(sticker);
-                                  },
-                                  onClose: () => setState(
-                                    () => _showStickerPicker = false,
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 340,
+                                  ),
+                                  child: StickerPickerPopover(
+                                    onSelectSticker: (sticker) {
+                                      setState(
+                                        () => _showStickerPicker = false,
+                                      );
+                                      widget.onSendSticker?.call(sticker);
+                                    },
+                                    onClose: () => setState(
+                                      () => _showStickerPicker = false,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -5592,8 +5855,11 @@ class _ChatInputDockState extends State<_ChatInputDock> {
                     padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
                     child: LayoutBuilder(
                       builder: (context, constraints) {
+                        final isUltraCompact = constraints.maxWidth < 310;
                         final isNarrow = constraints.maxWidth < 360;
-                        final buttonSize = isNarrow ? 28.0 : 32.0;
+                        final buttonSize = isUltraCompact
+                            ? 26.0
+                            : (isNarrow ? 28.0 : 32.0);
                         final spacing = isNarrow ? 1.0 : 2.0;
                         return Row(
                           children: [
@@ -5660,67 +5926,96 @@ class _ChatInputDockState extends State<_ChatInputDock> {
                             ImeToggleButton(size: buttonSize),
                             const Spacer(),
                             if (isAiBusy) ...[
-                              ElevatedButton.icon(
+                              Tooltip(
+                                message: lang.tr('stopAiGeneration'),
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.redAccent.shade400,
+                                    foregroundColor: Colors.white,
+                                    minimumSize: Size(
+                                      isUltraCompact
+                                          ? 28
+                                          : (isNarrow ? 30 : 36),
+                                      buttonSize,
+                                    ),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: isUltraCompact
+                                          ? 6
+                                          : (isNarrow ? 6 : 10),
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    elevation: 0,
+                                  ),
+                                  onPressed: () =>
+                                      coordinator.stopAiGeneration(),
+                                  child: isUltraCompact
+                                      ? const Icon(
+                                          Icons.stop_circle_rounded,
+                                          size: 14,
+                                        )
+                                      : Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(
+                                              Icons.stop_circle_rounded,
+                                              size: 14,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              lang.tr('stopAiGeneration'),
+                                              style: const TextStyle(
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                ),
+                              ),
+                              SizedBox(width: isNarrow ? 3 : 6),
+                            ],
+                            Tooltip(
+                              message: lang.tr('send'),
+                              child: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.redAccent.shade400,
+                                  backgroundColor: theme.colors.accentBlue,
                                   foregroundColor: Colors.white,
                                   minimumSize: Size(
-                                    isNarrow ? 30 : 36,
+                                    isUltraCompact ? 32 : (isNarrow ? 36 : 40),
                                     buttonSize,
                                   ),
                                   padding: EdgeInsets.symmetric(
-                                    horizontal: isNarrow ? 6 : 10,
+                                    horizontal: isUltraCompact
+                                        ? 8
+                                        : (isNarrow ? 8 : 14),
                                   ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   elevation: 0,
                                 ),
-                                onPressed: () => coordinator.stopAiGeneration(),
-                                icon: const Icon(
-                                  Icons.stop_circle_rounded,
-                                  size: 14,
-                                ),
-                                label: Text(
-                                  lang.tr('stopAiGeneration'),
-                                  style: const TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                              SizedBox(width: isNarrow ? 4 : 6),
-                            ],
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: theme.colors.accentBlue,
-                                foregroundColor: Colors.white,
-                                minimumSize: Size(
-                                  isNarrow ? 36 : 40,
-                                  buttonSize,
-                                ),
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: isNarrow ? 8 : 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                elevation: 0,
-                              ),
-                              onPressed: _triggerSend,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    lang.tr('send'),
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  const Icon(Icons.send_rounded, size: 13),
-                                ],
+                                onPressed: _triggerSend,
+                                child: isUltraCompact
+                                    ? const Icon(Icons.send_rounded, size: 13)
+                                    : Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            lang.tr('send'),
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          const Icon(
+                                            Icons.send_rounded,
+                                            size: 13,
+                                          ),
+                                        ],
+                                      ),
                               ),
                             ),
                           ],
@@ -6544,6 +6839,206 @@ class _UnreadSeparatorBanner extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Dải phân cách ngày tháng trong lịch sử trò chuyện (Hôm nay / Hôm qua / dd/MM/yyyy)
+class _DateSeparatorChip extends StatelessWidget {
+  final DateTime date;
+
+  const _DateSeparatorChip({required this.date});
+
+  String _formatDateLabel(LanguageProvider lang) {
+    final local = date.toLocal();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final msgDay = DateTime(local.year, local.month, local.day);
+    final diffDays = today.difference(msgDay).inDays;
+
+    if (diffDays == 0) {
+      return lang.tr('today');
+    } else if (diffDays == 1) {
+      return lang.tr('yesterday');
+    }
+    final d = local.day.toString().padLeft(2, '0');
+    final m = local.month.toString().padLeft(2, '0');
+    final y = local.year.toString();
+    return '$d/$m/$y';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ThemeProvider.of(context);
+    final lang = context.watch<LanguageProvider>();
+    final isDark = theme.isDark;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: (isDark ? const Color(0xFF1E293B) : Colors.black).withValues(
+              alpha: isDark ? 0.65 : 0.06,
+            ),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: (isDark ? Colors.white : Colors.black).withValues(
+                alpha: isDark ? 0.10 : 0.06,
+              ),
+              width: 0.8,
+            ),
+          ),
+          child: Text(
+            _formatDateLabel(lang),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isDark ? const Color(0xFF94A3B8) : Colors.black54,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Thanh tìm kiếm tin nhắn trong cuộc trò chuyện hiện tại (Ctrl+F)
+class _InChatSearchBar extends StatelessWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String query;
+  final int matchCount;
+  final int currentMatchIndex;
+  final ValueChanged<String> onQueryChanged;
+  final VoidCallback onPrevMatch;
+  final VoidCallback onNextMatch;
+  final VoidCallback onClose;
+
+  const _InChatSearchBar({
+    required this.controller,
+    required this.focusNode,
+    required this.query,
+    required this.matchCount,
+    required this.currentMatchIndex,
+    required this.onQueryChanged,
+    required this.onPrevMatch,
+    required this.onNextMatch,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ThemeProvider.of(context);
+    final lang = context.watch<LanguageProvider>();
+    final isDark = theme.isDark;
+    final hasQuery = query.trim().isNotEmpty;
+
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: (isDark ? const Color(0xFF1E293B) : const Color(0xFFF3F4F8))
+            .withValues(alpha: isDark ? 0.85 : 0.96),
+        border: Border(
+          bottom: BorderSide(
+            color: (isDark ? Colors.white : Colors.black).withValues(
+              alpha: isDark ? 0.10 : 0.08,
+            ),
+            width: 0.8,
+          ),
+        ),
+      ),
+      child: Focus(
+        onKeyEvent: (node, event) {
+          if (event is KeyDownEvent) {
+            if (event.logicalKey == LogicalKeyboardKey.escape) {
+              onClose();
+              return KeyEventResult.handled;
+            }
+            if (event.logicalKey == LogicalKeyboardKey.enter ||
+                event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+              if (HardwareKeyboard.instance.isShiftPressed) {
+                onNextMatch();
+              } else {
+                onPrevMatch();
+              }
+              return KeyEventResult.handled;
+            }
+          }
+          return KeyEventResult.ignored;
+        },
+        child: Row(
+          children: [
+            Icon(
+              Icons.search_rounded,
+              size: 16,
+              color: theme.colors.accentBlue,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: controller,
+                focusNode: focusNode,
+                onChanged: onQueryChanged,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: isDark ? const Color(0xFFF8FAFC) : Colors.black87,
+                ),
+                decoration: InputDecoration(
+                  hintText: lang.tr('searchMessagesHint'),
+                  hintStyle: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? const Color(0xFF94A3B8) : Colors.black45,
+                  ),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                ),
+              ),
+            ),
+            if (hasQuery) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Text(
+                  matchCount > 0
+                      ? '${currentMatchIndex + 1}/$matchCount'
+                      : lang.tr('noSearchResults'),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: matchCount > 0
+                        ? theme.colors.accentBlue
+                        : (isDark ? Colors.white54 : Colors.black45),
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.keyboard_arrow_up_rounded, size: 18),
+                tooltip: lang.tr('prevMatch'),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                onPressed: matchCount > 0 ? onPrevMatch : null,
+              ),
+              IconButton(
+                icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+                tooltip: lang.tr('nextMatch'),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                onPressed: matchCount > 0 ? onNextMatch : null,
+              ),
+            ],
+            IconButton(
+              icon: const Icon(Icons.close_rounded, size: 16),
+              tooltip: lang.tr('close'),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+              onPressed: onClose,
+            ),
+          ],
+        ),
       ),
     );
   }

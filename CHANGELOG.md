@@ -2,6 +2,31 @@
 
 All notable changes to the **JA LAN Messenger** project will be documented in this file.
 
+## [1.10.0] - 2026-10-15
+
+### 🚀 Nâng cấp & Tính năng mới
+- **Tìm kiếm Tin nhắn trong Cuộc trò chuyện (`_InChatSearchBar` / `Ctrl+F`)**:
+  - Bổ sung thanh tìm kiếm trượt mượt ngay dưới tiêu đề cuộc trò chuyện với bộ đếm kết quả (`1/N`), điều hướng nhanh bằng `Enter` / `Shift+Enter` (hoặc nút `↑`/`↓`), tự động cuộn tới vị trí tin nhắn và tô sáng bong bóng khớp từ khóa.
+- **Lưu Bản nháp theo Từng Cuộc trò chuyện (Per-Peer Message Drafts)**:
+  - Tự động bảo toàn nội dung đang gõ dở khi chuyển đổi qua lại giữa các đồng nghiệp/nhóm chat.
+  - Hiển thị nhãn **`[Nháp]` / `[Draft]` / `[草稿]`** màu vàng cam nổi bật ở danh sách liên hệ (cả chế độ Chuẩn và Compact Mode).
+- **Kéo-Thả Thư mục Tự động Nén `.zip` (`FolderArchiveHelper`)**:
+  - Khi người dùng kéo-thả cả một thư mục (Folder) từ Windows Explorer vào khung chat, hệ thống tự động nén thư mục thành tệp `.zip` bằng `tar.exe` tốc độ cao của Windows 10/11 (kèm cơ chế dự phòng `Compress-Archive`) và đưa ngay vào hàng chờ gửi tệp.
+- **Chuyển tiếp Tin nhắn & Tệp đính kèm (`ForwardMessageDialog`)**:
+  - Bổ sung mục **Chuyển tiếp** trong menu chuột phải của tin nhắn, mở hộp thoại kính mờ cho phép chọn cùng lúc một hoặc nhiều đồng nghiệp/nhóm nhận kèm ghi chú tùy chọn.
+- **Nhãn Phân cách Ngày (`_DateSeparatorChip`) & Gom cụm Tin nhắn Liên tiếp**:
+  - Hiển thị nhãn phân cách ngày (`Hôm nay`, `Hôm qua`, `dd/MM/yyyy`) giữa các ngày trò chuyện và thu gọn khoảng cách dọc cho các tin nhắn liên tiếp từ cùng một người gửi trong vòng 2 phút.
+- **Hệ thống Phím tắt Bàn phím & Khắc phục Tràn Thanh Công cụ Compact `320px`**:
+  - Hỗ trợ `Ctrl+F` (tìm trong hội thoại), `Ctrl+K` (tìm liên hệ ở Sidebar), `Alt+Up`/`Alt+Down` (chuyển cuộc hội thoại liền kề), `Esc` (đóng tìm kiếm / hủy trích dẫn).
+  - Tự động thu gọn nút Gửi / Dừng AI về dạng icon-only và giới hạn chiều rộng bảng chọn Emoji/Sticker ở chế độ thu nhỏ `320px`, loại bỏ hoàn toàn hiện tượng tràn ngang (`RenderFlex overflow`).
+- **Tối ưu Hiệu năng Dựng hình & Đọc/Ghi Lịch sử (`P1–P3`)**:
+  - Thay thế vòng lặp `jsonEncode` kiểm tra reaction mỗi khung hình bằng bộ đếm $O(1)$ `reactionRevision`.
+  - Ảo hóa danh sách liên hệ `PeerListView` bằng `ListView.builder`.
+  - Tối ưu `ChatHistoryService`: chỉ tuần tự hóa JSON 1 lần duy nhất cho toàn bộ `mirrorAliases` khi lưu và đọc song song (`Future.wait`) các tệp lịch sử khi khởi động.
+
+### 📦 Phát hành
+- Đồng bộ version 1.10.0+20 trong pubspec.yaml, constants.dart, Runner.rc, installer.iss, install.bat, ABOUT.txt, USERGUIDE.md, README.md, RELEASE_NOTES.md.
+
 ## [1.9.0] - 2026-10-06
 
 ### 🚀 Nâng cấp & Tính năng mới

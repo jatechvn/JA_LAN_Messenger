@@ -349,8 +349,12 @@ class MessengerCoordinator extends ChangeNotifier {
   bool _disposed = false;
   final AiServerLocator _aiLocator;
   Timer? _livenessTimer;
+  Timer? _outboxRetryTimer;
+  bool _outboxRetryRunning = false;
+  final Duration outboxRetryInterval;
 
   MessengerCoordinator({
+    this.outboxRetryInterval = const Duration(seconds: 5),
     LanTcpServer? tcpServer,
     KnownDevicesRegistry? knownDevices,
     AiServerLocator? aiServerLocator,
@@ -2337,6 +2341,7 @@ class MessengerCoordinator extends ChangeNotifier {
 
       // Khởi tạo hợp nhất các cuộc trò chuyện và thiết bị cùng máy vật lý từ lịch sử
       _consolidateLoadedPeersAndConversations();
+      _ensureOutboxRetryTimer();
 
       for (final peer in peers.where((p) => p.status != PeerStatus.offline)) {
         unawaited(flushPendingOutgoingMessagesForPeer(peer));
@@ -2886,8 +2891,13 @@ class MessengerCoordinator extends ChangeNotifier {
     session.remote.statusDescription = message['text'] as String? ?? '';
     final peer = _peers[session.conversationId];
     if (peer == null) return;
+    final previousStatus = peer.status;
     peer.lastSeen = DateTime.now();
     _refreshLogicalPeer(peer);
+    if (previousStatus == PeerStatus.offline &&
+        peer.status != PeerStatus.offline) {
+      unawaited(flushPendingOutgoingMessagesForPeer(peer));
+    }
     notifyListeners();
   }
 
@@ -3688,6 +3698,7 @@ class MessengerCoordinator extends ChangeNotifier {
 
     final message = messages[index];
     final added = message.toggleReaction(emoji, localUsername);
+    _reactionRevision++;
     chatHistory.scheduleSave(conversationId, messages);
     notifyListeners();
 
@@ -3758,6 +3769,7 @@ class MessengerCoordinator extends ChangeNotifier {
       }
     }
     if (updated) {
+      _reactionRevision++;
       notifyListeners();
     }
   }
@@ -3909,13 +3921,80 @@ class MessengerCoordinator extends ChangeNotifier {
     return count;
   }
 
+  int _reactionRevision = 0;
+  int get reactionRevision => _reactionRevision;
+
+  final Map<String, String> _drafts = {};
+
+  /// Lấy nội dung bản nháp đang gõ dở của một cuộc trò chuyện
+  String getDraft(String peerId) => _drafts[peerId] ?? '';
+
+  /// Kiểm tra cuộc trò chuyện có bản nháp khác rỗng hay không
+  bool hasDraft(String peerId) => _drafts[peerId]?.trim().isNotEmpty ?? false;
+
+  /// Lưu hoặc xóa bản nháp của cuộc trò chuyện (chỉ notify khi trạng thái có/không nháp thay đổi hoặc khi được yêu cầu)
+  void setDraft(String peerId, String text, {bool notify = false}) {
+    if (peerId.isEmpty) return;
+    final prevHasDraft = hasDraft(peerId);
+    final prevText = _drafts[peerId] ?? '';
+    if (text.isEmpty) {
+      _drafts.remove(peerId);
+    } else {
+      _drafts[peerId] = text;
+    }
+    final nextHasDraft = hasDraft(peerId);
+    if (notify ? prevText != text : prevHasDraft != nextHasDraft) {
+      notifyListeners();
+    }
+  }
+
   int _chatFocusRequestId = 0;
   int get chatFocusRequestId => _chatFocusRequestId;
+
+  int _sidebarSearchFocusRequestId = 0;
+  int get sidebarSearchFocusRequestId => _sidebarSearchFocusRequestId;
+
+  int _chatSearchFocusRequestId = 0;
+  int get chatSearchFocusRequestId => _chatSearchFocusRequestId;
 
   /// Yêu cầu focus con trỏ vào ô nhập tin nhắn
   void requestChatInputFocus() {
     _chatFocusRequestId++;
     notifyListeners();
+  }
+
+  /// Yêu cầu focus vào ô tìm kiếm liên hệ/nhóm ở Sidebar (Ctrl+K)
+  void requestSidebarSearchFocus() {
+    _sidebarSearchFocusRequestId++;
+    notifyListeners();
+  }
+
+  /// Yêu cầu mở và focus vào thanh tìm kiếm tin nhắn trong hội thoại (Ctrl+F)
+  void requestChatSearchFocus() {
+    _chatSearchFocusRequestId++;
+    notifyListeners();
+  }
+
+  /// Chuyển đổi nhanh sang cuộc trò chuyện liền kề (Alt+Up / Alt+Down)
+  void selectAdjacentPeer(int offset) {
+    final navList = <PeerModel>[
+      _allUsersPeer,
+      for (final g in groups) getPeerForGroup(g),
+      ...peers,
+    ];
+    if (navList.isEmpty) return;
+    if (_selectedPeer == null) {
+      selectPeer(navList.first);
+      return;
+    }
+    final idx = navList.indexWhere((p) => isPeerSelected(p));
+    if (idx == -1) {
+      selectPeer(navList.first);
+      return;
+    }
+    final nextIdx = (idx + offset) % navList.length;
+    final normalizedIdx = nextIdx < 0 ? nextIdx + navList.length : nextIdx;
+    selectPeer(navList[normalizedIdx]);
   }
 
   /// Chọn một cuộc trò chuyện
@@ -3935,16 +4014,60 @@ class MessengerCoordinator extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Gửi tin nhắn tới peer hoặc kênh đang chọn (hỗ trợ trích dẫn tin nhắn)
-  Future<bool> sendMessage(String text, {MessageModel? replyTo}) async {
+  /// Chuyển tiếp tin nhắn (văn bản, nhãn dán hoặc tệp đính kèm) tới danh sách người nhận/nhóm
+  Future<int> forwardMessageToPeers(
+    MessageModel sourceMessage,
+    List<PeerModel> recipients, {
+    String? note,
+  }) async {
+    if (recipients.isEmpty) return 0;
+    var successCount = 0;
+    final attachmentPath = sourceMessage.fileAttachment?.localPath;
+    final attachmentFile =
+        attachmentPath != null && File(attachmentPath).existsSync()
+        ? File(attachmentPath)
+        : null;
+    final cleanNote = note?.trim() ?? '';
+
+    for (final target in recipients) {
+      try {
+        if (attachmentFile != null) {
+          await sendFile(
+            attachmentFile,
+            recipient: target,
+            caption: cleanNote.isNotEmpty ? cleanNote : null,
+          );
+          successCount++;
+        } else if (sourceMessage.text.trim().isNotEmpty) {
+          await sendMessage(sourceMessage.text, recipient: target);
+          if (cleanNote.isNotEmpty) {
+            await sendMessage(cleanNote, recipient: target);
+          }
+          successCount++;
+        }
+      } catch (e) {
+        debugPrint('[Forward] Error forwarding to ${target.id}: $e');
+      }
+    }
+    return successCount;
+  }
+
+  /// Gửi tin nhắn tới peer hoặc kênh đang chọn (hỗ trợ trích dẫn tin nhắn và chỉ định người nhận)
+  Future<bool> sendMessage(
+    String text, {
+    MessageModel? replyTo,
+    PeerModel? recipient,
+  }) async {
     await historyLoaded;
-    if (_selectedPeer == null || text.trim().isEmpty) return false;
+    final targetPeer = recipient ?? _selectedPeer;
+    if (targetPeer == null || text.trim().isEmpty) return false;
 
-    // Tự động gỡ huy hiệu "Bạn mới" khi đã gửi tin nhắn trò chuyện
-    _newlyAddedPeers.remove(_selectedPeer!.id);
-
-    // Kết thúc trạng thái đang soạn tin khi gửi tin nhắn
-    sendTypingStatus(false);
+    // Tự động gỡ huy hiệu "Bạn mới" và bản nháp khi đã gửi tin nhắn trò chuyện
+    _newlyAddedPeers.remove(targetPeer.id);
+    if (recipient == null) {
+      _drafts.remove(targetPeer.id);
+      sendTypingStatus(false);
+    }
 
     final msgId = '${DateTime.now().microsecondsSinceEpoch}';
     final plainText = text.trim();
@@ -3958,7 +4081,7 @@ class MessengerCoordinator extends ChangeNotifier {
       id: msgId,
       senderId: 'me',
       senderName: localUsername,
-      recipientId: _selectedPeer!.id,
+      recipientId: targetPeer.id,
       text: plainText,
       isMine: true,
       status: MessageStatus.sending,
@@ -3968,12 +4091,12 @@ class MessengerCoordinator extends ChangeNotifier {
       replyToText: replyTo?.text,
     );
 
-    final list = _conversations.putIfAbsent(_selectedPeer!.id, () => []);
+    final list = _conversations.putIfAbsent(targetPeer.id, () => []);
     list.add(msg);
-    if (!_selectedPeer!.isAiAssistant) {
-      final targets = _selectedPeer!.isGroup
-          ? _selectedPeer!.memberIds
-          : _selectedPeer!.isAllUsers
+    if (!targetPeer.isAiAssistant) {
+      final targets = targetPeer.isGroup
+          ? targetPeer.memberIds
+          : targetPeer.isAllUsers
           ? peers
                 .where(
                   (p) =>
@@ -3983,24 +4106,31 @@ class MessengerCoordinator extends ChangeNotifier {
                       !p.isAiAssistant,
                 )
                 .map((p) => p.id)
-          : [_selectedPeer!.id];
+          : [targetPeer.id];
       for (final target in targets) {
         recordPendingOfflineMessage(target, msgId);
       }
     }
-    chatHistory.scheduleSave(_selectedPeer!.id, list);
+    chatHistory.scheduleSave(targetPeer.id, list);
 
-    _selectedPeer!.lastMessage = plainText;
-    _selectedPeer!.lastMessageTime = msg.timestamp;
+    targetPeer.lastMessage = plainText;
+    targetPeer.lastMessageTime = msg.timestamp;
+    if (!targetPeer.isGroup &&
+        !targetPeer.isAllUsers &&
+        !targetPeer.isAiAssistant &&
+        _peers.containsKey(targetPeer.id)) {
+      _peers[targetPeer.id]!.lastMessage = plainText;
+      _peers[targetPeer.id]!.lastMessageTime = msg.timestamp;
+    }
     notifyListeners();
 
-    if (_selectedPeer!.isAiAssistant) {
+    if (targetPeer.isAiAssistant) {
       msg.status = MessageStatus.sent;
       _dispatchAiResponse(plainText);
       return true;
     }
 
-    if (_selectedPeer!.isAllUsers) {
+    if (targetPeer.isAllUsers) {
       // Broadcast tới toàn bộ các peer online (đã lọc trùng lặp card mạng)
       var anySuccess = false;
       final onlinePeers = peers
@@ -4030,13 +4160,15 @@ class MessengerCoordinator extends ChangeNotifier {
       msg.status = (anySuccess || onlinePeers.isEmpty)
           ? MessageStatus.sent
           : MessageStatus.failed;
-      chatHistory.scheduleSave(_selectedPeer!.id, list);
+      _allUsersPeer.lastMessage = plainText;
+      _allUsersPeer.lastMessageTime = msg.timestamp;
+      chatHistory.scheduleSave(targetPeer.id, list);
       notifyListeners();
       return anySuccess;
-    } else if (_selectedPeer!.isGroup) {
+    } else if (targetPeer.isGroup) {
       // Gửi tới các thành viên trong nhóm
       var anySuccess = false;
-      for (final memberId in _selectedPeer!.memberIds) {
+      for (final memberId in targetPeer.memberIds) {
         final peer = _peers[memberId] ?? _findPeerByIpOrId(memberId);
         var ok = false;
         if (peer != null && peer.status != PeerStatus.offline) {
@@ -4045,9 +4177,9 @@ class MessengerCoordinator extends ChangeNotifier {
             ProtocolBeebeep.buildChatPacket(
               messageId: msgId,
               text: networkPayload,
-              groupId: _selectedPeer!.id,
-              groupName: _selectedPeer!.name,
-              groupUpdatedAt: _groups[_selectedPeer!.id]?.updatedAt,
+              groupId: targetPeer.id,
+              groupName: targetPeer.name,
+              groupUpdatedAt: _groups[targetPeer.id]?.updatedAt,
             ),
           );
           if (ok) anySuccess = true;
@@ -4061,26 +4193,26 @@ class MessengerCoordinator extends ChangeNotifier {
         }
       }
       msg.status = anySuccess ? MessageStatus.sent : MessageStatus.failed;
-      if (_groups.containsKey(_selectedPeer!.id)) {
-        _groups[_selectedPeer!.id]!.lastMessage = plainText;
-        _groups[_selectedPeer!.id]!.lastMessageTime = msg.timestamp;
+      if (_groups.containsKey(targetPeer.id)) {
+        _groups[targetPeer.id]!.lastMessage = plainText;
+        _groups[targetPeer.id]!.lastMessageTime = msg.timestamp;
         _saveGroups();
       }
-      chatHistory.scheduleSave(_selectedPeer!.id, list);
+      chatHistory.scheduleSave(targetPeer.id, list);
       notifyListeners();
       return anySuccess;
     } else {
       // Gửi qua TCP tới peer cá nhân
       final isOffline =
-          _selectedPeer!.status == PeerStatus.offline ||
-          (_peerSessions.forConversation(_selectedPeer!.id).isNotEmpty &&
+          targetPeer.status == PeerStatus.offline ||
+          (_peerSessions.forConversation(targetPeer.id).isNotEmpty &&
               !_peerSessions
-                  .forConversation(_selectedPeer!.id)
+                  .forConversation(targetPeer.id)
                   .any((s) => s.available));
       var success = false;
       if (!isOffline) {
         success = _sendToPeer(
-          _selectedPeer!.id,
+          targetPeer.id,
           ProtocolBeebeep.buildChatPacket(
             messageId: msgId,
             text: networkPayload,
@@ -4091,12 +4223,12 @@ class MessengerCoordinator extends ChangeNotifier {
         msg.status = success ? MessageStatus.sent : MessageStatus.failed;
       }
       if (!success) {
-        recordPendingOfflineMessage(_selectedPeer!.id, msgId);
+        recordPendingOfflineMessage(targetPeer.id, msgId);
       } else {
-        msg.pendingRecipients?.remove(_selectedPeer!.id);
-        _removePendingOfflineMessage(_selectedPeer!.id, msgId);
+        msg.pendingRecipients?.remove(targetPeer.id);
+        _removePendingOfflineMessage(targetPeer.id, msgId);
       }
-      chatHistory.scheduleSave(_selectedPeer!.id, list);
+      chatHistory.scheduleSave(targetPeer.id, list);
       notifyListeners();
       return success;
     }
@@ -4106,6 +4238,7 @@ class MessengerCoordinator extends ChangeNotifier {
   @visibleForTesting
   void recordPendingOfflineMessage(String targetKey, String messageId) {
     _pendingOfflineMessageIds.putIfAbsent(targetKey, () => {}).add(messageId);
+    _ensureOutboxRetryTimer();
     for (final entry in _conversations.entries) {
       for (final msg in entry.value.where(
         (m) => m.id == messageId && _isRetryableText(m),
@@ -4132,6 +4265,68 @@ class MessengerCoordinator extends ChangeNotifier {
     _pendingOfflineMessageIds[targetKey]?.remove(messageId);
     if (_pendingOfflineMessageIds[targetKey]?.isEmpty ?? false) {
       _pendingOfflineMessageIds.remove(targetKey);
+    }
+    if (_pendingOfflineMessageIds.isEmpty) {
+      _outboxRetryTimer?.cancel();
+      _outboxRetryTimer = null;
+    }
+  }
+
+  void _ensureOutboxRetryTimer() {
+    if (_disposed ||
+        _pendingOfflineMessageIds.isEmpty ||
+        _outboxRetryTimer != null) {
+      return;
+    }
+    _outboxRetryTimer = Timer.periodic(outboxRetryInterval, (_) {
+      unawaited(_retryPendingOutbox());
+    });
+  }
+
+  Future<void> _retryPendingOutbox() async {
+    if (_disposed || _outboxRetryRunning) return;
+    if (_pendingOfflineMessageIds.isEmpty) {
+      _outboxRetryTimer?.cancel();
+      _outboxRetryTimer = null;
+      return;
+    }
+    _outboxRetryRunning = true;
+    try {
+      await historyLoaded;
+      for (final peer in _peers.values.toSet().toList()) {
+        if (_disposed) return;
+        if (peer.isGroup ||
+            peer.isAllUsers ||
+            peer.isAiAssistant ||
+            peer.status == PeerStatus.offline) {
+          continue;
+        }
+        final keys = {
+          peer.id,
+          peer.ip,
+          '${peer.ip}:${peer.port}',
+          peer.canonicalIdentity,
+          ...chatHistory.aliasesFor(peer.id),
+          ...peer.knownIps,
+          for (final ip in peer.knownIps) '$ip:${peer.port}',
+          if (_peerHashes[peer.id] case final String hash) 'hash:$hash',
+        };
+        if (!keys.any(_pendingOfflineMessageIds.containsKey)) continue;
+        if (_outboxInFlight.any((key) => key.endsWith(':${peer.id}'))) continue;
+        try {
+          if (!_tcpServer.isConnected(peer.id)) {
+            await _tcpServer.connect(peer.ip, peer.port);
+          }
+          if (!_disposed && identical(_peers[peer.id], peer)) {
+            await flushPendingOutgoingMessagesForPeer(peer);
+          }
+        } catch (error) {
+          // Keep pending targets; a later tick or handshake can retry.
+          debugPrint('[Outbox] Retry failed: ${error.runtimeType}');
+        }
+      }
+    } finally {
+      _outboxRetryRunning = false;
     }
   }
 
@@ -5824,6 +6019,7 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
       unawaited(windowManager.setAlwaysOnTop(false).catchError((Object _) {}));
     }
     _disposed = true;
+    _outboxRetryTimer?.cancel();
     _livenessTimer?.cancel();
     _typingCleanupTimer?.cancel();
     chatHistory.cancelAll();

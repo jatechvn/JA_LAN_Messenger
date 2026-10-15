@@ -147,141 +147,176 @@ class _PeerListViewState extends State<PeerListView> {
 
           const Divider(height: 10, thickness: 0.8, indent: 12, endIndent: 12),
 
-          // Danh sách Nhóm & Thiết bị
+          // Danh sách Nhóm & Thiết bị (Ảo hóa bằng ListView.builder)
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
-              children: [
-                // Section: Nhóm trò chuyện
-                if (showGroups && groups.isNotEmpty) ...[
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 4,
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          lang.tr('groupsSection').toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.5,
-                            color: theme.isDark
-                                ? Colors.white38
-                                : Colors.black38,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: theme.colors.accentBlue.withValues(
-                              alpha: 0.15,
-                            ),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            '${groups.length}',
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                              color: theme.colors.accentBlue,
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        InkWell(
-                          onTap: () => _showCreateGroupDialog(context),
-                          borderRadius: BorderRadius.circular(4),
-                          child: Padding(
-                            padding: const EdgeInsets.all(2),
-                            child: Icon(
-                              Icons.add_rounded,
-                              size: 16,
-                              color: theme.colors.accentBlue,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  for (final group in groups)
-                    _GroupListTile(
-                      group: group,
-                      isSelected: coordinator.selectedPeer?.id == group.id,
-                      onTap: () => coordinator.selectPeer(
-                        coordinator.getPeerForGroup(group),
-                      ),
-                      onDelete: () => _confirmDisbandGroup(context, group),
-                    ),
-                  const SizedBox(height: 6),
-                ],
+            child: (displayPeers.isEmpty && (!showGroups || groups.isEmpty))
+                ? _EmptyPeerState()
+                : Builder(
+                    builder: (context) {
+                      final hasGroupSection = showGroups && groups.isNotEmpty;
+                      final hasPeerSection =
+                          _activeCategory != _PeerCategory.groups;
+                      // Cấu trúc index ảo hóa:
+                      // [0]: Group Header (nếu hasGroupSection)
+                      // [1..groups.length]: _GroupListTile
+                      // [groups.length + 1]: Spacer 6px
+                      // [peerHeaderIdx]: Peer Section Header (nếu hasPeerSection)
+                      // [peerStartIdx..]: _PeerListTile
+                      final groupBlockCount = hasGroupSection
+                          ? (1 + groups.length + 1)
+                          : 0;
+                      final peerBlockCount = hasPeerSection
+                          ? (1 + displayPeers.length)
+                          : 0;
+                      final totalCount = groupBlockCount + peerBlockCount;
 
-                // Section: Thiết bị LAN
-                if (_activeCategory != _PeerCategory.groups) ...[
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 4,
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          (_activeCategory == _PeerCategory.online
-                                  ? lang.tr('categoryOnline')
-                                  : lang.tr('tabChats'))
-                              .toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.5,
-                            color: theme.isDark
-                                ? Colors.white38
-                                : Colors.black38,
-                          ),
+                      return ListView.builder(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 2,
+                          horizontal: 8,
                         ),
-                        const SizedBox(width: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: (theme.isDark ? Colors.white : Colors.black)
-                                .withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            '${displayPeers.length}',
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                              color: theme.isDark
-                                  ? Colors.white60
-                                  : Colors.black54,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  for (final peer in displayPeers)
-                    _PeerListTile(
-                      key: ValueKey(peer.id),
-                      peer: peer,
-                      isSelected: coordinator.isPeerSelected(peer),
-                      onTap: () => coordinator.selectPeer(peer),
-                    ),
-                ],
+                        itemCount: totalCount,
+                        itemBuilder: (context, index) {
+                          if (hasGroupSection && index < groupBlockCount) {
+                            if (index == 0) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 4,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      lang.tr('groupsSection').toUpperCase(),
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.5,
+                                        color: theme.isDark
+                                            ? Colors.white38
+                                            : Colors.black38,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                        vertical: 1,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: theme.colors.accentBlue
+                                            .withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        '${groups.length}',
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                          color: theme.colors.accentBlue,
+                                        ),
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    InkWell(
+                                      onTap: () =>
+                                          _showCreateGroupDialog(context),
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(2),
+                                        child: Icon(
+                                          Icons.add_rounded,
+                                          size: 16,
+                                          color: theme.colors.accentBlue,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                            final groupIdx = index - 1;
+                            if (groupIdx < groups.length) {
+                              final group = groups[groupIdx];
+                              return _GroupListTile(
+                                key: ValueKey('group_${group.id}'),
+                                group: group,
+                                isSelected:
+                                    coordinator.selectedPeer?.id == group.id,
+                                onTap: () => coordinator.selectPeer(
+                                  coordinator.getPeerForGroup(group),
+                                ),
+                                onDelete: () =>
+                                    _confirmDisbandGroup(context, group),
+                              );
+                            }
+                            return const SizedBox(height: 6);
+                          }
 
-                if (displayPeers.isEmpty && (!showGroups || groups.isEmpty))
-                  _EmptyPeerState(),
-              ],
-            ),
+                          final peerLocalIdx = index - groupBlockCount;
+                          if (peerLocalIdx == 0) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 4,
+                              ),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    (_activeCategory == _PeerCategory.online
+                                            ? lang.tr('categoryOnline')
+                                            : lang.tr('tabChats'))
+                                        .toUpperCase(),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5,
+                                      color: theme.isDark
+                                          ? Colors.white38
+                                          : Colors.black38,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 1,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          (theme.isDark
+                                                  ? Colors.white
+                                                  : Colors.black)
+                                              .withValues(alpha: 0.08),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '${displayPeers.length}',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        color: theme.isDark
+                                            ? Colors.white60
+                                            : Colors.black54,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          final peer = displayPeers[peerLocalIdx - 1];
+                          return _PeerListTile(
+                            key: ValueKey(peer.id),
+                            peer: peer,
+                            isSelected: coordinator.isPeerSelected(peer),
+                            onTap: () => coordinator.selectPeer(peer),
+                          );
+                        },
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -388,15 +423,19 @@ class _SearchAndActionHeader extends StatefulWidget {
 
 class _SearchAndActionHeaderState extends State<_SearchAndActionHeader> {
   late final TextEditingController _searchController;
+  late final FocusNode _searchFocusNode;
+  int _lastHandledFocusRequestId = 0;
 
   @override
   void initState() {
     super.initState();
     _searchController = TextEditingController();
+    _searchFocusNode = FocusNode();
   }
 
   @override
   void dispose() {
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -405,6 +444,19 @@ class _SearchAndActionHeaderState extends State<_SearchAndActionHeader> {
   Widget build(BuildContext context) {
     final lang = context.watch<LanguageProvider>();
     final coordinator = context.watch<MessengerCoordinator>();
+
+    if (coordinator.sidebarSearchFocusRequestId != _lastHandledFocusRequestId) {
+      _lastHandledFocusRequestId = coordinator.sidebarSearchFocusRequestId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _searchFocusNode.canRequestFocus) {
+          _searchFocusNode.requestFocus();
+          _searchController.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: _searchController.text.length,
+          );
+        }
+      });
+    }
 
     // Synchronize if coordinator reset search query externally (e.g. sidebar chat icon clicked)
     if (coordinator.searchQuery.isEmpty && _searchController.text.isNotEmpty) {
@@ -433,6 +485,7 @@ class _SearchAndActionHeaderState extends State<_SearchAndActionHeader> {
           Expanded(
             child: GlassSearchHistoryField(
               controller: _searchController,
+              focusNode: _searchFocusNode,
               category: 'peers',
               hintText: lang.tr('searchHint'),
               onChanged: (val) => coordinator.setSearchQuery(val),
@@ -1011,6 +1064,7 @@ class _GroupListTile extends StatelessWidget {
   final VoidCallback? onDelete;
 
   const _GroupListTile({
+    super.key,
     required this.group,
     required this.isSelected,
     required this.onTap,
@@ -1092,29 +1146,59 @@ class _GroupListTile extends StatelessWidget {
                       Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              group.lastMessage != null
-                                  ? StickerService.formatLastMessagePreview(
-                                      group.lastMessage!,
-                                      lang.tr('stickers'),
-                                    )
-                                  : '${group.memberCount} ${lang.tr('groupMembersCount')}',
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                color: group.unreadCount > 0
-                                    ? (theme.isDark
-                                          ? Colors.white
-                                          : Colors.black87)
-                                    : (theme.isDark
-                                          ? Colors.white38
-                                          : Colors.black45),
-                                fontWeight: group.unreadCount > 0
-                                    ? FontWeight.w600
-                                    : FontWeight.normal,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            child:
+                                (!isSelected &&
+                                    coordinator.hasDraft(groupPeer.id))
+                                ? Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        TextSpan(
+                                          text: '${lang.tr('draftPrefix')} ',
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: theme.colors.accentAmber,
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: coordinator
+                                              .getDraft(groupPeer.id)
+                                              .replaceAll('\n', ' '),
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            color: theme.isDark
+                                                ? Colors.white70
+                                                : Colors.black54,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  )
+                                : Text(
+                                    group.lastMessage != null
+                                        ? StickerService.formatLastMessagePreview(
+                                            group.lastMessage!,
+                                            lang.tr('stickers'),
+                                          )
+                                        : '${group.memberCount} ${lang.tr('groupMembersCount')}',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      color: group.unreadCount > 0
+                                          ? (theme.isDark
+                                                ? Colors.white
+                                                : Colors.black87)
+                                          : (theme.isDark
+                                                ? Colors.white38
+                                                : Colors.black45),
+                                      fontWeight: group.unreadCount > 0
+                                          ? FontWeight.w600
+                                          : FontWeight.normal,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                           ),
                           if (group.unreadCount > 0)
                             Container(
@@ -1514,29 +1598,57 @@ class _PeerListTile extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 3),
-                      Text(
-                        peer.lastMessage != null
-                            ? StickerService.formatLastMessagePreview(
-                                peer.lastMessage!,
-                                lang.tr('stickers'),
-                              )
-                            : peer.ip,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: peer.unreadCount > 0
-                              ? (theme.isDark
-                                    ? const Color(0xFFF8FAFC)
-                                    : Colors.black87)
-                              : (theme.isDark
-                                    ? const Color(0xFF94A3B8)
-                                    : Colors.black45),
-                          fontWeight: peer.unreadCount > 0
-                              ? FontWeight.w600
-                              : FontWeight.normal,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      (!isSelected && coordinator.hasDraft(peer.id))
+                          ? Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text: '${lang.tr('draftPrefix')} ',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: theme.colors.accentAmber,
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: coordinator
+                                        .getDraft(peer.id)
+                                        .replaceAll('\n', ' '),
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: theme.isDark
+                                          ? const Color(0xFFCBD5E1)
+                                          : Colors.black54,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            )
+                          : Text(
+                              peer.lastMessage != null
+                                  ? StickerService.formatLastMessagePreview(
+                                      peer.lastMessage!,
+                                      lang.tr('stickers'),
+                                    )
+                                  : peer.ip,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: peer.unreadCount > 0
+                                    ? (theme.isDark
+                                          ? const Color(0xFFF8FAFC)
+                                          : Colors.black87)
+                                    : (theme.isDark
+                                          ? const Color(0xFF94A3B8)
+                                          : Colors.black45),
+                                fontWeight: peer.unreadCount > 0
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                     ],
                   ),
                 ),
