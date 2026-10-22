@@ -1,6 +1,6 @@
 # JA LAN Messenger
 
-[![Version](https://img.shields.io/badge/version-1.10.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.11.0-blue.svg)](CHANGELOG.md)
 [![Flutter Version](https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter)](https://flutter.dev)
 [![Dart Version](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com/windows)
@@ -13,6 +13,7 @@ A modern, ultra-lightweight, high-performance **Peer-to-Peer (P2P) Office LAN Me
 
 ## ⚡ Key Highlights
 
+- **Persistent Device Identity & DHCP IP Churn Protection**: Automatically recognizes returning colleagues by stable device identity (`account@hostname` or `host@host`) even after long offline periods and DHCP IP reassignment. Immediately evicts reassigned old IPs from offline peers to prevent conversation/outbox/file/WinRM cross-talk, restores full device identity profiles across app restarts (`known_devices.json`), and proactively resolves peer hostnames (DNS/LLMNR/NetBIOS) when sending messages, retrying outbox, or ringing (Buzz).
 - **In-Chat Message Search (`Ctrl+F`)**: Built-in conversation search bar with live match counter (`1/N`), `Enter`/`Shift+Enter` (`↑`/`↓`) navigation, smooth auto-scroll, and message bubble highlighting.
 - **Per-Peer Message Drafts**: Automatically preserves unsent text per conversation when switching chats and displays an amber `[Nháp]` / `[Draft]` / `[草稿]` indicator in both Standard and Compact views.
 - **Folder Drag & Drop Auto-Zip**: Dragging any directory into the chat window automatically compresses it into a `.zip` archive via native `tar.exe` (with PowerShell fallback) and stages it as an attachment.

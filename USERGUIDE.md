@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.10.0
+# Hướng dẫn sử dụng JA LAN Messenger v1.11.0
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.10.0_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.11.0_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -173,6 +173,11 @@
 - **Kéo-thả thư mục tự động nén `.zip`:** Khi kéo-thả trực tiếp một thư mục từ Windows Explorer vào khung chat, ứng dụng tự động nén thư mục đó thành tệp `.zip` và đưa vào thanh đính kèm sẵn sàng gửi.
 - **Chuyển tiếp tin nhắn & tệp đính kèm (Forward):** Nhấp chuột phải vào tin nhắn bất kỳ và chọn **"Chuyển tiếp"**, tích chọn một hoặc nhiều đồng nghiệp/nhóm cùng lời nhắn kèm theo để gửi nhanh.
 - **Phím tắt điều hướng nhanh:** `Ctrl + K` (tìm liên hệ ở danh bạ), `Alt + Mũi tên Lên/Xuống` (chuyển nhanh hội thoại liền kề), `Esc` (đóng tìm kiếm hoặc hủy trích dẫn).
+
+### 2.22. Nhận diện Định danh Bền vững khi Nhảy IP (DHCP IP Churn Protection)
+- **Tự động nhận diện lại đồng nghiệp khi đổi IP:** Trong môi trường mạng văn phòng cấp phát IP động (DHCP), khi đồng nghiệp tắt máy lâu ngày và mở lại với một địa chỉ IP mới, ứng dụng tự động nhận diện theo định danh thiết bị (`account@hostname`), nối tiếp cuộc trò chuyện cũ, giữ nguyên biệt danh, nhóm chat và tự động gửi bù các tin nhắn đang chờ trong Outbox sang IP mới.
+- **Cách ly an toàn khi IP cũ được cấp cho người khác:** Nếu địa chỉ IP cũ của đồng nghiệp đang offline được bộ định tuyến cấp cho một máy tính khác, hệ thống lập tức thu hồi IP cũ khỏi hồ sơ của đồng nghiệp đó và tạo cuộc trò chuyện riêng biệt cho người mới — tuyệt đối không gửi nhầm tin nhắn chờ, tệp đính kèm hay lệnh Rung chuông/WinRM sang máy người khác.
+- **Chủ động dò tìm IP mới qua Tên máy (`Hostname`):** Khi bạn nhắn tin, bấm Thử lại hoặc Rung chuông cho đồng nghiệp bị nhảy IP, ứng dụng tự động phân giải tên máy qua DNS / LLMNR / NetBIOS để tìm và kết nối tới IP mới ngay lập tức.
 
 ---
 

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:ja_lan_messenger/modules/models/peer_model.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ja_lan_messenger/modules/models/file_transfer_task.dart';
 import 'package:ja_lan_messenger/modules/models/message_model.dart';
 import 'package:ja_lan_messenger/modules/network/protocol_beebeep.dart';
 import 'package:ja_lan_messenger/modules/services/app_preferences.dart';
@@ -11,6 +12,7 @@ import 'group_sync_and_ui_test.dart' show RecordingServer, UnusedSocket, decode;
 
 class _ReconnectServer extends RecordingServer {
   void Function()? connected;
+  bool Function(String ip, int port)? onConnectEndpoint;
   @override
   Future<bool> connect(
     String ip,
@@ -18,6 +20,9 @@ class _ReconnectServer extends RecordingServer {
     String? sourceAddress,
     Duration timeout = const Duration(seconds: 2),
   }) async {
+    if (onConnectEndpoint != null) {
+      return onConnectEndpoint!(ip, port);
+    }
     connected?.call();
     return true;
   }
@@ -504,6 +509,182 @@ void main() {
       c.clearConversation(c.selectedPeer!.id);
       await restart();
       expect(c.conversationsMap.values.expand((m) => m), isEmpty);
+    },
+  );
+
+  test(
+    'DHCP IP reassignment evicts old IP from offline Alice, isolates Bob, and reconnects Alice on new IP after restart',
+    () async {
+      hello('10.0.0.10', account: 'alice', host: 'PC-A');
+      final aliceInitial = c.peersMap['10.0.0.10:6475']!;
+      c.setPeerNickname(aliceInitial.id, 'Alice Kế Toán');
+      c.selectPeer(aliceInitial);
+      await c.sendMessage('hello Alice on .10');
+      c.handlePeerDisconnected('10.0.0.10:6475');
+      expect(aliceInitial.status, PeerStatus.offline);
+
+      // Queue an offline message for Alice before DHCP reassigns her IP
+      await c.sendMessage('queued for Alice while offline');
+
+      // DHCP assigns 10.0.0.10 to Bob (bob@PC-B)
+      hello('10.0.0.10', account: 'bob', host: 'PC-B');
+      final bob = c.peers.firstWhere((p) => p.accountName == 'bob');
+      final aliceAfterBob = c.peers.firstWhere((p) => p.accountName == 'alice');
+
+      expect(bob.id, isNot(aliceAfterBob.id));
+      expect(aliceAfterBob.ip, isEmpty);
+      expect(aliceAfterBob.knownIps, isNot(contains('10.0.0.10')));
+      expect(devices.findByIdentity('alice@pc-a')?.lastIp, isEmpty);
+      expect(
+        devices.findByIdentity('alice@pc-a')?.knownIps,
+        isNot(contains('10.0.0.10')),
+      );
+
+      // Restart the app and verify Alice's identity metadata is preserved without the evicted IP
+      await restart();
+      final aliceRestored = c.peers.firstWhere((p) => p.accountName == 'alice');
+      expect(aliceRestored.hostname, 'PC-A');
+      expect(aliceRestored.customNickname, 'Alice Kế Toán');
+      expect(aliceRestored.ip, isEmpty);
+      expect(aliceRestored.knownIps, isNot(contains('10.0.0.10')));
+
+      // Alice comes back online on a new DHCP IP: 10.0.0.99
+      server.sent.clear();
+      hello('10.0.0.99', account: 'alice', host: 'PC-A');
+      final aliceReconnected = c.peers
+          .where((p) => p.accountName == 'alice')
+          .single;
+      expect(aliceReconnected.id, aliceInitial.id);
+      expect(aliceReconnected.status, PeerStatus.online);
+      expect(aliceReconnected.ip, '10.0.0.99');
+      expect(aliceReconnected.knownIps, {'10.0.0.99'});
+
+      // Flush pending offline message and verify it goes to Alice's new IP (10.0.0.99:6475)
+      await c.flushPendingOutgoingMessagesForPeer(aliceReconnected);
+      final flushed = server.sent.where(
+        (p) => p.message['text'] == 'queued for Alice while offline',
+      );
+      expect(flushed, hasLength(1));
+      expect(flushed.single.endpoint, '10.0.0.99:6475');
+    },
+  );
+
+  test(
+    'Two peers swapping IPs while offline keep their conversations, files, and reactions strictly separated',
+    () async {
+      hello('10.0.0.10', account: 'alice', host: 'PC-A');
+      hello('10.0.0.11', account: 'bob', host: 'PC-B');
+      final alice = c.peers.firstWhere((p) => p.accountName == 'alice');
+      final bob = c.peers.firstWhere((p) => p.accountName == 'bob');
+
+      c.handleIncomingMessage(
+        '10.0.0.10:6475',
+        'a1',
+        'Msg from Alice 1',
+        DateTime.now(),
+      );
+      c.handleIncomingMessage(
+        '10.0.0.11:6475',
+        'b1',
+        'Msg from Bob 1',
+        DateTime.now(),
+      );
+
+      // Both go offline
+      c.handlePeerDisconnected('10.0.0.10:6475');
+      c.handlePeerDisconnected('10.0.0.11:6475');
+
+      // Both come back online with swapped DHCP IPs: Alice on .11, Bob on .10
+      hello('10.0.0.11', account: 'alice', host: 'PC-A');
+      hello('10.0.0.10', account: 'bob', host: 'PC-B');
+
+      expect(alice.ip, '10.0.0.11');
+      expect(alice.knownIps, {'10.0.0.11'});
+      expect(bob.ip, '10.0.0.10');
+      expect(bob.knownIps, {'10.0.0.10'});
+
+      // Incoming messages on swapped IPs route to the right person
+      c.handleIncomingMessage(
+        '10.0.0.11:6475',
+        'a2',
+        'Msg from Alice on .11',
+        DateTime.now(),
+      );
+      c.handleIncomingMessage(
+        '10.0.0.10:6475',
+        'b2',
+        'Msg from Bob on .10',
+        DateTime.now(),
+      );
+
+      // Incoming file transfer from Alice on 10.0.0.11 routes to Alice's conversation
+      c.receiveFileForTesting(
+        FileTransferTask(
+          id: 'file-a2',
+          fileName: 'alice_report.pdf',
+          filePath: '${dir.path}/alice_report.pdf',
+          fileSize: 1024,
+          isUpload: false,
+          peerId: '10.0.0.11:6475',
+          peerName: 'alice',
+          peerIp: '10.0.0.11',
+          status: TransferStatus.completed,
+        ),
+      );
+
+      expect(c.conversationsMap[alice.id]!.map((m) => m.text), [
+        'Msg from Alice 1',
+        'Msg from Alice on .11',
+        'Đã nhận: alice_report.pdf',
+      ]);
+      expect(c.conversationsMap[bob.id]!.map((m) => m.text), [
+        'Msg from Bob 1',
+        'Msg from Bob on .10',
+      ]);
+    },
+  );
+
+  test(
+    'Hostname-only identity and hostnameResolverForTesting recover evicted peer on new DHCP IP',
+    () async {
+      final reconnect = _ReconnectServer();
+      server = reconnect;
+      await restart();
+
+      // Peer with empty accountName uses hostname-only identity (pc-kiosk@pc-kiosk)
+      hello('10.0.0.20', account: '', host: 'PC-KIOSK');
+      final kiosk = c.peersMap['10.0.0.20:6475']!;
+      c.handlePeerDisconnected('10.0.0.20:6475');
+
+      // Another machine takes 10.0.0.20
+      hello('10.0.0.20', account: 'other', host: 'PC-OTHER');
+      expect(kiosk.ip, isEmpty);
+      expect(kiosk.status, PeerStatus.offline);
+
+      // Configure hostname resolver and TCP connect handler for PC-KIOSK's new IP (10.0.0.88)
+      c.hostnameResolverForTesting = (host) async =>
+          host == 'PC-KIOSK' ? ['10.0.0.88'] : const [];
+      reconnect.onConnectEndpoint = (ip, port) {
+        if (ip == '10.0.0.88' && port == 6475) {
+          hello('10.0.0.88', account: '', host: 'PC-KIOSK');
+          return true;
+        }
+        return false;
+      };
+
+      c.selectPeer(kiosk);
+      final sent = await c.sendMessage('hello Kiosk at new IP');
+      expect(sent, isTrue);
+      expect(kiosk.status, PeerStatus.online);
+      expect(kiosk.ip, '10.0.0.88');
+      expect(
+        reconnect.sent.where(
+          (p) =>
+              p.endpoint == '10.0.0.88:6475' &&
+              p.message['text'] == 'hello Kiosk at new IP',
+        ),
+        hasLength(1),
+      );
     },
   );
 }

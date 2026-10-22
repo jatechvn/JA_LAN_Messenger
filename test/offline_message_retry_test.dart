@@ -20,6 +20,7 @@ class _MockSocket implements Socket {
 class _TestLanTcpServer extends LanTcpServer {
   bool canSend = false;
   Completer<bool>? connection;
+  void Function()? onConnect;
   final List<({String endpoint, String raw})> sentPackets = [];
 
   @override
@@ -38,7 +39,10 @@ class _TestLanTcpServer extends LanTcpServer {
     int port, {
     String? sourceAddress,
     Duration timeout = const Duration(seconds: 5),
-  }) async => connection == null ? false : connection!.future;
+  }) async {
+    onConnect?.call();
+    return connection == null ? false : connection!.future;
+  }
 }
 
 void main() {
@@ -90,6 +94,113 @@ void main() {
     int sentText(String value) => server.sentPackets
         .where((p) => ProtocolBeebeep.parseMessage(p.raw)?['text'] == value)
         .length;
+
+    test(
+      'offline to online on the same session drains outbox without a new handshake',
+      () async {
+        final peer = connectPeer('192.0.2.150');
+        coordinator.handlePeerStatus(peer.id, {'data': '0', 'text': ''});
+        coordinator.selectPeer(peer);
+        await coordinator.sendMessage('status recovery');
+        expect(sentText('status recovery'), 0);
+        server.canSend = true;
+        coordinator.handlePeerStatus(peer.id, {'data': '1', 'text': ''});
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        expect(sentText('status recovery'), 1);
+        expect(coordinator.pendingOfflineMessageIds, isEmpty);
+      },
+    );
+
+    test(
+      'failed automatic attempt keeps retrying without another handshake or click',
+      () async {
+        coordinator.dispose();
+        coordinator = MessengerCoordinator(
+          tcpServer: server,
+          knownDevices: KnownDevicesRegistry(
+            '${tempDir.path}/retry-devices.json',
+          ),
+          outboxRetryInterval: const Duration(milliseconds: 100),
+        );
+        await coordinator.historyLoaded;
+        final peer = connectPeer('192.0.2.151');
+        coordinator.selectPeer(peer);
+        await coordinator.sendMessage('delayed recovery');
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        expect(sentText('delayed recovery'), 0);
+        expect(coordinator.pendingOfflineMessageIds, isNotEmpty);
+        // No new HELLO/status event: only transport readiness changes.
+        server.canSend = true;
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        expect(sentText('delayed recovery'), 1);
+        expect(coordinator.pendingOfflineMessageIds, isEmpty);
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(sentText('delayed recovery'), 1);
+      },
+    );
+
+    test(
+      'retry timer stops on disposal even while messages remain queued',
+      () async {
+        final local = MessengerCoordinator(
+          tcpServer: server,
+          knownDevices: KnownDevicesRegistry(
+            '${tempDir.path}/dispose-devices.json',
+          ),
+          outboxRetryInterval: const Duration(milliseconds: 100),
+        );
+        await local.historyLoaded;
+        local.handlePeerHandshake('192.0.2.152', {
+          'port': 6475,
+          'username': 'Alice',
+          'account': 'alice',
+          'hostname': 'PC-A',
+        }, _MockSocket());
+        local.selectPeer(local.peers.firstWhere((p) => p.ip == '192.0.2.152'));
+        await local.sendMessage('must stop');
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        local.dispose();
+        server.canSend = true;
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        expect(sentText('must stop'), 0);
+      },
+    );
+
+    test(
+      'periodic reconnect cannot deliver old outbox to a new identity at the same IP',
+      () async {
+        final local = MessengerCoordinator(
+          tcpServer: server,
+          knownDevices: KnownDevicesRegistry(
+            '${tempDir.path}/identity-devices.json',
+          ),
+          outboxRetryInterval: const Duration(milliseconds: 100),
+        );
+        addTearDown(local.dispose);
+        await local.historyLoaded;
+        local.handlePeerHandshake('192.0.2.153', {
+          'port': 6475,
+          'username': 'Alice',
+          'account': 'alice',
+          'hostname': 'PC-A',
+        }, _MockSocket());
+        final alice = local.peers.firstWhere((p) => p.ip == '192.0.2.153');
+        local.selectPeer(alice);
+        await local.sendMessage('only for Alice');
+        server.onConnect = () {
+          server.canSend = true;
+          local.handlePeerHandshake('192.0.2.153', {
+            'port': 6475,
+            'username': 'Bob',
+            'account': 'bob',
+            'hostname': 'PC-B',
+          }, _MockSocket());
+        };
+        await Future<void>.delayed(const Duration(milliseconds: 450));
+        expect(sentText('only for Alice'), 0);
+        expect(local.pendingOfflineMessageIds, isNotEmpty);
+      },
+    );
 
     test('concurrent automatic flushes send each message once', () async {
       final peer = connectPeer('192.0.2.10');

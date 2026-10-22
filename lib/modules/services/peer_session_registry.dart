@@ -33,14 +33,32 @@ class PeerSessionRegistry {
   static String? identity(PeerModel peer) {
     final host = (peer.hostname ?? '').trim().toLowerCase();
     final account = (peer.accountName ?? '').trim().toLowerCase();
-    if (host.isEmpty ||
-        host == 'localhost' ||
-        host == '???' ||
-        account.isEmpty ||
-        account == '???') {
-      return null;
+    final validHost =
+        host.isNotEmpty &&
+        host != 'localhost' &&
+        host != '???' &&
+        InternetAddress.tryParse(host) == null;
+    if (validHost) {
+      if (account.isNotEmpty && account != '???') {
+        return '$account@$host';
+      }
+      return '$host@$host';
     }
-    return '$account@$host';
+    final name = peer.name.trim().toLowerCase();
+    if (name.contains('@')) {
+      final parts = name.split('@');
+      final u = parts.first.trim();
+      final h = parts.sublist(1).join('@').trim();
+      if (u.isNotEmpty &&
+          u != '???' &&
+          h.isNotEmpty &&
+          h != 'localhost' &&
+          h != '???' &&
+          InternetAddress.tryParse(h) == null) {
+        return '$u@$h';
+      }
+    }
+    return null;
   }
 
   void remember(String conversationId, String? identity) {

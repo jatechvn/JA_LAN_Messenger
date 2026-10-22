@@ -891,16 +891,19 @@ class MessengerCoordinator extends ChangeNotifier {
     final identity =
         PeerSessionRegistry.identity(p) ?? _peerSessions.identities[p.id];
     if (identity != null) return identity;
-    // Historical IPs are only a migration hint when exactly one identity owns it.
-    final matches = knownDevices.devices.values
-        .where(
-          (d) =>
-              d.id.contains('@') &&
-              (d.knownIps.contains(p.ip) || d.lastIp == p.ip),
-        )
-        .map((d) => d.id.toLowerCase())
-        .toSet();
-    return matches.length == 1 ? matches.single : 'endpoint:${p.id}';
+    if (p.ip.isNotEmpty) {
+      // Historical IPs are only a migration hint when exactly one identity owns it.
+      final matches = knownDevices.devices.values
+          .where(
+            (d) =>
+                d.id.contains('@') &&
+                (d.knownIps.contains(p.ip) || d.lastIp == p.ip),
+          )
+          .map((d) => d.id.toLowerCase())
+          .toSet();
+      if (matches.length == 1) return matches.single;
+    }
+    return 'endpoint:${p.id}';
   }
 
   /// Kiểm tra 2 PeerModel có đại diện cho cùng một máy trạm vật lý trong mạng LAN không
@@ -921,29 +924,43 @@ class MessengerCoordinator extends ChangeNotifier {
       return keyA == keyB;
     }
 
+    final idA =
+        PeerSessionRegistry.identity(a) ?? _peerSessions.identities[a.id];
+    final idB =
+        PeerSessionRegistry.identity(b) ?? _peerSessions.identities[b.id];
+    if (idA != null && idB != null) {
+      return idA == idB;
+    }
+
     // Nếu a.id == b.id và không có xung đột danh tính đã lưu
     if (a.id == b.id) {
       final savedId = _peerSessions.identities[a.id];
       if (savedId != null && !keyB.startsWith('endpoint:') && savedId != keyB) {
         return false;
       }
+      if (idA != null && idB == null && a.ip.isEmpty) {
+        return false;
+      }
       return true;
     }
 
-    // Trích xuất tập hợp các IP đã biết cho peer
-    Set<String> extractIps(PeerModel p) {
+    // Trích xuất tập hợp các IP đang thuộc sở hữu của peer.
+    // Không lấy lại IP lịch sử trong p.id nếu peer đã có định danh cố định hoặc đã bị thu hồi IP.
+    Set<String> extractIps(PeerModel p, String? resolvedIdentity) {
       final set = <String>{if (p.ip.isNotEmpty) p.ip, ...p.knownIps};
-      final rawId = p.id.startsWith('endpoint:') ? p.id.substring(9) : p.id;
-      final hostPart = rawId.contains(':') ? rawId.split(':').first : rawId;
-      if (InternetAddress.tryParse(hostPart) != null) {
-        set.add(hostPart);
+      if (set.isEmpty && resolvedIdentity == null) {
+        final rawId = p.id.startsWith('endpoint:') ? p.id.substring(9) : p.id;
+        final hostPart = rawId.contains(':') ? rawId.split(':').first : rawId;
+        if (InternetAddress.tryParse(hostPart) != null) {
+          set.add(hostPart);
+        }
       }
       set.removeWhere((ip) => ip.isEmpty || ip == '0.0.0.0');
       return set;
     }
 
-    final ipsA = extractIps(a);
-    final ipsB = extractIps(b);
+    final ipsA = extractIps(a, idA);
+    final ipsB = extractIps(b, idB);
     if (senderIp != null && senderIp.isNotEmpty) {
       ipsB.add(senderIp);
     }
@@ -958,10 +975,6 @@ class MessengerCoordinator extends ChangeNotifier {
         return false;
       }
 
-      final idA =
-          PeerSessionRegistry.identity(a) ?? _peerSessions.identities[a.id];
-      final idB =
-          PeerSessionRegistry.identity(b) ?? _peerSessions.identities[b.id];
       if (idA != null && idB != null && idA != idB) {
         return false; // Hai máy khác nhau có identity đã xác thực khác nhau
       }
@@ -1644,9 +1657,15 @@ class MessengerCoordinator extends ChangeNotifier {
     _fileEngine.sendOffer = _tcpServer.send;
     _fileEngine.isPeerConnected = _tcpServer.isConnected;
     _tcpServer.onFile = (id, message) {
-      final peer = _peers[id];
+      final peer = _incomingPeer(id) ?? _peers[id];
       if (peer != null) {
-        unawaited(_fileEngine.receiveOffer(id, peer.ip, peer.name, message));
+        final sessionIp = _peerSessions.sessions[id]?.remote.ip;
+        final resolvedIp = (sessionIp != null && sessionIp.isNotEmpty)
+            ? sessionIp
+            : (peer.ip.isNotEmpty
+                  ? peer.ip
+                  : (id.contains(':') ? id.split(':').first : id));
+        unawaited(_fileEngine.receiveOffer(id, resolvedIp, peer.name, message));
       }
     };
     await _fileEngine.startServer(port: localFilePort);
@@ -1837,7 +1856,43 @@ class MessengerCoordinator extends ChangeNotifier {
       candidate.updateAvatarFromRaw(colorRaw);
     }
 
-    final identityKey = candidate.canonicalIdentity;
+    final candidateIdentity = PeerSessionRegistry.identity(candidate);
+    final identityKey = candidateIdentity ?? candidate.canonicalIdentity;
+
+    // Bước 1: Thu hồi (Evict) senderIp khỏi mọi Peer có định danh khác đã từng dùng IP này
+    if (candidateIdentity != null && senderIp.isNotEmpty) {
+      knownDevices.evictIpFromOtherDevices(
+        senderIp,
+        ownerIdentityKey: candidateIdentity,
+      );
+      for (final other in _peers.values.toSet()) {
+        if (other.isGroup || other.isAllUsers || other.isAiAssistant) continue;
+        final otherIdentity =
+            PeerSessionRegistry.identity(other) ??
+            _peerSessions.identities[other.id];
+        if (otherIdentity != null && otherIdentity != candidateIdentity) {
+          other.knownIps.remove(senderIp);
+          for (final sessionEntry in _peerSessions.sessions.entries.toList()) {
+            if (sessionEntry.value.conversationId == other.id &&
+                (sessionEntry.key == endpoint ||
+                    sessionEntry.value.remote.ip == senderIp)) {
+              sessionEntry.value.available = false;
+              _peerSessions.sessions.remove(sessionEntry.key);
+            }
+          }
+          if (other.ip == senderIp) {
+            final remainingActive = _peerSessions
+                .forConversation(other.id)
+                .where((s) => s.available && s.remote.ip.isNotEmpty)
+                .toList();
+            other.ip = remainingActive.isNotEmpty
+                ? remainingActive.first.remote.ip
+                : '';
+          }
+          _refreshLogicalPeer(other);
+        }
+      }
+    }
 
     // Tìm tất cả peer hiện tại tương ứng với cùng một máy vật lý
     final matchingPeers = _peers.values.where((p) {
@@ -1861,10 +1916,9 @@ class MessengerCoordinator extends ChangeNotifier {
       final remembered = _peerSessions.identities[endpoint];
       final conflict =
           (occupied != null && !matchingPeers.contains(occupied)) ||
-          (remembered != null &&
-              remembered != PeerSessionRegistry.identity(candidate));
+          (remembered != null && remembered != candidateIdentity);
       final id = conflict
-          ? 'peer_${sha256.convert(utf8.encode(PeerSessionRegistry.identity(candidate) ?? endpoint))}'
+          ? 'peer_${sha256.convert(utf8.encode(candidateIdentity ?? endpoint))}'
           : endpoint;
       primaryPeer = _peers[id] ?? candidate.copyWith(id: id);
     }
@@ -1877,10 +1931,7 @@ class MessengerCoordinator extends ChangeNotifier {
       _peerSessions.sessions.remove(endpoint);
       if (previousPeer != null) _refreshLogicalPeer(previousPeer);
     }
-    _peerSessions.remember(
-      primaryPeer.id,
-      PeerSessionRegistry.identity(candidate),
-    );
+    _peerSessions.remember(primaryPeer.id, candidateIdentity);
     _peerSessions.sessions[endpoint] = PeerTransportSession(
       primaryPeer.id,
       candidate,
@@ -1890,7 +1941,9 @@ class MessengerCoordinator extends ChangeNotifier {
     final now = DateTime.now();
     primaryPeer.isBeebeep = isBeebeepClient;
     primaryPeer.isPinned =
-        AppPreferences().isPeerPinned(identityKey) || primaryPeer.isPinned;
+        AppPreferences().isPeerPinned(identityKey) ||
+        AppPreferences().isPeerPinned(primaryPeer.canonicalIdentity) ||
+        primaryPeer.isPinned;
     if (colorRaw.isNotEmpty) {
       primaryPeer.updateAvatarFromRaw(colorRaw);
     }
@@ -1911,13 +1964,10 @@ class MessengerCoordinator extends ChangeNotifier {
     if (hostname.isNotEmpty && hostname != '???') {
       primaryPeer.hostname = hostname;
     }
-    primaryPeer.knownIps.add(senderIp);
-    primaryPeer.knownIps.addAll(candidate.knownIps);
 
     // Gộp tất cả peer trùng lặp khác vào primaryPeer và gộp lịch sử trò chuyện
     for (final other in matchingPeers) {
       if (identical(other, primaryPeer)) continue;
-      primaryPeer.knownIps.addAll(other.knownIps);
       if (other.customNickname != null && primaryPeer.customNickname == null) {
         primaryPeer.customNickname = other.customNickname;
       }
@@ -1940,7 +1990,25 @@ class MessengerCoordinator extends ChangeNotifier {
       _peers[other.id] = primaryPeer;
     }
 
-    // Gộp hội thoại với endpoint hiện tại nếu có lịch sử riêng
+    // Làm sạch danh sách IP đang hoạt động của primaryPeer:
+    // chỉ giữ lại các IP đang có phiên kết nối thực sự cùng senderIp mới
+    final activeSessionIps = _peerSessions
+        .forConversation(primaryPeer.id)
+        .where((s) => s.available && s.remote.status != PeerStatus.offline)
+        .map((s) => s.remote.ip)
+        .where((ip) => ip.isNotEmpty)
+        .toSet();
+    if (candidateIdentity != null) {
+      primaryPeer.knownIps
+        ..clear()
+        ..addAll(activeSessionIps)
+        ..add(senderIp);
+    } else {
+      primaryPeer.knownIps.add(senderIp);
+      primaryPeer.knownIps.addAll(candidate.knownIps);
+    }
+
+    // Gộp hội thoại với endpoint hiện tại nếu có lịch sử riêng và không xung đột chủ sở hữu
     if (_peers[endpoint] == null || matchingPeers.contains(_peers[endpoint])) {
       _mergeConversations(primaryPeer.id, endpoint);
     }
@@ -1988,6 +2056,8 @@ class MessengerCoordinator extends ChangeNotifier {
     }
     _peers[peer.id] = peer;
     final userHash = data['hash'] as String? ?? '';
+    final resolvedPeerIdentity =
+        PeerSessionRegistry.identity(peer) ?? _peerSessions.identities[peer.id];
     _refreshLogicalPeer(peer);
     for (final group in _groups.values) {
       final oldIds = group.memberIds
@@ -1996,7 +2066,11 @@ class MessengerCoordinator extends ChangeNotifier {
                 id != peer.id &&
                 (id == 'hash:$userHash' ||
                     (userHash.isNotEmpty &&
-                        group.memberRecords[id]?[2] == userHash)),
+                        group.memberRecords[id]?[2] == userHash) ||
+                    (resolvedPeerIdentity != null &&
+                        (_peerSessions.identities[id] == resolvedPeerIdentity ||
+                            (_peers[id] != null &&
+                                identical(_peers[id], peer))))),
           )
           .toList();
       for (final id in oldIds) {
@@ -2038,8 +2112,16 @@ class MessengerCoordinator extends ChangeNotifier {
     // Chỉ trả về true nếu đây là lần ĐẦU TIÊN THỰC SỰ thiết bị này xuất hiện trong mạng
     final isTrulyNewDevice = knownDevices.recordDevice(
       identityKey: identityKey,
-      username: username,
+      username: peer.name,
       ip: senderIp,
+      accountName: peer.accountName,
+      hostname: peer.hostname,
+      customNickname: peer.customNickname,
+      userHash: userHash,
+      port: remotePort,
+      avatarColorValue: peer.avatarColor.toARGB32(),
+      avatarPreset: peer.avatarPreset,
+      customAvatarBase64: peer.customAvatarBase64,
     );
 
     final activeCount = peers
@@ -2316,24 +2398,129 @@ class MessengerCoordinator extends ChangeNotifier {
             peer.lastMessage = lastText;
             peer.lastMessageTime = last.timestamp;
           } else {
-            // Khôi phục peer từ lịch sử để hiển thị trong danh bạ với tin nhắn gần nhất
+            // Khôi phục peer từ lịch sử kèm đầy đủ định danh thiết bị đã lưu
+            final rawHost = convId.contains(':')
+                ? convId.split(':').first
+                : convId;
+            final isRawIpConvId = InternetAddress.tryParse(rawHost) != null;
+            final savedIdentity =
+                _peerSessions.identities[convId] ??
+                (isRawIpConvId
+                    ? () {
+                        final matches = knownDevices.devices.values
+                            .where(
+                              (d) =>
+                                  d.id.contains('@') &&
+                                  (d.knownIps.contains(rawHost) ||
+                                      d.lastIp == rawHost),
+                            )
+                            .map((d) => d.id.toLowerCase())
+                            .toSet();
+                        return matches.length == 1 ? matches.single : null;
+                      }()
+                    : null);
+            final deviceInfo = knownDevices.findByIdentity(savedIdentity);
+
+            String? restoredAccount = deviceInfo?.accountName;
+            String? restoredHostname = deviceInfo?.hostname;
+            if ((restoredAccount == null || restoredHostname == null) &&
+                savedIdentity != null &&
+                savedIdentity.contains('@')) {
+              final parts = savedIdentity.split('@');
+              final accPart = parts.first.trim();
+              final hostPart = parts.sublist(1).join('@').trim();
+              if (restoredHostname == null && hostPart.isNotEmpty) {
+                restoredHostname = hostPart;
+              }
+              if (restoredAccount == null &&
+                  accPart.isNotEmpty &&
+                  accPart != hostPart) {
+                restoredAccount = accPart;
+              }
+            }
+
+            MessageModel? lastIncoming;
+            for (int i = msgs.length - 1; i >= 0; i--) {
+              final candidateMsg = msgs[i];
+              if (!candidateMsg.isMine &&
+                  candidateMsg.senderName.trim().isNotEmpty &&
+                  candidateMsg.senderName.trim() != '???') {
+                lastIncoming = candidateMsg;
+                break;
+              }
+            }
+
+            final restoredName =
+                (deviceInfo != null &&
+                    deviceInfo.username.trim().isNotEmpty &&
+                    deviceInfo.username.trim() != '???')
+                ? deviceInfo.username.trim()
+                : (lastIncoming != null
+                      ? lastIncoming.senderName.trim()
+                      : (restoredAccount != null && restoredAccount.isNotEmpty
+                            ? restoredAccount
+                            : (restoredHostname != null &&
+                                      restoredHostname.isNotEmpty
+                                  ? restoredHostname
+                                  : (isRawIpConvId ? rawHost : convId))));
+
+            var restoredIp = '';
+            if (deviceInfo != null) {
+              restoredIp = deviceInfo.lastIp;
+            } else if (isRawIpConvId) {
+              final claimedByOther = knownDevices.devices.values.any(
+                (d) =>
+                    savedIdentity != null &&
+                    d.id.toLowerCase() != savedIdentity.toLowerCase() &&
+                    (d.lastIp == rawHost || d.knownIps.contains(rawHost)),
+              );
+              if (!claimedByOther) {
+                restoredIp = rawHost;
+              }
+            }
+
+            final restoredPort =
+                deviceInfo?.port ??
+                (convId.contains(':')
+                    ? int.tryParse(convId.split(':').last) ??
+                          defaultListenerPort
+                    : defaultListenerPort);
+
             final p = PeerModel(
               id: convId,
-              name:
-                  (last.isMine ||
-                      last.senderName == '???' ||
-                      last.senderName.trim().isEmpty)
-                  ? (convId.contains(':') ? convId.split(':').first : convId)
-                  : last.senderName,
-              ip: convId.contains(':') ? convId.split(':').first : convId,
-              port: convId.contains(':')
-                  ? int.tryParse(convId.split(':').last) ?? defaultListenerPort
-                  : defaultListenerPort,
+              name: restoredName,
+              ip: restoredIp,
+              port: restoredPort,
               status: PeerStatus.offline,
+              accountName: restoredAccount,
+              hostname: restoredHostname,
+              customNickname: deviceInfo?.customNickname,
+              knownIps: {
+                if (deviceInfo != null)
+                  ...deviceInfo.knownIps.where((ip) => ip.isNotEmpty)
+                else if (restoredIp.isNotEmpty)
+                  restoredIp,
+              },
+              avatarColor: deviceInfo?.avatarColorValue != null
+                  ? Color(deviceInfo!.avatarColorValue!)
+                  : null,
+              avatarPreset: deviceInfo?.avatarPreset,
+              customAvatarBase64: deviceInfo?.customAvatarBase64,
             );
+            if (deviceInfo?.userHash != null &&
+                deviceInfo!.userHash!.isNotEmpty) {
+              _peerHashes[convId] = deviceInfo.userHash!;
+            }
+            if (savedIdentity != null) {
+              _peerSessions.remember(convId, savedIdentity);
+            }
             p.lastMessage = lastText;
             p.lastMessageTime = last.timestamp;
-            p.isPinned = AppPreferences().isPeerPinned(p.canonicalIdentity);
+            p.isPinned =
+                AppPreferences().isPeerPinned(p.canonicalIdentity) ||
+                (savedIdentity != null &&
+                    AppPreferences().isPeerPinned(savedIdentity)) ||
+                AppPreferences().isPeerPinned(convId);
             _peers[convId] = p;
           }
         }
@@ -2780,8 +2967,21 @@ class MessengerCoordinator extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Tìm peer theo id, IP hiện tại hoặc bất kỳ IP nào trong knownIps
+  /// Tìm peer theo phiên đang hoạt động, id, IP hiện tại hoặc bất kỳ IP nào trong knownIps
   PeerModel? _findPeerByIpOrId(String ipOrId) {
+    final activeSession = _peerSessions.sessions[ipOrId];
+    if (activeSession != null && activeSession.available) {
+      final sessionPeer = _peers[activeSession.conversationId];
+      if (sessionPeer != null) return sessionPeer;
+    }
+    if (InternetAddress.tryParse(ipOrId) != null) {
+      final byActiveIp = _peerSessions.sessions.values
+          .where((s) => s.available && s.remote.ip == ipOrId)
+          .map((s) => _peers[s.conversationId])
+          .whereType<PeerModel>()
+          .toSet();
+      if (byActiveIp.length == 1) return byActiveIp.single;
+    }
     if (_peers.containsKey(ipOrId)) return _peers[ipOrId];
     for (final p in _peers.values) {
       if (p.id == ipOrId || p.ip == ipOrId || p.knownIps.contains(ipOrId)) {
@@ -2793,6 +2993,113 @@ class MessengerCoordinator extends ChangeNotifier {
 
   @visibleForTesting
   bool Function(String endpoint, List<int> packet)? sendToPeerForTesting;
+
+  @visibleForTesting
+  Future<List<String>> Function(String hostname)? hostnameResolverForTesting;
+
+  bool _hasActiveConnectionForPeer(PeerModel peer) {
+    final sessions = _peerSessions.forConversation(peer.id);
+    if (sessions.isNotEmpty || _peerSessions.identities.containsKey(peer.id)) {
+      return sessions.any(
+        (s) =>
+            s.available &&
+            s.remote.status != PeerStatus.offline &&
+            _tcpServer.isConnected(s.endpoint),
+      );
+    }
+    return _tcpServer.isConnected(peer.id) ||
+        (peer.ip.isNotEmpty &&
+            (_tcpServer.isConnected('${peer.ip}:${peer.port}') ||
+                _tcpServer.isConnected(peer.ip)));
+  }
+
+  /// Tự động thăm dò kết nối lại hoặc phân giải hostname để tìm IP mới khi peer bị nhảy DHCP IP
+  Future<bool> _probePeerNewEndpointIfNeeded(PeerModel peer) async {
+    if (_disposed) return false;
+    final port = peer.port > 0 ? peer.port : defaultListenerPort;
+
+    // 1. Thử kết nối tới IP hiện tại nếu chưa bị phiên của người khác chiếm giữ
+    if (peer.ip.isNotEmpty) {
+      final currentEndpoint = '${peer.ip}:$port';
+      final existingSession = _peerSessions.sessions[currentEndpoint];
+      final occupiedByOther =
+          existingSession != null &&
+          existingSession.available &&
+          existingSession.conversationId != peer.id;
+      if (!occupiedByOther) {
+        final connected = await _tcpServer.connect(
+          peer.ip,
+          port,
+          timeout: const Duration(milliseconds: 500),
+        );
+        if (connected) {
+          final afterSession = _peerSessions.sessions[currentEndpoint];
+          if (afterSession == null || afterSession.conversationId == peer.id) {
+            _refreshLogicalPeer(peer);
+            if (peer.status != PeerStatus.offline ||
+                _hasActiveConnectionForPeer(peer)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Nếu có hostname hợp lệ, phân giải DNS/LLMNR/NetBIOS để tìm IP mới sau khi nhảy DHCP
+    final host = (peer.hostname ?? '').trim();
+    final validHost =
+        host.isNotEmpty &&
+        host != '???' &&
+        host.toLowerCase() != 'localhost' &&
+        InternetAddress.tryParse(host) == null;
+    if (validHost && (_isInitialized || hostnameResolverForTesting != null)) {
+      try {
+        final List<String> resolvedIps;
+        if (hostnameResolverForTesting != null) {
+          resolvedIps = await hostnameResolverForTesting!(host);
+        } else {
+          final addrs = await InternetAddress.lookup(
+            host,
+            type: InternetAddressType.IPv4,
+          ).timeout(const Duration(milliseconds: 700));
+          resolvedIps = addrs.map((a) => a.address).toList();
+        }
+        for (final candidateIp in resolvedIps) {
+          final cleanIp = candidateIp.trim();
+          if (cleanIp.isEmpty ||
+              cleanIp == '0.0.0.0' ||
+              cleanIp.startsWith('127.')) {
+            continue;
+          }
+          final candidateEndpoint = '$cleanIp:$port';
+          final existingSession = _peerSessions.sessions[candidateEndpoint];
+          if (existingSession != null &&
+              existingSession.available &&
+              existingSession.conversationId != peer.id) {
+            continue;
+          }
+          final connected = await _tcpServer.connect(
+            cleanIp,
+            port,
+            timeout: const Duration(milliseconds: 500),
+          );
+          if (connected) {
+            final afterSession = _peerSessions.sessions[candidateEndpoint];
+            if (afterSession != null &&
+                afterSession.conversationId == peer.id) {
+              _refreshLogicalPeer(peer);
+              return true;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (_isInitialized) {
+      _discovery.sendBroadcastAnnounce();
+    }
+    return false;
+  }
 
   bool _sendToPeer(String endpoint, List<int> packet) {
     if (sendToPeerForTesting != null) {
@@ -2824,6 +3131,13 @@ class MessengerCoordinator extends ChangeNotifier {
         return false;
       }
     }
+    final activeSessionAtEndpoint = _peerSessions.sessions[endpoint];
+    if (activeSessionAtEndpoint != null &&
+        activeSessionAtEndpoint.available &&
+        peer != null &&
+        activeSessionAtEndpoint.conversationId != peer.id) {
+      return false;
+    }
     if (_tcpServer.send(endpoint, packet)) return true;
     if (peer == null) return false;
     for (final alias in _peers.entries) {
@@ -2839,8 +3153,11 @@ class MessengerCoordinator extends ChangeNotifier {
   PeerModel? _incomingPeer(String endpoint) {
     final exact = _peerSessions.sessions[endpoint];
     if (exact != null) return _peers[exact.conversationId];
+    final hostIp = endpoint.contains(':')
+        ? endpoint.split(':').first
+        : endpoint;
     final byIp = _peerSessions.sessions.values
-        .where((s) => s.remote.ip == endpoint && s.available)
+        .where((s) => s.remote.ip == hostIp && s.available)
         .map((s) => s.conversationId)
         .toSet();
     if (byIp.length == 1) return _peers[byIp.single];
@@ -3871,10 +4188,7 @@ class MessengerCoordinator extends ChangeNotifier {
       if (!p.isGroup &&
           !p.isAllUsers &&
           p.status != PeerStatus.offline &&
-          !_peerSessions
-              .forConversation(p.id)
-              .any((s) => s.available && _tcpServer.isConnected(s.endpoint)) &&
-          !_tcpServer.isConnected(p.id) &&
+          !_hasActiveConnectionForPeer(p) &&
           now.difference(p.lastSeen).inSeconds > 45) {
         p.status = PeerStatus.offline;
         _failUnackedMessagesForPeer(p);
@@ -4052,6 +4366,18 @@ class MessengerCoordinator extends ChangeNotifier {
     return successCount;
   }
 
+  int _lastGeneratedMessageId = 0;
+
+  String _nextMessageId() {
+    final now = DateTime.now().microsecondsSinceEpoch;
+    if (now <= _lastGeneratedMessageId) {
+      _lastGeneratedMessageId++;
+    } else {
+      _lastGeneratedMessageId = now;
+    }
+    return '$_lastGeneratedMessageId';
+  }
+
   /// Gửi tin nhắn tới peer hoặc kênh đang chọn (hỗ trợ trích dẫn tin nhắn và chỉ định người nhận)
   Future<bool> sendMessage(
     String text, {
@@ -4069,7 +4395,7 @@ class MessengerCoordinator extends ChangeNotifier {
       sendTypingStatus(false);
     }
 
-    final msgId = '${DateTime.now().microsecondsSinceEpoch}';
+    final msgId = _nextMessageId();
     final plainText = text.trim();
 
     // Payload định dạng chuẩn gửi qua mạng để tương thích tất cả client
@@ -4203,6 +4529,10 @@ class MessengerCoordinator extends ChangeNotifier {
       return anySuccess;
     } else {
       // Gửi qua TCP tới peer cá nhân
+      if ((targetPeer.status == PeerStatus.offline || targetPeer.ip.isEmpty) &&
+          (targetPeer.ip.isEmpty || hostnameResolverForTesting != null)) {
+        await _probePeerNewEndpointIfNeeded(targetPeer);
+      }
       final isOffline =
           targetPeer.status == PeerStatus.offline ||
           (_peerSessions.forConversation(targetPeer.id).isNotEmpty &&
@@ -4298,13 +4628,15 @@ class MessengerCoordinator extends ChangeNotifier {
         if (peer.isGroup ||
             peer.isAllUsers ||
             peer.isAiAssistant ||
-            peer.status == PeerStatus.offline) {
+            (peer.status == PeerStatus.offline &&
+                hostnameResolverForTesting == null &&
+                !_isInitialized)) {
           continue;
         }
         final keys = {
           peer.id,
-          peer.ip,
-          '${peer.ip}:${peer.port}',
+          if (peer.ip.isNotEmpty) peer.ip,
+          if (peer.ip.isNotEmpty) '${peer.ip}:${peer.port}',
           peer.canonicalIdentity,
           ...chatHistory.aliasesFor(peer.id),
           ...peer.knownIps,
@@ -4314,10 +4646,18 @@ class MessengerCoordinator extends ChangeNotifier {
         if (!keys.any(_pendingOfflineMessageIds.containsKey)) continue;
         if (_outboxInFlight.any((key) => key.endsWith(':${peer.id}'))) continue;
         try {
-          if (!_tcpServer.isConnected(peer.id)) {
-            await _tcpServer.connect(peer.ip, peer.port);
+          if (!_hasActiveConnectionForPeer(peer)) {
+            if (peer.ip.isNotEmpty &&
+                peer.status != PeerStatus.offline &&
+                hostnameResolverForTesting == null) {
+              await _tcpServer.connect(peer.ip, peer.port);
+            } else {
+              await _probePeerNewEndpointIfNeeded(peer);
+            }
           }
-          if (!_disposed && identical(_peers[peer.id], peer)) {
+          if (!_disposed &&
+              identical(_peers[peer.id], peer) &&
+              peer.status != PeerStatus.offline) {
             await flushPendingOutgoingMessagesForPeer(peer);
           }
         } catch (error) {
@@ -4337,8 +4677,8 @@ class MessengerCoordinator extends ChangeNotifier {
     if (_disposed) return;
     final candidateKeys = <String>{
       peer.id,
-      peer.ip,
-      '${peer.ip}:${peer.port}',
+      if (peer.ip.isNotEmpty) peer.ip,
+      if (peer.ip.isNotEmpty) '${peer.ip}:${peer.port}',
       peer.canonicalIdentity,
       ...peer.knownIps,
       for (final ip in peer.knownIps) '$ip:${peer.port}',
@@ -4501,6 +4841,7 @@ class MessengerCoordinator extends ChangeNotifier {
     if (list == null || !list.contains(msg)) return false;
     if (!_groups.containsKey(convId) &&
         convId != '__ALL_USERS__' &&
+        _peers[convId] == null &&
         _findPeerByIpOrId(convId) == null &&
         _selectedPeer?.id != convId) {
       return false;
@@ -4595,8 +4936,12 @@ class MessengerCoordinator extends ChangeNotifier {
         final flightKey = '${msg.id}:${peer.id}';
         _outboxInFlight.add(flightKey);
         try {
-          if (!_tcpServer.isConnected(peer.id) && peer.ip.isNotEmpty) {
-            await _tcpServer.connect(peer.ip, peer.port);
+          if (!_hasActiveConnectionForPeer(peer)) {
+            if (peer.ip.isNotEmpty && hostnameResolverForTesting == null) {
+              await _tcpServer.connect(peer.ip, peer.port);
+            } else {
+              await _probePeerNewEndpointIfNeeded(peer);
+            }
           }
           if (!_disposed &&
               _isRetryableText(msg) &&
@@ -5358,10 +5703,16 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
             // its handler may update the intended conversation's presence.
             final session = _peerSessions.sessions['$targetIp:$port'];
             if (session == null || session.conversationId != targetPeer.id) {
-              return;
+              final recovered = await _probePeerNewEndpointIfNeeded(targetPeer);
+              if (!recovered) return;
+            } else {
+              _refreshLogicalPeer(targetPeer);
             }
-            _refreshLogicalPeer(targetPeer);
+          } else {
+            await _probePeerNewEndpointIfNeeded(targetPeer);
           }
+        } else {
+          await _probePeerNewEndpointIfNeeded(targetPeer);
         }
       }
 
@@ -5811,6 +6162,23 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
       peer.customNickname = (nickname != null && nickname.trim().isNotEmpty)
           ? nickname.trim()
           : null;
+      final identityKey =
+          PeerSessionRegistry.identity(peer) ?? peer.canonicalIdentity;
+      if (identityKey.isNotEmpty) {
+        knownDevices.recordDevice(
+          identityKey: identityKey,
+          username: peer.name,
+          ip: peer.ip,
+          accountName: peer.accountName,
+          hostname: peer.hostname,
+          customNickname: peer.customNickname ?? '',
+          userHash: _peerHashes[peer.id],
+          port: peer.port,
+          avatarColorValue: peer.avatarColor.toARGB32(),
+          avatarPreset: peer.avatarPreset,
+          customAvatarBase64: peer.customAvatarBase64,
+        );
+      }
       notifyListeners();
     }
   }
@@ -5925,6 +6293,7 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
 
     final senderPeer =
         _incomingPeer(task.peerId) ??
+        _incomingPeer(task.peerIp) ??
         _peers.values.firstWhere(
           (p) => p.ip == task.peerIp,
           orElse: () =>

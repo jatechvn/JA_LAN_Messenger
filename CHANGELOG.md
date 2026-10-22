@@ -2,6 +2,18 @@
 
 All notable changes to the **JA LAN Messenger** project will be documented in this file.
 
+## [1.11.0] - 2026-10-22
+
+### 🚀 Nâng cấp & Tính năng mới
+- **Nhận diện Định danh Thiết bị Bền vững & Bảo vệ Chống Nhảy IP DHCP (Persistent Device Identity & DHCP IP Churn Protection)**:
+  - **Thu hồi IP cũ tức thì khi DHCP cấp lại cho máy khác (Immediate Reassigned-IP Eviction)**: Khi người dùng A offline lâu và địa chỉ `IP_old` được DHCP cấp cho máy của người dùng B, hệ thống lập tức thu hồi `IP_old` khỏi hồ sơ của người dùng A (cả trong RAM `PeerModel` lẫn `known_devices.json`) ngay tại thời điểm bắt tay `HELLO`, cách ly hoàn toàn cuộc trò chuyện, hàng đợi Outbox, tệp đính kèm, trạng thái đã xem và lệnh Buzz/WinRM giữa hai người.
+  - **Nhận diện tự động khi người dùng cũ online lại ở IP mới**: Mở rộng `KnownDevicesRegistry` và `PeerSessionRegistry` lưu trữ đầy đủ hồ sơ định danh (`accountName`, `hostname`, `customNickname`, `userHash`, `port`, `avatarColor`, `avatarPreset`, `customAvatarBase64`) và hỗ trợ định danh dự phòng `host@host` khi tên tài khoản trống. Khi người dùng A online trở lại với `IP_new`, ứng dụng tự động gắn kết `IP_new:port` vào đúng cuộc hội thoại gốc, cập nhật IP hiển thị, dọn sạch các IP lịch sử không còn kết nối và tự động xả (flush) tin nhắn chờ trong Outbox tới `IP_new`.
+  - **Chủ động phân giải `hostname` tìm IP mới (`_probePeerNewEndpointIfNeeded`)**: Khi gửi tin nhắn, thử lại tin nhắn lỗi (Retry) hoặc gửi Rung chuông (Buzz) tới liên hệ đã bị nhảy/thu hồi IP, hệ thống tự động phân giải `hostname` qua DNS / LLMNR / NetBIOS kết hợp phát sóng UDP Broadcast để tìm và kết nối tới IP mới mà không cần chờ chu kỳ quét mạng.
+  - **Bền vững Hàng đợi Outbox & Tự động Thử lại (Offline Outbox Auto-Retry Hardening)**: Đảm bảo bộ đếm thử lại nền tự động dừng khi `dispose`, chống gửi lặp khi vừa bấm thử lại thủ công vừa nhận gói tin bắt tay tự động, và không bao giờ gửi nhầm tin nhắn tồn đọng của chủ cũ sang định danh mới dùng lại cùng IP.
+
+### 📦 Phát hành
+- Đồng bộ version 1.11.0+21 trong pubspec.yaml, constants.dart, Runner.rc, installer.iss, install.bat, ABOUT.txt, USERGUIDE.md, README.md, RELEASE_NOTES.md.
+
 ## [1.10.0] - 2026-10-15
 
 ### 🚀 Nâng cấp & Tính năng mới

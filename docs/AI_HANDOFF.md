@@ -1,5 +1,12 @@
 # Handoff: nickname and native keyboard crash (2026-09-21)
 
+## Persistent Device Identity & DHCP IP Churn Protection (v1.11.0+21) (2026-10-22)
+- **KnownDevicesRegistry & PeerSessionRegistry**: Extended `KnownDeviceInfo` with `accountName`, `hostname`, `customNickname`, `userHash`, `port`, `avatarColorValue`, `avatarPreset`, `customAvatarBase64`, `findByIdentity`, and `evictIpFromOtherDevices`. Extended `PeerSessionRegistry.identity` with `host@host` fallback when `accountName` is empty/generic on a machine with a valid non-IP hostname.
+- **MessengerCoordinator DHCP Reassignment & Reconnection**:
+  - `handlePeerHandshake`: Immediately evicts `senderIp` from any other `PeerModel` with a different identity (clearing `other.ip` and closing stale sessions), prunes inactive historical IPs from `primaryPeer.knownIps` upon reconnecting at a new IP, and migrates group memberships by both `userHash` and `canonicalIdentity`.
+  - `_loadChatHistory`: Restores full device identity metadata (`accountName`, `hostname`, `customNickname`, `port`, `avatar`, `_peerHashes`, and non-evicted `lastIp`) from `KnownDevicesRegistry`.
+  - `_probePeerNewEndpointIfNeeded`: Proactively resolves `peer.hostname` via DNS/LLMNR/NetBIOS (`InternetAddress.lookup` or `hostnameResolverForTesting`) when sending messages, retrying outbox, or sending Buzz to an evicted/offline peer.
+
 ## Performance, UI/UX & Feature Upgrade (P1–P3, U1–U3, F1–F4) (2026-10-15)
 - **Performance (P1–P3)**: Replaced per-frame `jsonEncode` reaction check in `ChatViewPanel.build` with $O(1)$ `coordinator.reactionRevision`; virtualized `PeerListView` to `ListView.builder`; optimized `ChatHistoryService` (`saveImmediately` single-pass JSON serialization across `mirrorAliases` and parallel `Future.wait` in `loadAllConversations`).
 - **UI/UX (U1–U3)**: Fixed 320px Compact Mode `_ChatInputDock` horizontal toolbar overflow (icon-only Send/Stop AI fallback + clamped Emoji/Sticker popovers); added `_DateSeparatorChip` (`Hôm nay`, `Hôm qua`, `dd/MM/yyyy`) and consecutive-sender spacing (`isCompactTopSpacing`); added keyboard shortcuts (`Ctrl+F` in-chat search, `Ctrl+K` sidebar search focus, `Alt+Up/Down` adjacent peer navigation, `Esc` dismiss search/reply).
