@@ -251,6 +251,37 @@ class OtaUpdateService {
       ).hasMatch(name) &&
       !name.contains('..');
 
+  /// So sánh phiên bản trên máy chủ với phiên bản hiện tại của ứng dụng.
+  static bool isRemoteVersionNewer(
+    SemanticVersion remote,
+    SemanticVersion current,
+  ) {
+    if (remote.major != current.major) return remote.major > current.major;
+    if (remote.minor != current.minor) return remote.minor > current.minor;
+    if (remote.patch != current.patch) return remote.patch > current.patch;
+    if (remote.prerelease != current.prerelease) {
+      return remote > current;
+    }
+    final rb = remote.build ?? 0;
+    final cb = current.build ?? 0;
+    if (rb > 0 && cb > 0) {
+      return rb > cb;
+    }
+    return false;
+  }
+
+  /// Loại bỏ phần đầu metadata `TAG=...`, `TITLE=...`, `BODY=` khỏi nội dung `RELEASE_NOTES.md` nếu có.
+  static String? sanitizeReleaseNotes(String? raw) {
+    if (raw == null) return null;
+    final cleaned = raw
+        .replaceFirst(
+          RegExp(r'^TAG=[^\r\n]*\r?\nTITLE=[^\r\n]*\r?\nBODY=\r?\n?'),
+          '',
+        )
+        .trim();
+    return cleaned.isEmpty ? null : cleaned;
+  }
+
   static String _psLiteral(String value) => "'${value.replaceAll("'", "''")}'";
 
   static Future<ProcessResult> _runPowerShell(String script) {
@@ -633,13 +664,13 @@ class OtaUpdateService {
         }
       }
 
-      final hasUpdate = releaseSemVer > currentSemVer;
+      final hasUpdate = isRemoteVersionNewer(releaseSemVer, currentSemVer);
       final pkg = UpdatePackageInfo(
         version: releaseSemVer,
         fileName: zipFileName,
         fullPath: downloadUrl,
         fileSize: zipFileSize,
-        releaseNotes: releaseBody.trim().isNotEmpty ? releaseBody : null,
+        releaseNotes: sanitizeReleaseNotes(releaseBody),
         releaseDate: publishedAt != null
             ? DateTime.tryParse(publishedAt)
             : null,
@@ -868,13 +899,13 @@ class OtaUpdateService {
             isValidPackageName(fileName)) {
           final zipFile = File('${dir.path}${Platform.pathSeparator}$fileName');
           if (await zipFile.exists()) {
-            final hasUpdate = serverSemVer > currentSemVer;
+            final hasUpdate = isRemoteVersionNewer(serverSemVer, currentSemVer);
             final pkg = UpdatePackageInfo(
               version: serverSemVer,
               fileName: fileName,
               fullPath: zipFile.path,
               fileSize: await zipFile.length(),
-              releaseNotes: notes,
+              releaseNotes: sanitizeReleaseNotes(notes),
               releaseDate: dateStr != null ? DateTime.tryParse(dateStr) : null,
               sha256: expectedSha,
             );
@@ -945,7 +976,7 @@ class OtaUpdateService {
       // Sắp xếp giảm dần, lấy phiên bản cao nhất
       candidates.sort((a, b) => b.version.compareTo(a.version));
       final latestPkg = candidates.first;
-      final hasUpdate = latestPkg.version > currentSemVer;
+      final hasUpdate = isRemoteVersionNewer(latestPkg.version, currentSemVer);
 
       if (hasUpdate) {
         await prefs.setOtaSettings(

@@ -936,5 +936,34 @@ void main() {
         expect(result.packageInfo?.releaseNotes, 'Auto fallback update');
       },
     );
+
+    test(
+      'checkForUpdates does not treat 1.12.0+22 as newer than 1.12.0 and strips TAG/TITLE/BODY header',
+      () async {
+        final serverDir = Directory('${tempDir.path}/server_same_ver')
+          ..createSync();
+        File(
+          '${serverDir.path}/JA_LAN_Messenger_v1.12.0_Windows_x64.zip',
+        ).writeAsStringSync('zip_payload');
+        File('${serverDir.path}/version.json').writeAsStringSync(
+          jsonEncode({
+            'version': '1.12.0+22',
+            'fileName': 'JA_LAN_Messenger_v1.12.0_Windows_x64.zip',
+            'releaseNotes':
+                'TAG=v1.12.0\nTITLE=JA LAN Messenger v1.12.0\nBODY=\n## Markdown Body',
+          }),
+        );
+        OtaUpdateService().setCustomServerDirForTesting(serverDir);
+
+        final result = await OtaUpdateService().checkForUpdates(
+          overrideServerPath: serverDir.path,
+          overrideSource: 'lan',
+          overrideCurrentVersion: '1.12.0',
+        );
+
+        expect(result.hasUpdate, isFalse);
+        expect(result.packageInfo?.releaseNotes, '## Markdown Body');
+      },
+    );
   });
 }
