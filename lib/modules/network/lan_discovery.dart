@@ -717,7 +717,7 @@ class LanDiscoveryService {
         // Rate limit replies: two ported clients must not echo UDP forever.
         final now = DateTime.now();
         _lastResponses.removeWhere(
-          (_, time) => now.difference(time).inSeconds >= 10,
+          (_, time) => now.difference(time).inSeconds >= 2,
         );
         final endpoint = '$senderIp:$remotePort';
         if (!_lastResponses.containsKey(endpoint)) {

@@ -2,6 +2,24 @@
 
 All notable changes to the **JA LAN Messenger** project will be documented in this file.
 
+## [1.12.0] - 2026-10-31
+
+### 🚀 Nâng cấp & Tính năng mới
+- **Tự động Hiện Popup Thông báo Phiên bản Mới (`GlassUpdateDialog`) & Kiểm tra OTA Tức thì**:
+  - **Tự động bật hộp thoại cập nhật**: Ngay khi phát hiện phiên bản OTA mới trên máy chủ LAN hoặc GitHub Releases, ứng dụng tự động bật hộp thoại kính mờ `GlassUpdateDialog` một lần cho mỗi phiên bản để người dùng cập nhật ngay.
+  - **Kiểm tra OTA ngay khi khởi động & định kỳ**: Bổ sung cờ `isStartup: true` trong `MessengerCoordinator.checkOtaUpdates()` giúp kiểm tra phiên bản mới ngay khi mở ứng dụng (không bị kẹt bởi thời gian chờ 24 giờ của lần kiểm tra trước) và tự động kiểm tra định kỳ mỗi 30 phút (`_otaCheckTimer`).
+  - **Chống mở chồng Popup & Huy hiệu Compact Mode**: Bổ sung khóa `isGlassUpdateDialogShowing` ngăn mở trùng lặp nhiều hộp thoại cập nhật và thêm nút thông báo cập nhật có chấm xanh trên thanh tiêu đề chế độ thu gọn (`_CompactTopBar`).
+- **Khôi phục Trạng thái Online Tức thì Sau Khi Tắt/Mở Lại Ứng dụng**:
+  - **Sửa triệt để lỗi từ chối kết nối lại (`duplicate_rejected`)**: Bổ sung dấu thời gian `connectedAt` trên `BeebeepSession` và `attachedAt` trong `LanTcpServer._attach` để phân biệt chính xác kết nối mở đồng thời thực sự (`previous.connectedAt!.isAfter(attachedAt)`) với kết nối lại từ máy vừa khởi động lại App (`session_replaced`), khắc phục triệt để lỗi ~50% đồng nghiệp đang Online bị báo Offline cho tới khi bấm Chuông (Buzz).
+  - **Chủ động thăm dò TCP trực tiếp (`_probeKnownAndRestoredPeers`)**: Tự động gửi kết nối TCP trực tiếp tới danh sách IP/cổng đã lưu trong danh bạ `known_devices.json` và lịch sử trò chuyện ngay khi khởi động, sau khi nạp lịch sử, khi quét lại mạng và trong chu kỳ kiểm tra kết nối định kỳ.
+  - **Bảo toàn trạng thái Online khi gộp lịch sử & Báo Offline tức thì khi thoát**: Giữ nguyên trạng thái Online và gọi `_refreshLogicalPeer()` trong `_consolidateLoadedPeersAndConversations()`, gửi gói tin `PeerStatus.offline` trước khi thoát ứng dụng (`flushHistoryBeforeExit()`), và giảm thời gian rate-limit phản hồi UDP Unicast từ 10 giây xuống 2 giây.
+- **Củng cố Chính sách Card Mạng (NIC Policy) & Đa Tài khoản Cùng IP**:
+  - Bảo toàn các phiên đang hoạt động của những tài khoản khác nhau chạy trên các cổng khác nhau tại cùng một địa chỉ IP.
+  - Thực thi đồng bộ chính sách lọc Card mạng (`saveNetworkAdapters`) trên toàn bộ kết nối hiện có và mọi đường dẫn kết nối TCP mới; chỉ phát gói tin `UserStatus` khi đổi trạng thái Online/Away/Busy mà không ngắt kết nối TCP.
+
+### 📦 Phát hành
+- Đồng bộ version 1.12.0+22 trong pubspec.yaml, constants.dart, Runner.rc, installer.iss, install.bat, ABOUT.txt, USERGUIDE.md, README.md, RELEASE_NOTES.md.
+
 ## [1.11.0] - 2026-10-22
 
 ### 🚀 Nâng cấp & Tính năng mới

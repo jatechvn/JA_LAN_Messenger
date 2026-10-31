@@ -1,12 +1,14 @@
 ================================================================================
 JA LAN Messenger - Lightweight P2P Office LAN Messenger
 ================================================================================
-Version: 1.11.0+21
+Version: 1.12.0+22
 Developer: JA Team
 Language: Dart / Flutter Desktop
 Architecture: Pure Dart P2P Sockets (UDP Broadcast/Multicast + TCP Streaming)
 Protocol: Dual-Mode (BeeBEEP Compatible + JA Modern Packet)
 Features:
+- Automatic OTA Update Popup & Startup/Periodic Check: Automatically displays GlassUpdateDialog when a new OTA version is detected, checks for updates immediately on startup and every 30 minutes, prevents stacked duplicate update popups, and adds an update badge in Compact Mode
+- Instant Peer Reconnect & Presence Recovery After Restart: Accurately distinguishes peer reconnects from simultaneous TCP opens using session timestamps, proactively TCP-probes known peers on startup/rescan/liveness checks, preserves online status during history consolidation, broadcasts instant offline status on app exit, and enforces multi-account coexistence and enabled NIC adapter policies
 - Persistent Device Identity & DHCP IP Churn Protection: Recognizes returning users by stable device identity (account@hostname or host@host) when DHCP reassigns IPs after long offline periods, immediately evicts reassigned old IPs to isolate conversations/outboxes/files/WinRM, and proactively resolves peer hostnames (DNS/LLMNR/NetBIOS) to reconnect on new IPs
 - In-Chat Message Search (Ctrl+F): Real-time search bar inside conversations with match counter (1/N), Enter/Shift+Enter navigation, auto-scroll, and highlight
 - Per-Peer Message Drafts: Automatically saves and restores unsent text per contact/group with an amber [Nháp]/[Draft]/[草稿] badge in Sidebar and Compact Mode

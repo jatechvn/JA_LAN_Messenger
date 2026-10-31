@@ -8,37 +8,50 @@ import '../../localization/app_locale.dart';
 import '../../constants.dart';
 import '../../services/ota_update_service.dart';
 
-/// Mở hộp thoại cập nhật Bento Frosted Glass
+bool _isUpdateDialogShowing = false;
+
+/// Kiểm tra xem hộp thoại cập nhật đang hiển thị hay không
+bool get isGlassUpdateDialogShowing => _isUpdateDialogShowing;
+
+/// Mở hộp thoại cập nhật Bento Frosted Glass (chống mở chồng nhiều hộp thoại)
 Future<void> showGlassUpdateDialog({
   required BuildContext context,
   required UpdatePackageInfo packageInfo,
-}) {
-  final theme = ThemeProvider.of(context, listen: false);
-  final isDark = theme.isDark;
+}) async {
+  if (_isUpdateDialogShowing) return;
+  _isUpdateDialogShowing = true;
+  try {
+    final theme = ThemeProvider.of(context, listen: false);
+    final isDark = theme.isDark;
 
-  return showGeneralDialog(
-    context: context,
-    barrierDismissible: false,
-    barrierLabel: 'GlassUpdateDialog',
-    barrierColor: isDark
-        ? Colors.black.withValues(alpha: 0.65)
-        : Colors.black.withValues(alpha: 0.40),
-    transitionDuration: const Duration(milliseconds: 220),
-    pageBuilder: (ctx, anim1, anim2) =>
-        GlassUpdateDialog(packageInfo: packageInfo),
-    transitionBuilder: (ctx, anim1, anim2, child) {
-      return FadeTransition(
-        opacity: CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
-        child: ScaleTransition(
-          scale: Tween<double>(
-            begin: 0.94,
-            end: 1.0,
-          ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
-      );
-    },
-  );
+    await showGeneralDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: 'GlassUpdateDialog',
+      barrierColor: isDark
+          ? Colors.black.withValues(alpha: 0.65)
+          : Colors.black.withValues(alpha: 0.40),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (ctx, anim1, anim2) =>
+          GlassUpdateDialog(packageInfo: packageInfo),
+      transitionBuilder: (ctx, anim1, anim2, child) {
+        return FadeTransition(
+          opacity: CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
+          child: ScaleTransition(
+            scale: Tween<double>(
+              begin: 0.94,
+              end: 1.0,
+            ).animate(
+              CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
+            ),
+            child: child,
+          ),
+        );
+      },
+    );
+  } finally {
+    _isUpdateDialogShowing = false;
+  }
 }
 
 /// Hộp thoại thông báo cập nhật Bento Frosted Glass

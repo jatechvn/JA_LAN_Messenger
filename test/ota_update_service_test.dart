@@ -518,6 +518,52 @@ void main() {
         expect(coordinator.currentToast?.key, equals('updateAvailable'));
       },
     );
+
+    test(
+      'checkOtaUpdates with isStartup=true detects new version immediately even if lastCheckTime is recent',
+      () async {
+        final service = OtaUpdateService();
+        final serverDir = Directory(
+          '${tempDir.path}/mock_server_startup_check',
+        );
+        await serverDir.create(recursive: true);
+        service.setCustomServerDirForTesting(serverDir);
+
+        final zipNew = File('${serverDir.path}/JA_LAN_Messenger_v3.1.0.zip');
+        await zipNew.writeAsBytes([1, 2, 3]);
+
+        final coordinator = MessengerCoordinator();
+        addTearDown(coordinator.dispose);
+        final prefs = AppPreferences();
+        await prefs.load();
+        await prefs.setOtaSettings(
+          serverPath: serverDir.path,
+          checkInterval: 'daily',
+          lastCheckTime: DateTime.now(),
+        );
+
+        // Non-startup automatic check within 24h is skipped
+        final skipped = await coordinator.checkOtaUpdates(isManual: false);
+        expect(skipped.hasUpdate, isFalse);
+
+        // Startup check bypasses the 24h cooldown so newly released versions pop up on app launch
+        final startupResult = await coordinator.checkOtaUpdates(
+          isManual: false,
+          isStartup: true,
+        );
+        expect(startupResult.hasUpdate, isTrue);
+        expect(coordinator.availableUpdate?.version.toString(), '3.1.0');
+
+        // But if interval is 'off', startup check still respects 'off'
+        coordinator.dismissAvailableUpdate();
+        await prefs.setOtaSettings(checkInterval: 'off');
+        final offResult = await coordinator.checkOtaUpdates(
+          isManual: false,
+          isStartup: true,
+        );
+        expect(offResult.hasUpdate, isFalse);
+      },
+    );
   });
 
   group('Localization OTA Keys Verification', () {
@@ -738,6 +784,69 @@ void main() {
         expect(find.text('GitHub Releases'), findsOneWidget);
         expect(find.textContaining('v2.0.0 - Big Update OTA'), findsOneWidget);
         expect(find.textContaining('GitHub Releases OTA'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'showGlassUpdateDialog prevents stacked duplicate update popups and closes cleanly on updateLater',
+      (tester) async {
+        tester.view.physicalSize = const Size(900, 720);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() => tester.view.resetPhysicalSize());
+
+        final theme = ThemeProvider();
+        final lang = LanguageProvider();
+        final coordinator = MessengerCoordinator();
+        addTearDown(() => coordinator.dispose());
+
+        final packageInfo = UpdatePackageInfo(
+          version: SemanticVersion.tryParse('3.0.0')!,
+          fileName: 'JA_LAN_Messenger_v3.0.0_Windows_x64.zip',
+          fullPath: '/mock/update_3.0.0.zip',
+          fileSize: 20 * 1024 * 1024,
+          releaseNotes: '- Tự động hiện popup cập nhật phiên bản mới',
+        );
+
+        late BuildContext savedContext;
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: theme),
+              ChangeNotifierProvider.value(value: lang),
+              ChangeNotifierProvider.value(value: coordinator),
+            ],
+            child: MaterialApp(
+              home: Builder(
+                builder: (context) {
+                  savedContext = context;
+                  return const Scaffold(body: SizedBox.shrink());
+                },
+              ),
+            ),
+          ),
+        );
+
+        expect(isGlassUpdateDialogShowing, isFalse);
+        final firstFuture = showGlassUpdateDialog(
+          context: savedContext,
+          packageInfo: packageInfo,
+        );
+        await tester.pump();
+        expect(isGlassUpdateDialogShowing, isTrue);
+
+        // Second concurrent call is ignored instead of stacking a second dialog
+        await showGlassUpdateDialog(
+          context: savedContext,
+          packageInfo: packageInfo,
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(GlassUpdateDialog), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('btn-update-later')));
+        await tester.pumpAndSettle();
+        await firstFuture;
+        expect(isGlassUpdateDialogShowing, isFalse);
+        expect(find.byType(GlassUpdateDialog), findsNothing);
       },
     );
   });

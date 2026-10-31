@@ -8,6 +8,7 @@ import '../../models/peer_model.dart';
 import '../../constants.dart';
 import 'chat_view_panel.dart';
 import 'glass_components.dart';
+import 'glass_update_dialog.dart';
 import 'app_avatar.dart';
 
 enum _CompactFilter { all, unread, online }
@@ -469,6 +470,24 @@ class _CompactTopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
+
+          if (coordinator.availableUpdate != null) ...[
+            GlassIconButton(
+              icon: Icons.system_update_alt_rounded,
+              tooltip: lang.tr('updateAvailable', [
+                coordinator.availableUpdate!.version.displayVersion,
+              ]),
+              color: theme.colors.accentEmerald,
+              size: 26,
+              onPressed: () {
+                showGlassUpdateDialog(
+                  context: context,
+                  packageInfo: coordinator.availableUpdate!,
+                );
+              },
+            ),
+            const SizedBox(width: 3),
+          ],
 
           // 1. Always on Top 📌
           GlassIconButton(

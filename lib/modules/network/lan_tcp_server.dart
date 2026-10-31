@@ -83,6 +83,7 @@ class LanTcpServer {
   BeebeepSession _attach(Socket socket, {required bool outgoing}) {
     final remoteIp = socket.remoteAddress.address;
     final generation = _generation;
+    final attachedAt = DateTime.now();
     String? endpoint;
     late BeebeepSession session;
     session = BeebeepSession(
@@ -98,13 +99,23 @@ class LanTcpServer {
         final previous = _sessions[endpoint];
         // Both peers may connect simultaneously. Choose the same physical
         // connection at both ends using the advertised endpoint ordering.
+        // A simultaneous open only occurs when both sockets were attached in
+        // opposite directions before the first HELLO completed. If `previous`
+        // was already authenticated before this socket attached, the remote
+        // peer restarted/reconnected and `previous` must be replaced.
         if (previous != null && previous.isReady) {
-          final local = '${socket.address.address}:$_port';
-          final preferOutgoing = local.compareTo(endpoint!) < 0;
-          if (outgoing != preferOutgoing) {
-            session.closeCategory = 'duplicate_rejected';
-            session.close();
-            return;
+          final isSimultaneousOpen =
+              previous.isOutgoing != outgoing &&
+              previous.connectedAt != null &&
+              previous.connectedAt!.isAfter(attachedAt);
+          if (isSimultaneousOpen) {
+            final local = '${socket.address.address}:$_port';
+            final preferOutgoing = local.compareTo(endpoint!) < 0;
+            if (outgoing != preferOutgoing) {
+              session.closeCategory = 'duplicate_rejected';
+              session.close();
+              return;
+            }
           }
         }
         _sessions[endpoint!] = session;
@@ -277,6 +288,10 @@ class LanTcpServer {
     for (final session in _allSessions.toList()) {
       session.close();
     }
+  }
+
+  void closeConnection(String endpoint) {
+    _sessions[endpoint]?.close();
   }
 
   Future<void> stop() async {

@@ -235,26 +235,28 @@ class MessengerCoordinator extends ChangeNotifier {
     await networkPreferences.save(disabled);
     _tcpServer.invalidatePendingConnections();
     await _discovery.updateDisabledAdapters(Set.of(disabled));
-    // Đánh dấu offline các peer chỉ thuộc dải mạng của card đã bị tắt
-    final enabledSubnets = _discovery.enabledAdapters
-        .map((a) => a.subnet)
-        .toList();
-    for (final peer in _peers.values) {
-      if (peer.isGroup || peer.isAllUsers) continue;
-      final hasEnabledIp = peer.knownIps.any(
-        (ip) => enabledSubnets.any(
-          (subnet) => NetworkUtils.isIpInSubnet(ip, subnet),
-        ),
-      );
-      if (!hasEnabledIp && enabledSubnets.isNotEmpty) {
+    for (final entry in _peerSessions.sessions.entries.toList()) {
+      if (!_isPeerIpAllowed(entry.value.remote.ip)) {
+        entry.value.available = false;
+        _tcpServer.closeConnection(entry.key);
+      }
+    }
+    for (final peer in _peers.values.toSet()) {
+      if (peer.isGroup || peer.isAllUsers || peer.isAiAssistant) continue;
+      if (_peerSessions.forConversation(peer.id).isNotEmpty) {
+        _refreshLogicalPeer(peer);
+      } else if (!_isPeerIpAllowed(peer.ip)) {
         peer.status = PeerStatus.offline;
+      }
+      if (peer.status == PeerStatus.offline) {
         peer.statusDescription = 'Ngoài dải card mạng đã chọn';
+        _failUnackedMessagesForPeer(peer);
       }
     }
     notifyListeners();
   }
 
-  final LanDiscoveryService _discovery = LanDiscoveryService();
+  final LanDiscoveryService _discovery;
   final LanTcpServer _tcpServer;
   final FileTransferEngine _fileEngine = FileTransferEngine();
   int _lastAttachmentBatchId = 0;
@@ -303,19 +305,30 @@ class MessengerCoordinator extends ChangeNotifier {
   }
 
   /// Kiểm tra cập nhật OTA tự động hoặc thủ công
-  Future<UpdateCheckResult> checkOtaUpdates({bool isManual = false}) async {
+  Future<UpdateCheckResult> checkOtaUpdates({
+    bool isManual = false,
+    bool isStartup = false,
+  }) async {
     try {
       final prefs = AppPreferences();
       if (!isManual) {
-        final should = OtaUpdateService().shouldCheckForUpdates(
-          interval: prefs.otaCheckInterval,
-          lastCheckTime: prefs.otaLastCheckTime,
-        );
-        if (!should) {
+        if (prefs.otaCheckInterval == 'off') {
           return UpdateCheckResult(
             hasUpdate: false,
             currentVersion: appVersion,
           );
+        }
+        if (!isStartup) {
+          final should = OtaUpdateService().shouldCheckForUpdates(
+            interval: prefs.otaCheckInterval,
+            lastCheckTime: prefs.otaLastCheckTime,
+          );
+          if (!should) {
+            return UpdateCheckResult(
+              hasUpdate: false,
+              currentVersion: appVersion,
+            );
+          }
         }
       }
       final result = await OtaUpdateService().checkForUpdates(
@@ -349,16 +362,19 @@ class MessengerCoordinator extends ChangeNotifier {
   bool _disposed = false;
   final AiServerLocator _aiLocator;
   Timer? _livenessTimer;
+  Timer? _otaCheckTimer;
   Timer? _outboxRetryTimer;
   bool _outboxRetryRunning = false;
   final Duration outboxRetryInterval;
 
   MessengerCoordinator({
+    LanDiscoveryService? discovery,
     this.outboxRetryInterval = const Duration(seconds: 5),
     LanTcpServer? tcpServer,
     KnownDevicesRegistry? knownDevices,
     AiServerLocator? aiServerLocator,
-  }) : _tcpServer = tcpServer ?? LanTcpServer(),
+  }) : _discovery = discovery ?? LanDiscoveryService(),
+       _tcpServer = tcpServer ?? LanTcpServer(),
        _aiLocator = aiServerLocator ?? AiServerLocator(),
        knownDevices = knownDevices ?? KnownDevicesRegistry() {
     final prefs = AppPreferences();
@@ -1068,7 +1084,33 @@ class MessengerCoordinator extends ChangeNotifier {
           if (a.customNickname == null && b.customNickname != null) {
             a.customNickname = b.customNickname;
           }
+          if ((a.accountName == null || a.accountName!.isEmpty) &&
+              b.accountName != null &&
+              b.accountName!.isNotEmpty) {
+            a.accountName = b.accountName;
+          }
+          if ((a.hostname == null || a.hostname!.isEmpty) &&
+              b.hostname != null &&
+              b.hostname!.isNotEmpty) {
+            a.hostname = b.hostname;
+          }
           a.isPinned = a.isPinned || b.isPinned;
+
+          if (a.status == PeerStatus.offline &&
+              b.status != PeerStatus.offline) {
+            a.status = b.status;
+            a.statusDescription = b.statusDescription;
+            if (b.ip.isNotEmpty) a.ip = b.ip;
+            if (b.port > 0) a.port = b.port;
+            if (b.lastSeen.isAfter(a.lastSeen)) a.lastSeen = b.lastSeen;
+            a.isBeebeep = b.isBeebeep;
+          }
+
+          final idB =
+              _peerSessions.identities[b.id] ?? PeerSessionRegistry.identity(b);
+          if (idB != null) {
+            _peerSessions.remember(a.id, idB);
+          }
 
           _mergeConversations(a.id, b.id);
 
@@ -1085,6 +1127,12 @@ class MessengerCoordinator extends ChangeNotifier {
             }
           }
           _peers[b.id] = a;
+          if (identical(_selectedPeer, b)) {
+            _selectedPeer = a;
+          }
+          if (_peerSessions.forConversation(a.id).isNotEmpty) {
+            _refreshLogicalPeer(a);
+          }
         }
       }
     }
@@ -1672,7 +1720,7 @@ class MessengerCoordinator extends ChangeNotifier {
     localFilePort = _fileEngine.port;
 
     // 3. Khởi động UDP Discovery với cổng TCP thực tế
-    _discovery.connectCandidate = (ip, port, sourceIp) => _tcpServer.connect(
+    _discovery.connectCandidate = (ip, port, sourceIp) => _connectPeer(
       ip,
       port,
       sourceAddress: sourceIp,
@@ -1686,6 +1734,10 @@ class MessengerCoordinator extends ChangeNotifier {
       },
     );
 
+    // Chủ động thăm dò TCP trực tiếp tới các thiết bị/liên hệ đã biết ngay khi khởi động
+    unawaited(_probeKnownAndRestoredPeers());
+    unawaited(historyLoaded.then((_) => _probeKnownAndRestoredPeers()));
+
     // Bắt đầu timer định kỳ làm sạch trạng thái peer không phản hồi (> 60s)
     _livenessTimer = Timer.periodic(
       const Duration(seconds: 15),
@@ -1698,8 +1750,13 @@ class MessengerCoordinator extends ChangeNotifier {
       (_) => _checkTypingExpiry(),
     );
 
-    // Tự động kiểm tra cập nhật OTA ngầm nếu đến hạn kỳ
-    unawaited(checkOtaUpdates(isManual: false));
+    // Tự động kiểm tra cập nhật OTA ngay khi khởi động và định kỳ mỗi 30 phút (nếu không tắt)
+    unawaited(checkOtaUpdates(isManual: false, isStartup: true));
+    _otaCheckTimer?.cancel();
+    _otaCheckTimer = Timer.periodic(
+      const Duration(minutes: 30),
+      (_) => unawaited(checkOtaUpdates(isManual: false, isStartup: true)),
+    );
 
     notifyListeners();
   }
@@ -1710,6 +1767,7 @@ class MessengerCoordinator extends ChangeNotifier {
     _isActivelyRescanning = true;
     showToast('toastScanning');
     try {
+      unawaited(_probeKnownAndRestoredPeers());
       await _discovery.triggerActiveScan(adapterIps: adapterIps);
       await Future.delayed(const Duration(milliseconds: 1500));
     } finally {
@@ -1726,7 +1784,7 @@ class MessengerCoordinator extends ChangeNotifier {
   /// Xử lý khi phát hiện một peer mới qua UDP Broadcast / Multicast
   void _handlePeerDiscovered(String ip, int port) {
     // A broadcast is only a candidate. Publish the user after authenticated HELLO.
-    unawaited(_tcpServer.connect(ip, port));
+    unawaited(_connectPeer(ip, port));
   }
 
   /// Ảnh tùy chỉnh cũ chỉ lưu đường dẫn. Sinh Base64 một lần để HELLO gửi được ảnh.
@@ -1861,16 +1919,25 @@ class MessengerCoordinator extends ChangeNotifier {
 
     // Bước 1: Thu hồi (Evict) senderIp khỏi mọi Peer có định danh khác đã từng dùng IP này
     if (candidateIdentity != null && senderIp.isNotEmpty) {
+      // A distinct live endpoint may belong to another account on this host.
+      // Only a reused endpoint, or stale IP history, establishes reassignment.
+      final retainedIdentities = _coexistingIdentities(
+        senderIp,
+        excludingEndpoint: endpoint,
+      );
       knownDevices.evictIpFromOtherDevices(
         senderIp,
         ownerIdentityKey: candidateIdentity,
+        preservedIdentityKeys: retainedIdentities,
       );
       for (final other in _peers.values.toSet()) {
         if (other.isGroup || other.isAllUsers || other.isAiAssistant) continue;
         final otherIdentity =
             PeerSessionRegistry.identity(other) ??
             _peerSessions.identities[other.id];
-        if (otherIdentity != null && otherIdentity != candidateIdentity) {
+        if (otherIdentity != null &&
+            otherIdentity != candidateIdentity &&
+            !retainedIdentities.contains(otherIdentity)) {
           other.knownIps.remove(senderIp);
           for (final sessionEntry in _peerSessions.sessions.entries.toList()) {
             if (sessionEntry.value.conversationId == other.id &&
@@ -2114,6 +2181,10 @@ class MessengerCoordinator extends ChangeNotifier {
       identityKey: identityKey,
       username: peer.name,
       ip: senderIp,
+      preservedIdentityKeys: _coexistingIdentities(
+        senderIp,
+        excludingEndpoint: endpoint,
+      ),
       accountName: peer.accountName,
       hostname: peer.hostname,
       customNickname: peer.customNickname,
@@ -2529,6 +2600,10 @@ class MessengerCoordinator extends ChangeNotifier {
       // Khởi tạo hợp nhất các cuộc trò chuyện và thiết bị cùng máy vật lý từ lịch sử
       _consolidateLoadedPeersAndConversations();
       _ensureOutboxRetryTimer();
+
+      if (_tcpServer.isListening && !_disposed) {
+        unawaited(_probeKnownAndRestoredPeers());
+      }
 
       for (final peer in peers.where((p) => p.status != PeerStatus.offline)) {
         unawaited(flushPendingOutgoingMessagesForPeer(peer));
@@ -3027,7 +3102,7 @@ class MessengerCoordinator extends ChangeNotifier {
           existingSession.available &&
           existingSession.conversationId != peer.id;
       if (!occupiedByOther) {
-        final connected = await _tcpServer.connect(
+        final connected = await _connectPeer(
           peer.ip,
           port,
           timeout: const Duration(milliseconds: 500),
@@ -3078,7 +3153,7 @@ class MessengerCoordinator extends ChangeNotifier {
               existingSession.conversationId != peer.id) {
             continue;
           }
-          final connected = await _tcpServer.connect(
+          final connected = await _connectPeer(
             cleanIp,
             port,
             timeout: const Duration(milliseconds: 500),
@@ -3101,6 +3176,131 @@ class MessengerCoordinator extends ChangeNotifier {
     return false;
   }
 
+  bool _probingKnownPeers = false;
+
+  Set<String> _coexistingIdentities(String ip, {String? excludingEndpoint}) =>
+      _peerSessions.sessions.entries
+          .where(
+            (e) =>
+                e.key != excludingEndpoint &&
+                e.value.available &&
+                e.value.remote.ip == ip,
+          )
+          .map(
+            (e) =>
+                _peerSessions.identities[e.value.conversationId] ??
+                PeerSessionRegistry.identity(e.value.remote),
+          )
+          .whereType<String>()
+          .toSet();
+
+  bool _isPeerIpAllowed(String ip) =>
+      _discovery.disabledAdapterNames.isEmpty ||
+      _discovery.enabledAdapters.any(
+        (a) => NetworkUtils.isIpInSubnet(ip, a.subnet),
+      );
+
+  Future<bool> _connectPeer(
+    String ip,
+    int port, {
+    String? sourceAddress,
+    Duration timeout = const Duration(seconds: 2),
+  }) {
+    if (_disposed || !_isPeerIpAllowed(ip)) return Future.value(false);
+    if (_discovery.disabledAdapterNames.isNotEmpty) {
+      final adapter = _discovery.enabledAdapters
+          .where(
+            (a) =>
+                NetworkUtils.isIpInSubnet(ip, a.subnet) &&
+                (sourceAddress == null || a.ip == sourceAddress),
+          )
+          .firstOrNull;
+      if (adapter == null) return Future.value(false);
+      sourceAddress = adapter.ip;
+    }
+    return _tcpServer.connect(
+      ip,
+      port,
+      sourceAddress: sourceAddress,
+      timeout: timeout,
+    );
+  }
+
+  /// Chủ động kết nối TCP trực tiếp tới các thiết bị/liên hệ đã biết lúc khởi động hoặc quét mạng
+  Future<void> _probeKnownAndRestoredPeers() async {
+    if (_disposed || _probingKnownPeers || !_tcpServer.isListening) return;
+    _probingKnownPeers = true;
+    try {
+      final probedEndpoints = <String>{};
+      final offlinePeers = _peers.values
+          .where(
+            (p) =>
+                !p.isGroup &&
+                !p.isAllUsers &&
+                !p.isAiAssistant &&
+                p.status == PeerStatus.offline,
+          )
+          .toSet()
+          .toList();
+
+      const batchSize = 8;
+      for (var i = 0; i < offlinePeers.length; i += batchSize) {
+        if (_disposed || !_tcpServer.isListening) return;
+        final batch = offlinePeers.skip(i).take(batchSize).toList();
+        await Future.wait(
+          batch.map((peer) async {
+            if (_disposed || peer.status != PeerStatus.offline) return;
+            final port = peer.port > 0 ? peer.port : defaultListenerPort;
+            if (peer.ip.isNotEmpty) {
+              probedEndpoints.add('${peer.ip}:$port');
+            }
+            await _probePeerNewEndpointIfNeeded(peer);
+          }),
+        );
+      }
+
+      // Thăm dò thêm các thiết bị đã lưu trong known_devices.json chưa có phiên kết nối
+      final deviceEndpoints = <(String, int)>[];
+      for (final d in knownDevices.devices.values) {
+        final ip = d.lastIp.trim();
+        if (ip.isEmpty || ip == '0.0.0.0') continue;
+        final port = (d.port != null && d.port! > 0)
+            ? d.port!
+            : defaultListenerPort;
+        final endpoint = '$ip:$port';
+        if (probedEndpoints.contains(endpoint) ||
+            _tcpServer.isConnected(endpoint)) {
+          continue;
+        }
+        probedEndpoints.add(endpoint);
+        deviceEndpoints.add((ip, port));
+      }
+
+      for (var i = 0; i < deviceEndpoints.length; i += batchSize) {
+        if (_disposed || !_tcpServer.isListening) return;
+        final batch = deviceEndpoints.skip(i).take(batchSize).toList();
+        await Future.wait(
+          batch.map((target) async {
+            if (_disposed || !_tcpServer.isListening) return;
+            await _connectPeer(
+              target.$1,
+              target.$2,
+              timeout: const Duration(milliseconds: 600),
+            );
+          }),
+        );
+      }
+    } catch (e) {
+      debugPrint('[Coordinator] Probe known peers error: $e');
+    } finally {
+      _probingKnownPeers = false;
+    }
+  }
+
+  @visibleForTesting
+  Future<void> probeKnownAndRestoredPeersForTesting() =>
+      _probeKnownAndRestoredPeers();
+
   bool _sendToPeer(String endpoint, List<int> packet) {
     if (sendToPeerForTesting != null) {
       return sendToPeerForTesting!(endpoint, packet);
@@ -3118,7 +3318,8 @@ class MessengerCoordinator extends ChangeNotifier {
             ?.elementAtOrNull(2);
         for (final session in sessions) {
           if (!session.available ||
-              session.remote.status == PeerStatus.offline) {
+              session.remote.status == PeerStatus.offline ||
+              !_isPeerIpAllowed(session.remote.ip)) {
             continue;
           }
           if (expected != null &&
@@ -3138,6 +3339,8 @@ class MessengerCoordinator extends ChangeNotifier {
         activeSessionAtEndpoint.conversationId != peer.id) {
       return false;
     }
+    final targetIp = peer?.ip ?? endpoint.split(':').first;
+    if (!_isPeerIpAllowed(targetIp)) return false;
     if (_tcpServer.send(endpoint, packet)) return true;
     if (peer == null) return false;
     for (final alias in _peers.entries) {
@@ -3172,7 +3375,12 @@ class MessengerCoordinator extends ChangeNotifier {
   void _refreshLogicalPeer(PeerModel peer) {
     final sessions = _peerSessions.forConversation(peer.id);
     final available = sessions
-        .where((s) => s.available && s.remote.status != PeerStatus.offline)
+        .where(
+          (s) =>
+              s.available &&
+              s.remote.status != PeerStatus.offline &&
+              _isPeerIpAllowed(s.remote.ip),
+        )
         .toList();
     if (available.isEmpty) {
       peer.status = PeerStatus.offline;
@@ -4196,6 +4404,7 @@ class MessengerCoordinator extends ChangeNotifier {
       }
     }
     if (changed) notifyListeners();
+    unawaited(_probeKnownAndRestoredPeers());
   }
 
   /// Map lưu trữ ID tin nhắn chưa đọc đầu tiên khi người dùng chọn cuộc trò chuyện
@@ -4650,7 +4859,7 @@ class MessengerCoordinator extends ChangeNotifier {
             if (peer.ip.isNotEmpty &&
                 peer.status != PeerStatus.offline &&
                 hostnameResolverForTesting == null) {
-              await _tcpServer.connect(peer.ip, peer.port);
+              await _connectPeer(peer.ip, peer.port);
             } else {
               await _probePeerNewEndpointIfNeeded(peer);
             }
@@ -4938,7 +5147,7 @@ class MessengerCoordinator extends ChangeNotifier {
         try {
           if (!_hasActiveConnectionForPeer(peer)) {
             if (peer.ip.isNotEmpty && hostnameResolverForTesting == null) {
-              await _tcpServer.connect(peer.ip, peer.port);
+              await _connectPeer(peer.ip, peer.port);
             } else {
               await _probePeerNewEndpointIfNeeded(peer);
             }
@@ -5693,7 +5902,7 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
           final port = targetPeer.port > 0
               ? targetPeer.port
               : defaultListenerPort;
-          final connected = await _tcpServer.connect(
+          final connected = await _connectPeer(
             targetIp,
             port,
             timeout: const Duration(milliseconds: 500),
@@ -5918,6 +6127,7 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
   /// Quét lại toàn bộ mạng LAN
   void refreshPeers() {
     _discovery.sendBroadcastAnnounce();
+    unawaited(_probeKnownAndRestoredPeers());
   }
 
   /// Cập nhật trạng thái hiển thị của bản thân
@@ -5928,6 +6138,7 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
     Color? color,
     String? workgroup,
   }) async {
+    if (_disposed) return;
     if (username != null && username.trim().isNotEmpty) {
       localUsername = username.trim();
       notifyListeners();
@@ -5939,9 +6150,18 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
     if (color != null) localColor = color;
     if (workgroup != null) localWorkgroup = workgroup;
 
-    // Renegotiate identity/password instead of changing an authenticated session.
-    _tcpServer.closeConnections();
-    _discovery.sendBroadcastAnnounce();
+    if (username == null && color == null && workgroup == null) {
+      _tcpServer.sendToAll(
+        ProtocolBeebeep.buildUserStatusPacket(
+          status: localStatus,
+          statusDescription: localStatusDescription,
+        ),
+      );
+    } else {
+      // Identity/profile changes still renegotiate their HELLO metadata.
+      _tcpServer.closeConnections();
+      _discovery.sendBroadcastAnnounce();
+    }
     notifyListeners();
   }
 
@@ -6039,7 +6259,7 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
     }
 
     // Thực hiện kết nối TCP và trao đổi gói tin HELLO
-    final connected = await _tcpServer.connect(
+    final connected = await _connectPeer(
       cleanIp,
       port,
       timeout: const Duration(milliseconds: 3200),
@@ -6169,6 +6389,7 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
           identityKey: identityKey,
           username: peer.name,
           ip: peer.ip,
+          preservedIdentityKeys: _coexistingIdentities(peer.ip),
           accountName: peer.accountName,
           hostname: peer.hostname,
           customNickname: peer.customNickname ?? '',
@@ -6375,6 +6596,13 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
 
   Future<void> flushHistoryBeforeExit() async {
     aiQueueManager.clearQueue();
+    try {
+      _tcpServer.sendToAll(
+        ProtocolBeebeep.buildUserStatusPacket(status: PeerStatus.offline),
+      );
+      _discovery.stop();
+      await _tcpServer.stop();
+    } catch (_) {}
     for (final entry in _conversations.entries) {
       await chatHistory.saveImmediately(entry.key, entry.value);
     }
@@ -6388,6 +6616,7 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
       unawaited(windowManager.setAlwaysOnTop(false).catchError((Object _) {}));
     }
     _disposed = true;
+    _otaCheckTimer?.cancel();
     _outboxRetryTimer?.cancel();
     _livenessTimer?.cancel();
     _typingCleanupTimer?.cancel();

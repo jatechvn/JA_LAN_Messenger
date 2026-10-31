@@ -161,7 +161,11 @@ class KnownDevicesRegistry {
   }
 
   /// Evicts [ip] from all other registered devices whose identity differs from [ownerIdentityKey].
-  void evictIpFromOtherDevices(String ip, {String? ownerIdentityKey}) {
+  void evictIpFromOtherDevices(
+    String ip, {
+    String? ownerIdentityKey,
+    Set<String> preservedIdentityKeys = const {},
+  }) {
     final cleanIp = ip.trim();
     if (cleanIp.isEmpty) return;
     final normalizedOwner = ownerIdentityKey?.trim().toLowerCase();
@@ -169,6 +173,9 @@ class KnownDevicesRegistry {
     for (final entry in _devices.entries) {
       if (normalizedOwner != null &&
           entry.key.trim().toLowerCase() == normalizedOwner) {
+        continue;
+      }
+      if (preservedIdentityKeys.contains(entry.key.trim().toLowerCase())) {
         continue;
       }
       final other = entry.value;
@@ -200,12 +207,17 @@ class KnownDevicesRegistry {
     String? avatarPreset,
     String? customAvatarBase64,
     Set<String>? activeIps,
+    Set<String> preservedIdentityKeys = const {},
   }) {
     if (identityKey.isEmpty) return false;
 
     final now = DateTime.now();
     if (ip.isNotEmpty) {
-      evictIpFromOtherDevices(ip, ownerIdentityKey: identityKey);
+      evictIpFromOtherDevices(
+        ip,
+        ownerIdentityKey: identityKey,
+        preservedIdentityKeys: preservedIdentityKeys,
+      );
     }
 
     final existing = findByIdentity(identityKey);

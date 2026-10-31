@@ -122,6 +122,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
 
   int _lastTrayUnreadCount = -1;
   PeerStatus? _lastTrayStatus;
+  String? _lastPromptedUpdateVersion;
 
   void _onCoordinatorChangedForTray() {
     if (!mounted) return;
@@ -364,6 +365,25 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
     final lang = context.watch<LanguageProvider>();
     final coordinator = context.watch<MessengerCoordinator>();
     coordinator.languageProvider = lang;
+
+    final availableUpdate = coordinator.availableUpdate;
+    if (availableUpdate != null &&
+        _lastPromptedUpdateVersion != availableUpdate.version.toString() &&
+        !isGlassUpdateDialogShowing) {
+      _lastPromptedUpdateVersion = availableUpdate.version.toString();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || isGlassUpdateDialogShowing) return;
+        final currentUpdate = coordinator.availableUpdate;
+        if (currentUpdate != null) {
+          unawaited(
+            showGlassUpdateDialog(
+              context: context,
+              packageInfo: currentUpdate,
+            ),
+          );
+        }
+      });
+    }
 
     final String? toastMsg = coordinator.currentToast != null
         ? coordinator.currentToast!.format(lang)

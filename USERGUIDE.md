@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.11.0
+# Hướng dẫn sử dụng JA LAN Messenger v1.12.0
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.11.0_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.12.0_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -178,6 +178,10 @@
 - **Tự động nhận diện lại đồng nghiệp khi đổi IP:** Trong môi trường mạng văn phòng cấp phát IP động (DHCP), khi đồng nghiệp tắt máy lâu ngày và mở lại với một địa chỉ IP mới, ứng dụng tự động nhận diện theo định danh thiết bị (`account@hostname`), nối tiếp cuộc trò chuyện cũ, giữ nguyên biệt danh, nhóm chat và tự động gửi bù các tin nhắn đang chờ trong Outbox sang IP mới.
 - **Cách ly an toàn khi IP cũ được cấp cho người khác:** Nếu địa chỉ IP cũ của đồng nghiệp đang offline được bộ định tuyến cấp cho một máy tính khác, hệ thống lập tức thu hồi IP cũ khỏi hồ sơ của đồng nghiệp đó và tạo cuộc trò chuyện riêng biệt cho người mới — tuyệt đối không gửi nhầm tin nhắn chờ, tệp đính kèm hay lệnh Rung chuông/WinRM sang máy người khác.
 - **Chủ động dò tìm IP mới qua Tên máy (`Hostname`):** Khi bạn nhắn tin, bấm Thử lại hoặc Rung chuông cho đồng nghiệp bị nhảy IP, ứng dụng tự động phân giải tên máy qua DNS / LLMNR / NetBIOS để tìm và kết nối tới IP mới ngay lập tức.
+
+### 2.23. Tự Động Hiện Popup Cập Nhật Phiên Bản Mới & Khôi Phục Trạng Thái Online Tức Thì
+- **Tự động bật Popup thông báo phiên bản mới:** Khi có bản cập nhật mới trên máy chủ LAN hoặc GitHub, ứng dụng tự động hiển thị hộp thoại cập nhật để bạn xem chi tiết thay đổi và nâng cấp chỉ với 1 cú nhấp chuột. Nếu chọn *"Để sau"*, bạn vẫn có thể mở lại từ biểu tượng cập nhật có chấm xanh trên thanh tiêu đề (cả chế độ chuẩn và Compact Mode).
+- **Nhận diện đồng nghiệp Online tức thì khi mở lại App:** Ngay khi khởi động lại ứng dụng, hệ thống chủ động kết nối trực tiếp tới danh sách đồng nghiệp đã biết và đồng bộ lại phiên kết nối mà không cần phải bấm nút Rung chuông (Buzz).
 
 ---
 

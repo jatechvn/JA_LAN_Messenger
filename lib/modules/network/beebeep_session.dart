@@ -22,6 +22,8 @@ class BeebeepSession {
   final ready = Completer<bool>();
   Uint8List _key = Uint8List(32);
   bool _helloSent = false, _authenticated = false, _closed = false;
+  bool isOutgoing = false;
+  DateTime? connectedAt;
   Timer? _timer;
   DateTime _lastRead = DateTime.now();
   String? error;
@@ -42,6 +44,7 @@ class BeebeepSession {
   });
 
   void start({required bool outgoing}) {
+    isOutgoing = outgoing;
     socket.setOption(SocketOption.tcpNoDelay, true);
     socket.listen(
       _read,
@@ -185,6 +188,7 @@ class BeebeepSession {
           _sendHello();
           _key = nextKey;
           _authenticated = true;
+          connectedAt = DateTime.now();
           peerPort = hello['port'] as int;
           _readStage = 'hello_callback';
           onHello(hello);

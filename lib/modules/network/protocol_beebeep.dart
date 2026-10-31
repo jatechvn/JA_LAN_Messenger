@@ -402,6 +402,17 @@ class ProtocolBeebeep {
     flags: isTyping ? 3 : 1,
   );
 
+  static List<int> buildUserStatusPacket({
+    required PeerStatus status,
+    String statusDescription = '',
+  }) => packet(
+    headerUser,
+    '$idUserMessage',
+    data: '${_statusToInt(status)}',
+    text: statusDescription,
+    flags: 4,
+  );
+
   /// Native BeeBEEP vCard: id 16, UserVCard flag, at least five data fields,
   /// and plain PNG Base64 in text. JA preset metadata rides in the info field.
   static List<int> buildAvatarUpdatePacket({
