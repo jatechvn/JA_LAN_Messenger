@@ -603,6 +603,17 @@ class NetworkUtils {
     return true;
   }
 
+  static ({String ip, int port})? parseIpv4Endpoint(
+    String value,
+    int defaultPort,
+  ) {
+    final parts = value.trim().split(':');
+    if (parts.length > 2 || !isValidIp(parts.first)) return null;
+    final port = parts.length == 2 ? int.tryParse(parts.last) : defaultPort;
+    if (port == null || port < 1 || port > 65535) return null;
+    return (ip: parts.first.trim(), port: port);
+  }
+
   /// So sánh hai địa chỉ IPv4 theo giá trị số học
   static int compareIps(String ipA, String ipB) {
     final aParts = ipA.split('.').map((e) => int.tryParse(e) ?? 0).toList();

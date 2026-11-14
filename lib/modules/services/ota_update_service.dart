@@ -1348,7 +1348,8 @@ robocopy "%SRC_DIR%" "%DST_DIR%" /E /IS /IT /NP /R:5 /W:2 /XD logs conversations
 if errorlevel 8 goto rollback
 
 echo [3/3] Khoi chay ung dung moi...
-start "" "%DST_DIR%\\%EXE_NAME%" "--ota-session=%~dp0."
+cd /d "%DST_DIR%"
+start "" /D "%DST_DIR%" "%DST_DIR%\\%EXE_NAME%" "--ota-session=%~dp0."
 
 :: Cho 2s roi dong cua so
 timeout /t 2 /nobreak >nul
@@ -1357,7 +1358,8 @@ exit /b 0
 :rollback
 robocopy "%BACKUP_DIR%" "%DST_DIR%" /E /IS /IT /NP /R:2 /W:1 >"%~dp0rollback.log"
 if errorlevel 8 exit /b 14
-start "" "%DST_DIR%\\%EXE_NAME%"
+cd /d "%DST_DIR%"
+start "" /D "%DST_DIR%" "%DST_DIR%\\%EXE_NAME%"
 exit /b 15
 ''';
   }

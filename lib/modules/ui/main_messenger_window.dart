@@ -376,10 +376,7 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
         final currentUpdate = coordinator.availableUpdate;
         if (currentUpdate != null) {
           unawaited(
-            showGlassUpdateDialog(
-              context: context,
-              packageInfo: currentUpdate,
-            ),
+            showGlassUpdateDialog(context: context, packageInfo: currentUpdate),
           );
         }
       });

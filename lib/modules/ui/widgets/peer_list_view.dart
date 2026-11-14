@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../constants.dart';
 import '../../theme/theme_provider.dart';
 import '../../localization/app_locale.dart';
 import '../../services/messenger_coordinator.dart';
@@ -637,7 +638,8 @@ class _AddIpDialogState extends State<_AddIpDialog> {
     final lang = context.read<LanguageProvider>();
     final coordinator = context.read<MessengerCoordinator>();
 
-    if (ip.isEmpty || !NetworkUtils.isValidIp(ip)) {
+    final target = NetworkUtils.parseIpv4Endpoint(ip, defaultListenerPort);
+    if (target == null) {
       setState(() {
         _errorMessage = lang.tr('addIpInvalid');
       });
@@ -650,7 +652,9 @@ class _AddIpDialogState extends State<_AddIpDialog> {
       _connectingIp = ip;
     });
 
-    final result = await coordinator.addManualPeer(ip);
+    final result = ip.contains(':')
+        ? await coordinator.addManualEndpoint(target.ip, target.port)
+        : await coordinator.addManualPeer(target.ip);
     if (!mounted) return;
 
     if (result.isSuccess) {
@@ -688,7 +692,12 @@ class _AddIpDialogState extends State<_AddIpDialog> {
   void _saveOffline() {
     final coordinator = context.read<MessengerCoordinator>();
     final targetIp = _connectingIp ?? _controller.text.trim();
-    final peer = coordinator.addOfflineManualPeer(targetIp);
+    final target = NetworkUtils.parseIpv4Endpoint(
+      targetIp,
+      defaultListenerPort,
+    );
+    if (target == null) return;
+    final peer = coordinator.addOfflineManualPeer(target.ip, target.port);
     Navigator.of(context).pop();
     coordinator.showToast('savedOfflineToast', [
       '${peer.displayName} ($targetIp)',

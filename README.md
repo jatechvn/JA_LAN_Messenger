@@ -1,6 +1,6 @@
 # JA LAN Messenger
 
-[![Version](https://img.shields.io/badge/version-1.12.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.13.0-blue.svg)](CHANGELOG.md)
 [![Flutter Version](https://img.shields.io/badge/Flutter-3.44.2-02569B?logo=flutter)](https://flutter.dev)
 [![Dart Version](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)](https://microsoft.com/windows)
@@ -128,6 +128,12 @@ build\windows\x64\runner\Release\
 ---
 
 ## 📂 Project Structure
+
+The Python CLI is maintained separately in **JA_LanMes_Cli**. GUI runtime and
+Windows packages do not include Python sources or require Python. Direct LAN
+interoperability is tested from the CLI project's `tests/interop/` against this
+GUI's Dart protocol. The separate SSH-only jumphost gateway remains an integration
+gate; removing Python from this repository does not add SSH support to the GUI.
 
 ```text
 JA_LAN_Messenger/

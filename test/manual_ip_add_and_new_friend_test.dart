@@ -6,6 +6,7 @@ import 'package:ja_lan_messenger/modules/services/messenger_coordinator.dart';
 import 'package:ja_lan_messenger/modules/localization/app_locale.dart';
 import 'package:ja_lan_messenger/modules/theme/theme_provider.dart';
 import 'package:ja_lan_messenger/modules/ui/widgets/peer_list_view.dart';
+import 'package:ja_lan_messenger/modules/network/network_utils.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -132,6 +133,44 @@ void main() {
       },
     );
 
+    test('manual bridge endpoints match the exact loopback port', () async {
+      final first = PeerModel(
+        id: '127.0.0.1:16475',
+        name: 'First host',
+        ip: '127.0.0.1',
+        port: 16475,
+        status: PeerStatus.online,
+      );
+      final second = PeerModel(
+        id: '127.0.0.1:16476',
+        name: 'Second host',
+        ip: '127.0.0.1',
+        port: 16476,
+        status: PeerStatus.online,
+      );
+      coordinator.peersMap[first.id] = first;
+      coordinator.peersMap[second.id] = second;
+      expect(
+        (await coordinator.addManualEndpoint('127.0.0.1', 16476)).peer,
+        same(second),
+      );
+      expect(
+        (await coordinator.addManualEndpoint('127.0.0.1', 16477)).isSuccess,
+        isFalse,
+      );
+      expect(NetworkUtils.parseIpv4Endpoint('127.0.0.1:16477', 6475), (
+        ip: '127.0.0.1',
+        port: 16477,
+      ));
+      expect(NetworkUtils.parseIpv4Endpoint('127.0.0.1', 6475), (
+        ip: '127.0.0.1',
+        port: 6475,
+      ));
+      for (final value in ['127.0.0.1:', '127.0.0.1:0', '127.0.0.1:65536']) {
+        expect(NetworkUtils.parseIpv4Endpoint(value, 6475), isNull);
+      }
+    });
+
     test(
       'addOfflineManualPeer adds peer as offline and marks as new friend',
       () {
@@ -199,6 +238,27 @@ void main() {
 
       // Cursor should be at the very end
       expect(controller.selection.baseOffset, controller.text.length);
+
+      final bridgePeer = PeerModel(
+        id: '127.0.0.1:16475',
+        name: 'Bridge host',
+        ip: '127.0.0.1',
+        port: 16475,
+        status: PeerStatus.online,
+      );
+      coordinator.peersMap[bridgePeer.id] = bridgePeer;
+      final input = find.byType(TextField).last;
+      await tester.enterText(input, '127.0.0.1:65536');
+      await tester.tap(find.text(lang.tr('connect')));
+      await tester.pump();
+      expect(find.text(lang.tr('addIpInvalid')), findsOneWidget);
+
+      await tester.enterText(input, bridgePeer.id);
+      await tester.tap(find.text(lang.tr('connect')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text(lang.tr('addIpTitle')), findsNothing);
+      expect(coordinator.selectedPeer?.id, bridgePeer.id);
     });
   });
 }

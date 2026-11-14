@@ -24,6 +24,16 @@ import 'modules/services/ota_staging_cleanup.dart';
 import 'modules/power_aware_binding.dart';
 
 void main(List<String> args) async {
+  // Neo thư mục làm việc hiện tại (CWD) về thư mục chứa file thực thi để
+  // không bao giờ giữ khóa (lock) thư mục bộ cài đặt hoặc thư mục tạm bên ngoài.
+  try {
+    final exeFile = File(Platform.resolvedExecutable);
+    if (exeFile.path.toLowerCase().endsWith('ja_lan_messenger.exe') &&
+        exeFile.parent.existsSync()) {
+      Directory.current = exeFile.parent;
+    }
+  } catch (_) {}
+
   PowerAwareWidgetsBinding();
 
   if (args.contains('-debug') ||

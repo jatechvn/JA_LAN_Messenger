@@ -57,6 +57,7 @@ foreach ($name in @('debug.bat','install.bat','uninstall.bat','uninstall.ps1','A
     if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination (Join-Path $payload $name) }
     elseif ($name -in @('install.bat','uninstall.bat','uninstall.ps1')) { throw "Missing installer helper: $name" }
 }
+# CLI source and launchers belong to the independent JA_LanMes_Cli project.
 $zip = Join-Path $output ($packageName + '.zip')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [IO.Compression.ZipFile]::CreateFromDirectory($payload, $zip, [IO.Compression.CompressionLevel]::Optimal, $true)

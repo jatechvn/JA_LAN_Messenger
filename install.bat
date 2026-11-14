@@ -1,5 +1,8 @@
 @echo off
 chcp 65001 >nul
+set "SCRIPT_DIR=%~dp0"
+if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+cd /d "%TEMP%" 2>nul || cd /d "%SystemRoot%\System32"
 setlocal EnableExtensions DisableDelayedExpansion
 set "SILENT_MODE=0"
 if /i "%~1"=="/silent" set "SILENT_MODE=1"
@@ -10,9 +13,6 @@ echo ========================================================
 echo       INSTALL JA LAN MESSENGER FOR WINDOWS
 echo ========================================================
 echo.
-
-set "SCRIPT_DIR=%~dp0"
-if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 
 set "SOURCE_DIR="
 if exist "%SCRIPT_DIR%\ja_lan_messenger.exe" (
@@ -34,6 +34,7 @@ if not defined SOURCE_DIR (
 
 echo [1/5] Checking running application...
 set "TARGET_DIR=%LOCALAPPDATA%\Programs\JA_LAN_Messenger"
+if defined JA_INSTALL_TARGET_DIR set "TARGET_DIR=%JA_INSTALL_TARGET_DIR%"
 if /i "%SOURCE_DIR%"=="%TARGET_DIR%" goto install_error
 if not exist "%SOURCE_DIR%\flutter_windows.dll" goto install_error
 if not exist "%SOURCE_DIR%\data\icudtl.dat" goto install_error
@@ -44,7 +45,6 @@ powershell -NoProfile -Command "$exe = Join-Path $env:TARGET_DIR 'ja_lan_messeng
 if errorlevel 1 goto install_error
 if exist "%TARGET_DIR%\unins000.exe" goto install_error
 
-set "TARGET_DIR=%LOCALAPPDATA%\Programs\JA_LAN_Messenger"
 echo [2/5] Preparing installation directory:
 echo       "%TARGET_DIR%"
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
@@ -74,9 +74,11 @@ if exist "%SCRIPT_DIR%\uninstall.bat" (
 )
 
 echo [4/5] Creating Desktop and Start Menu shortcuts...
+cd /d "%TARGET_DIR%" 2>nul
 
 :: Desktop may be redirected to OneDrive; resolve its Windows known folder.
 set "START_MENU_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\JA LAN Messenger"
+if defined JA_INSTALL_START_MENU_DIR set "START_MENU_DIR=%JA_INSTALL_START_MENU_DIR%"
 if not exist "%START_MENU_DIR%" mkdir "%START_MENU_DIR%"
 set "START_MENU_APP_LNK=%START_MENU_DIR%\JA LAN Messenger.lnk"
 set "START_MENU_UNINST_LNK=%START_MENU_DIR%\Uninstall JA LAN Messenger.lnk"
@@ -85,7 +87,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ErrorActionPreference = 'Stop'; $ws = New-Object -ComObject WScript.Shell; " ^
   "$exe = Join-Path $env:TARGET_DIR 'ja_lan_messenger.exe'; " ^
   "$uninst = Join-Path $env:TARGET_DIR 'uninstall.bat'; " ^
-  "$d = $ws.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'JA LAN Messenger.lnk')); " ^
+  "$desktopDir = if ($env:JA_INSTALL_DESKTOP_DIR) { $env:JA_INSTALL_DESKTOP_DIR } else { [Environment]::GetFolderPath('Desktop') }; " ^
+  "$d = $ws.CreateShortcut((Join-Path $desktopDir 'JA LAN Messenger.lnk')); " ^
   "$d.TargetPath = $exe; " ^
   "$d.WorkingDirectory = $env:TARGET_DIR; " ^
   "$d.IconLocation = $exe + ',0'; " ^
@@ -108,9 +111,10 @@ if errorlevel 1 goto install_error
 
 echo [5/5] Registering application in Windows Control Panel...
 set "REG_KEY=HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\JA_LAN_Messenger"
+if defined JA_INSTALL_REG_KEY set "REG_KEY=%JA_INSTALL_REG_KEY%"
 
 reg add "%REG_KEY%" /v "DisplayName" /t REG_SZ /d "JA LAN Messenger" /f >nul
-reg add "%REG_KEY%" /v "DisplayVersion" /t REG_SZ /d "1.12.0" /f >nul
+reg add "%REG_KEY%" /v "DisplayVersion" /t REG_SZ /d "1.13.0" /f >nul
 reg add "%REG_KEY%" /v "Publisher" /t REG_SZ /d "JA Tech" /f >nul
 reg add "%REG_KEY%" /v "DisplayIcon" /t REG_SZ /d "%TARGET_DIR%\ja_lan_messenger.exe,0" /f >nul
 reg add "%REG_KEY%" /v "InstallLocation" /t REG_SZ /d "%TARGET_DIR%" /f >nul
@@ -120,14 +124,14 @@ reg add "%REG_KEY%" /v "NoModify" /t REG_DWORD /d 1 /f >nul
 reg add "%REG_KEY%" /v "NoRepair" /t REG_DWORD /d 1 /f >nul
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$dir = $env:TARGET_DIR; " ^
+  "$dir = $env:TARGET_DIR; $regPath = 'Registry::' + $env:REG_KEY; " ^
   "$bytes = (Get-ChildItem -Path $dir -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum; " ^
   "$kb = if ($bytes) { [math]::Round($bytes / 1024) } else { 0 }; " ^
   "$date = (Get-Date).ToString('yyyyMMdd'); " ^
-  "Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\JA_LAN_Messenger' -Name 'EstimatedSize' -Value $kb -Type DWord -ErrorAction SilentlyContinue; " ^
-  "Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\JA_LAN_Messenger' -Name 'InstallDate' -Value $date -Type String -ErrorAction SilentlyContinue" >nul 2>&1
+  "Set-ItemProperty -Path $regPath -Name 'EstimatedSize' -Value $kb -Type DWord -ErrorAction SilentlyContinue; " ^
+  "Set-ItemProperty -Path $regPath -Name 'InstallDate' -Value $date -Type String -ErrorAction SilentlyContinue" >nul 2>&1
 
-powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $key='HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\JA_LAN_Messenger'; $q=[char]34; $bat=Join-Path $env:TARGET_DIR 'uninstall.bat'; Set-ItemProperty $key UninstallString ('cmd.exe /c '+$q+$q+$bat+$q+$q); Set-ItemProperty $key QuietUninstallString ('cmd.exe /c '+$q+$q+$bat+$q+' /silent'+$q); $ver=(Get-Item -LiteralPath (Join-Path $env:TARGET_DIR 'ja_lan_messenger.exe')).VersionInfo.ProductVersion; if ($ver) { Set-ItemProperty $key DisplayVersion $ver }; if ((Get-ItemProperty $key).InstallLocation -ne $env:TARGET_DIR) { throw 'Install registration failed' }"
+powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $key='Registry::' + $env:REG_KEY; $q=[char]34; $bat=Join-Path $env:TARGET_DIR 'uninstall.bat'; Set-ItemProperty $key UninstallString ('cmd.exe /c '+$q+$q+$bat+$q+$q); Set-ItemProperty $key QuietUninstallString ('cmd.exe /c '+$q+$q+$bat+$q+' /silent'+$q); $ver=(Get-Item -LiteralPath (Join-Path $env:TARGET_DIR 'ja_lan_messenger.exe')).VersionInfo.ProductVersion; if ($ver) { Set-ItemProperty $key DisplayVersion $ver }; if ((Get-ItemProperty $key).InstallLocation -ne $env:TARGET_DIR) { throw 'Install registration failed' }"
 if errorlevel 1 goto install_error
 echo.
 echo ========================================================
@@ -142,13 +146,19 @@ echo.
 if /i "%~1"=="/silent" exit /b 0
 if /i "%~1"=="/s" exit /b 0
 
-set /p RUN_APP="Launch JA LAN Messenger now? (Y/N, default Y): "
-if "%RUN_APP%"=="" set "RUN_APP=Y"
-if /i "%RUN_APP%"=="yes" set "RUN_APP=Y"
-if /i "%RUN_APP%"=="y" (
-    start "" "%TARGET_DIR%\ja_lan_messenger.exe"
-)
-exit /b 0
+del /f /q "%TEMP%\ja_lan_post_install_*.bat" >nul 2>&1
+set "FINISH_BAT=%TEMP%\ja_lan_post_install_%RANDOM%_%RANDOM%.bat"
+(
+    echo @echo off
+    echo cd /d "%TARGET_DIR%"
+    echo set "RUN_APP="
+    echo set /p RUN_APP="Launch JA LAN Messenger now? (Y/N, default Y): "
+    echo if "%%RUN_APP%%"=="" set "RUN_APP=Y"
+    echo if /i "%%RUN_APP%%"=="yes" set "RUN_APP=Y"
+    echo if /i "%%RUN_APP%%"=="y" start "" /D "%TARGET_DIR%" "%TARGET_DIR%\ja_lan_messenger.exe"
+    echo exit /b 0
+) > "%FINISH_BAT%"
+"%FINISH_BAT%"
 
 :install_error
 echo [ERROR] Installation failed. Check package, permissions and running app.

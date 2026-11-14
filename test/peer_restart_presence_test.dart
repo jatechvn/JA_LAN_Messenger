@@ -95,10 +95,7 @@ void main() {
       };
 
       // 1. serverLow connects outgoing to serverHigh (so previous.isOutgoing == true on serverLow)
-      expect(
-        await serverLow.connect('127.0.0.1', serverHigh.port),
-        isTrue,
-      );
+      expect(await serverLow.connect('127.0.0.1', serverHigh.port), isTrue);
       expect(lowHandshakes, 1);
 
       // 2. Simulate HighPeer restarting its app and immediately initiating a new
@@ -125,10 +122,7 @@ void main() {
             'Reconnect from restarted peer must replace stale session instead of being rejected with duplicate_rejected',
       );
       expect(lowHandshakes, 2);
-      expect(
-        serverLow.isConnected('127.0.0.1:${serverHigh.port}'),
-        isTrue,
-      );
+      expect(serverLow.isConnected('127.0.0.1:${serverHigh.port}'), isTrue);
     },
   );
 
@@ -248,29 +242,22 @@ void main() {
         0,
       );
       addTearDown(serverSocket.close);
-      final clientSocket = await Socket.connect(
-        '127.0.0.1',
-        serverSocket.port,
-      );
+      final clientSocket = await Socket.connect('127.0.0.1', serverSocket.port);
       addTearDown(clientSocket.destroy);
 
-      coordinator.handlePeerHandshake(
-        '10.81.141.88',
-        {
-          'port': 6475,
-          'username': 'Alice',
-          'status': PeerStatus.online,
-          'statusDescription': 'Online',
-          'account': 'alice',
-          'hostname': 'PC-ALICE',
-          'hash': 'hash_alice_123',
-          'version': '1.11.0',
-          'color': '#3B82F6|preset:initials',
-          'workgroup': 'General',
-          'client': 'JA_LAN_MESSENGER',
-        },
-        clientSocket,
-      );
+      coordinator.handlePeerHandshake('10.81.141.88', {
+        'port': 6475,
+        'username': 'Alice',
+        'status': PeerStatus.online,
+        'statusDescription': 'Online',
+        'account': 'alice',
+        'hostname': 'PC-ALICE',
+        'hash': 'hash_alice_123',
+        'version': '1.11.0',
+        'color': '#3B82F6|preset:initials',
+        'workgroup': 'General',
+        'client': 'JA_LAN_MESSENGER',
+      }, clientSocket);
 
       await coordinator.historyLoaded;
 

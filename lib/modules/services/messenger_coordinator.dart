@@ -6230,9 +6230,18 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
   Future<ManualPeerResult> addManualPeer(
     String ip, [
     int port = defaultListenerPort,
-  ]) async {
+  ]) => _addManualPeer(ip, port, matchPort: port != defaultListenerPort);
+
+  Future<ManualPeerResult> addManualEndpoint(String ip, int port) =>
+      _addManualPeer(ip, port, matchPort: true);
+
+  Future<ManualPeerResult> _addManualPeer(
+    String ip,
+    int port, {
+    required bool matchPort,
+  }) async {
     final cleanIp = ip.trim();
-    if (!NetworkUtils.isValidIp(cleanIp)) {
+    if (!NetworkUtils.isValidIp(cleanIp) || port < 1 || port > 65535) {
       return ManualPeerResult(status: ManualAddStatus.invalidIp, ip: cleanIp);
     }
 
@@ -6247,7 +6256,9 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
     }
 
     // Kiểm tra xem IP này đã có trong danh sách peers online chưa
-    final existingPeer = _findPeerByIpOrId(cleanIp);
+    final endpoint = '$cleanIp:$port';
+    final lookup = matchPort ? endpoint : cleanIp;
+    final existingPeer = _findPeerByIpOrId(lookup);
     if (existingPeer != null && existingPeer.status != PeerStatus.offline) {
       markNewlyAddedPeer(existingPeer.id);
       notifyListeners();
@@ -6266,22 +6277,21 @@ Do not repeat unnecessary apologies or answer in a roundabout way.''',
     );
 
     if (connected) {
-      PeerModel? targetPeer = _findPeerByIpOrId(cleanIp);
-      if (targetPeer == null) {
-        final endpoint = '$cleanIp:$port';
-        targetPeer =
-            _peers[endpoint] ??
-            _peers.values.firstWhere(
-              (p) => p.ip == cleanIp || p.knownIps.contains(cleanIp),
-              orElse: () => PeerModel(
-                id: endpoint,
-                name: cleanIp,
-                ip: cleanIp,
-                port: port,
-                status: PeerStatus.online,
-              ),
-            );
-      }
+      final targetPeer =
+          _findPeerByIpOrId(lookup) ??
+          _peers[endpoint] ??
+          _peers.values.firstWhere(
+            (p) =>
+                (!matchPort || p.port == port) &&
+                (p.ip == cleanIp || p.knownIps.contains(cleanIp)),
+            orElse: () => PeerModel(
+              id: endpoint,
+              name: cleanIp,
+              ip: cleanIp,
+              port: port,
+              status: PeerStatus.online,
+            ),
+          );
       markNewlyAddedPeer(targetPeer.id);
       notifyListeners();
       return ManualPeerResult(

@@ -38,10 +38,7 @@ Future<void> showGlassUpdateDialog({
         return FadeTransition(
           opacity: CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
           child: ScaleTransition(
-            scale: Tween<double>(
-              begin: 0.94,
-              end: 1.0,
-            ).animate(
+            scale: Tween<double>(begin: 0.94, end: 1.0).animate(
               CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
             ),
             child: child,

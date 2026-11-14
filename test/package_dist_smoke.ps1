@@ -7,6 +7,9 @@ Add-Type -TypeDefinition '[assembly:System.Reflection.AssemblyInformationalVersi
 foreach ($name in @('flutter_windows.dll','desktop_drop_plugin.dll','data\app.so','data\icudtl.dat','update_config.json','user_preferences.json')) { Set-Content -LiteralPath (Join-Path $release $name) -Value 'fixture' }
 foreach ($name in @('install.bat','uninstall.bat','uninstall.ps1')) { Set-Content -LiteralPath (Join-Path $root $name) -Value 'fixture' }
 Set-Content -LiteralPath (Join-Path $root 'dist\keep.txt') -Value 'existing output'
+New-Item -ItemType Directory -Path (Join-Path $root 'cli'),(Join-Path $release 'cli') -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $root 'cli\ja_lan_cli.py') -Value 'CLI must not be packaged'
+Set-Content -LiteralPath (Join-Path $release 'cli\ja_lan_cli.py') -Value 'stale CLI must not be packaged'
 $packager=Join-Path (Split-Path $PSScriptRoot -Parent) 'windows\packaging\package_dist.ps1'
 & $packager -ProjectRoot $root
 if (-not (Test-Path -LiteralPath (Join-Path $release 'update_config.json'))) { throw 'Source modified' }
@@ -16,6 +19,9 @@ if ($stageDirs.Count -gt 0) { throw 'Staging directory was not cleaned up' }
 $prevDirs = Get-ChildItem -LiteralPath $root -Directory -Filter 'dist.previous-*'
 if ($prevDirs.Count -gt 0) { throw 'Previous dist directory was not cleaned up' }
 $zip=Get-ChildItem -LiteralPath (Join-Path $root 'dist') -Filter '*.zip'
+$archive=[IO.Compression.ZipFile]::OpenRead($zip.FullName)
+try { if ($archive.Entries | Where-Object { $_.FullName -match '(^|/)cli/' }) { throw 'Standalone CLI leaked into GUI ZIP' } }
+finally { $archive.Dispose() }
 $before=(Get-FileHash -LiteralPath $zip.FullName).Hash
 Set-Content -LiteralPath (Join-Path $root 'pubspec.yaml') -Value 'version: 1.3.0+4'
 $failed=$false

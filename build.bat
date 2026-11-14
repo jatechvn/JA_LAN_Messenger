@@ -61,6 +61,7 @@ if exist "%~dp0README.md" copy /y "%~dp0README.md" "%TARGET_DIR%\" >nul
 if exist "%~dp0CHANGELOG.md" copy /y "%~dp0CHANGELOG.md" "%TARGET_DIR%\" >nul
 if exist "%~dp0USERGUIDE.md" copy /y "%~dp0USERGUIDE.md" "%TARGET_DIR%\" >nul
 if exist "%~dp0LICENSE" copy /y "%~dp0LICENSE" "%TARGET_DIR%\" >nul
+:: Python CLI is maintained and distributed independently in JA_LanMes_Cli.
 if exist "%~dp0assets\sticker" (
     echo       - Chep bo nhan dan sticker vao thu muc Release...
     if not exist "%TARGET_DIR%\assets\sticker" mkdir "%TARGET_DIR%\assets\sticker"

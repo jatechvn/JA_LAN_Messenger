@@ -2,6 +2,33 @@
 
 All notable changes to the **JA LAN Messenger** project will be documented in this file.
 
+## [1.13.0] - 2026-11-14
+
+### 🚀 Nâng cấp & Tính năng mới
+- **Hỗ trợ Điểm cuối IPv4:port (Bridge & Multi-Host)**:
+  - Cho phép nhập trực tiếp địa chỉ IPv4 hoặc `IPv4:cổng` (1–65535) trong hộp thoại Thêm bạn IP (`_AddIpDialog`).
+  - Khớp chính xác cổng trên dải loopback (`127.0.0.1`), phân tách độc lập các cuộc trò chuyện tới nhiều máy trạm được bắc cầu thông qua lệnh `bridge` của dự án vệ tinh `JA_LanMes_Cli`.
+  - Cập nhật chuỗi giao diện và thông báo lỗi đa ngôn ngữ (Tiếng Việt, English, 简体中文) trong `LanguageProvider`.
+- **Cơ chế Mở khóa Thư mục Bộ cài đặt Tức thì (Installer & OTA CWD Unlock)**:
+  - Tự động neo thư mục làm việc hiện tại (`Directory.current`) của ứng dụng về thư mục chứa file thực thi (`ja_lan_messenger.exe`), ngăn chặn triệt để tình trạng ứng dụng giữ khóa (lock) thư mục giải nén tạm hoặc thư mục bộ cài đặt.
+  - Script `install.bat` chuyển CWD sang `%TEMP%` trước khi thực thi, hỗ trợ các biến môi trường cấu hình đường dẫn cài đặt (`JA_INSTALL_TARGET_DIR`, `JA_INSTALL_START_MENU_DIR`, `JA_INSTALL_DESKTOP_DIR`, `JA_INSTALL_REG_KEY`), và bàn giao câu hỏi khởi chạy cuối cùng qua script tạm `FINISH_BAT`, giúp thư mục nguồn bộ cài đặt có thể được xóa hoặc di chuyển ngay lập tức.
+  - Cập nhật `OtaUpdateService.generateApplyUpdateScript` neo CWD về thư mục đích (`cd /d "%DST_DIR%"`) và khởi chạy ứng dụng mới với tùy chọn `/D "%DST_DIR%"`.
+- **Tách biệt và Độc lập hóa Gói Python CLI**:
+  - Toàn bộ mã nguồn Python CLI đã được chuyển giao sang repository độc lập `JA_LanMes_Cli`.
+  - Củng cố script `build.bat`, `windows/packaging/package_dist.ps1` và test fixture `test/package_dist_smoke.ps1` nhằm đảm bảo mã nguồn CLI không bao giờ bị đóng gói nhầm vào file nén phát hành của GUI.
+
+### 🐛 Sửa lỗi & Tối ưu hóa
+- **Bỏ qua Hậu tố Metadata Build khi So sánh Phiên bản OTA**:
+  - `OtaUpdateService` bỏ qua phần `+build` khi so sánh phiên bản nếu `appVersion` hiện tại không chứa `+build`, tránh so sánh sai lệch.
+  - Tự động bóc tách các tiêu đề thô dạng `TAG=...`, `TITLE=...`, `BODY=` khỏi trường `releaseNotes` khi nạp từ file cấu hình.
+- **Bổ sung Bộ Kiểm thử Tự động Toàn diện**:
+  - `test/installer_unlock_test.dart`: Kiểm tra cơ chế giải phóng CWD của bộ cài và OTA update script.
+  - `test/manual_ip_add_and_new_friend_test.dart`: Kiểm tra phân giải điểm cuối `IPv4:port`, khớp cổng trên loopback và xác thực giao diện.
+  - `test/package_dist_smoke.ps1`: Kiểm tra hồi quy ngăn chặn mã nguồn CLI lọt vào gói nén ZIP của GUI.
+
+### 📦 Phát hành
+- Đồng bộ version `1.13.0+23` trong `pubspec.yaml`, `constants.dart`, `Runner.rc`, `installer.iss`, `install.bat`, `ABOUT.txt`, `USERGUIDE.md`, `README.md`, `RELEASE_NOTES.md`.
+
 ## [1.12.0] - 2026-10-31
 
 ### 🚀 Nâng cấp & Tính năng mới

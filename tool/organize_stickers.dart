@@ -22,10 +22,7 @@ void main() async {
   }
 
   // Quét các thư mục pack (0, 1, 2...)
-  final packDirs = sourceRoot
-      .listSync()
-      .whereType<Directory>()
-      .toList()
+  final packDirs = sourceRoot.listSync().whereType<Directory>().toList()
     ..sort((a, b) => a.path.compareTo(b.path));
 
   if (packDirs.isEmpty) {
@@ -47,13 +44,15 @@ void main() async {
 
     // Quét các thư mục con hoặc file bên trong packDir
     final entries = packDir.listSync(recursive: true);
-    
+
     // Nhóm theo thư mục cha chứa 2 file
     final Map<String, List<File>> stickerGroups = {};
     for (final entry in entries) {
       if (entry is File) {
         final ext = entry.path.toLowerCase();
-        if (ext.endsWith('.png') || ext.endsWith('.webp') || !ext.contains('.')) {
+        if (ext.endsWith('.png') ||
+            ext.endsWith('.webp') ||
+            !ext.contains('.')) {
           final parentPath = entry.parent.path;
           stickerGroups.putIfAbsent(parentPath, () => []).add(entry);
         }
@@ -95,7 +94,10 @@ void main() async {
 
         if (maxRatio > 1.5 && widest != null) {
           spriteFile = widest;
-          previewFile = files.firstWhere((f) => f.path != widest!.path, orElse: () => files.first);
+          previewFile = files.firstWhere(
+            (f) => f.path != widest!.path,
+            orElse: () => files.first,
+          );
         } else {
           // Fallback: file có dung lượng lớn hơn là file động
           files.sort((a, b) => b.lengthSync().compareTo(a.lengthSync()));
@@ -108,7 +110,9 @@ void main() async {
 
       // Copy file preview
       if (previewFile != null) {
-        final targetPreview = File('${targetPackDir.path}/s${idStr}_preview.png');
+        final targetPreview = File(
+          '${targetPackDir.path}/s${idStr}_preview.png',
+        );
         previewFile.copySync(targetPreview.path);
       }
 
@@ -128,12 +132,16 @@ void main() async {
       totalStickers++;
     }
 
-    print('   ✓ Đã chuẩn hóa ${stickerIndex - 1} sticker vào: assets/stickers/pack_$packName/');
+    print(
+      '   ✓ Đã chuẩn hóa ${stickerIndex - 1} sticker vào: assets/stickers/pack_$packName/',
+    );
     totalPacks++;
   }
 
   print('\n======================================================');
-  print('🎉 HOÀN TẤT! Đã chuẩn hóa $totalStickers sticker trong $totalPacks bộ.');
+  print(
+    '🎉 HOÀN TẤT! Đã chuẩn hóa $totalStickers sticker trong $totalPacks bộ.',
+  );
   print('👉 Thư mục đích: assets/stickers/');
   print('======================================================\n');
 }
@@ -155,7 +163,9 @@ ImageDimensions? _getImageDimensions(File file) {
         bytes[1] == 0x50 &&
         bytes[2] == 0x4E &&
         bytes[3] == 0x47) {
-      final buffer = ByteData.sublistView(Uint8List.fromList(bytes.sublist(16, 24)));
+      final buffer = ByteData.sublistView(
+        Uint8List.fromList(bytes.sublist(16, 24)),
+      );
       final width = buffer.getUint32(0, Endian.big);
       final height = buffer.getUint32(4, Endian.big);
       return ImageDimensions(width, height);
