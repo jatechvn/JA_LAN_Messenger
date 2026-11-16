@@ -114,7 +114,7 @@ set "REG_KEY=HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\JA_LAN_Mes
 if defined JA_INSTALL_REG_KEY set "REG_KEY=%JA_INSTALL_REG_KEY%"
 
 reg add "%REG_KEY%" /v "DisplayName" /t REG_SZ /d "JA LAN Messenger" /f >nul
-reg add "%REG_KEY%" /v "DisplayVersion" /t REG_SZ /d "1.13.0" /f >nul
+reg add "%REG_KEY%" /v "DisplayVersion" /t REG_SZ /d "1.14.0" /f >nul
 reg add "%REG_KEY%" /v "Publisher" /t REG_SZ /d "JA Tech" /f >nul
 reg add "%REG_KEY%" /v "DisplayIcon" /t REG_SZ /d "%TARGET_DIR%\ja_lan_messenger.exe,0" /f >nul
 reg add "%REG_KEY%" /v "InstallLocation" /t REG_SZ /d "%TARGET_DIR%" /f >nul

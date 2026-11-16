@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../theme/theme_provider.dart';
 import '../../localization/app_locale.dart';
-import '../../services/app_power_manager.dart';
 
 /// Glassmorphic dialog prompting user choice on window close:
 /// - Minimize to tray
@@ -20,26 +19,10 @@ class CloseActionDialog extends StatefulWidget {
       barrierDismissible: true,
       barrierLabel: 'CloseActionDialog',
       barrierColor: Colors.black.withValues(alpha: 0.45),
-      transitionDuration: const Duration(milliseconds: 180),
+      // Close-to-tray can suspend Navigator tickers immediately after pop.
+      // This route must dismiss without waiting for another animation frame.
+      transitionDuration: Duration.zero,
       pageBuilder: (ctx, anim1, anim2) => const CloseActionDialog(),
-      transitionBuilder: (ctx, anim1, anim2, child) {
-        return ValueListenableBuilder<bool>(
-          valueListenable: AppPowerManager.instance.indicatorsAnimationNotifier,
-          builder: (_, active, _) {
-            // A paused Navigator ticker must not leave the close prompt invisible.
-            if (!active) return child;
-            return FadeTransition(
-              opacity: CurvedAnimation(parent: anim1, curve: Curves.easeOut),
-              child: ScaleTransition(
-                scale: Tween<double>(begin: 0.94, end: 1.0).animate(
-                  CurvedAnimation(parent: anim1, curve: Curves.easeOut),
-                ),
-                child: child,
-              ),
-            );
-          },
-        );
-      },
     );
   }
 

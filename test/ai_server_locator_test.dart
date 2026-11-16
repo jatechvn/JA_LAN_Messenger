@@ -1,11 +1,161 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ja_lan_messenger/modules/models/peer_model.dart';
 import 'package:ja_lan_messenger/modules/services/ai_server_locator.dart';
 import 'package:ja_lan_messenger/modules/services/ai_service.dart';
 
 void main() {
   final old = Uri.parse('http://192.0.2.8:11434');
+  test(
+    'online BeeBEEP hostname bypasses DNS and preserves AI port/path',
+    () async {
+      final probes = <Uri>[];
+      final locator = AiServerLocator(
+        resolve: (_) => throw StateError('DNS must not be needed'),
+        multicastResolve: (_) => throw StateError('mDNS must not be needed'),
+        reverse: (_) => throw StateError('PTR must not be needed'),
+        probe: (uri) async {
+          probes.add(uri);
+          return true;
+        },
+      );
+      final found = await locator.locate(
+        old.replace(path: '/proxy'),
+        [],
+        peers: [
+          PeerModel(
+            id: 'bee',
+            name: 'JA-AI-SERVER',
+            ip: '192.0.2.9:6477',
+            port: 6477,
+            hostname: '${AiServerLocator.machineName.toUpperCase()}.local.',
+            status: PeerStatus.busy,
+            isBeebeep: true,
+          ),
+        ],
+      );
+      expect(found, Uri.parse('http://192.0.2.9:11434/proxy'));
+      expect(probes, [found]);
+    },
+  );
+
+  test(
+    'unrelated, offline, group and nicknamed peers cannot select an AI server',
+    () async {
+      final probes = <String>[];
+      final locator = AiServerLocator(
+        resolve: (_) async => [],
+        multicastResolve: (_) async => [],
+        reverse: (_) async => 'other-server.local',
+        probe: (uri) async {
+          probes.add(uri.host);
+          return true;
+        },
+      );
+      final peers = [
+        PeerModel(
+          id: 'other',
+          name: 'JA-AI-SERVER',
+          hostname: 'unrelated',
+          ip: '203.0.113.1',
+          customNickname: AiServerLocator.machineName,
+        ),
+        PeerModel(
+          id: 'renamed',
+          name: AiServerLocator.machineName,
+          hostname: 'another-host',
+          ip: '203.0.113.5',
+        ),
+        PeerModel(
+          id: 'offline',
+          name: 'AI',
+          hostname: AiServerLocator.machineName,
+          ip: '203.0.113.2',
+          status: PeerStatus.offline,
+        ),
+        PeerModel(
+          id: 'group',
+          name: AiServerLocator.machineName,
+          ip: '203.0.113.3',
+          isGroup: true,
+        ),
+        PeerModel(
+          id: '__AI_ASSISTANT__',
+          name: AiServerLocator.machineName,
+          ip: '203.0.113.4',
+        ),
+      ];
+      expect(await locator.locate(old, ['192.0.2.0/30'], peers: peers), isNull);
+      expect(probes, unorderedEquals(['192.0.2.1', '192.0.2.2']));
+    },
+  );
+
+  test(
+    'matching peer without Ollama is rejected and stale known IPs are not adopted',
+    () async {
+      final probes = <String>[];
+      final locator = AiServerLocator(
+        resolve: (_) async => [],
+        multicastResolve: (_) async => [],
+        probe: (uri) async {
+          probes.add(uri.host);
+          return uri.host == '203.0.113.9';
+        },
+      );
+      final peer = PeerModel(
+        id: 'bee',
+        name: 'AI',
+        hostname: AiServerLocator.machineName,
+        ip: '192.0.2.9',
+        knownIps: {'203.0.113.9'},
+      );
+      expect(
+        await locator.locate(old, ['192.0.2.0/30'], peers: [peer]),
+        isNull,
+      );
+      expect(probes, isNot(contains('203.0.113.9')));
+    },
+  );
+
+  for (final change in ['identity', 'address', 'offline', 'cancelled']) {
+    test('peer $change change during probe invalidates discovery', () async {
+      final peer = PeerModel(
+        id: 'bee',
+        name: 'AI',
+        hostname: AiServerLocator.machineName,
+        ip: '192.0.2.9',
+      );
+      var cancelled = false;
+      final locator = AiServerLocator(
+        resolve: (_) async => [],
+        multicastResolve: (_) async => [],
+        probe: (uri) async {
+          if (uri.host != '192.0.2.9') return false;
+          switch (change) {
+            case 'identity':
+              peer.hostname = 'another-host';
+            case 'address':
+              peer.ip = '192.0.2.10';
+            case 'offline':
+              peer.status = PeerStatus.offline;
+            case 'cancelled':
+              cancelled = true;
+          }
+          return true;
+        },
+      );
+      expect(
+        await locator.locate(
+          old,
+          ['192.0.2.0/30'],
+          peers: [peer],
+          cancelled: () => cancelled,
+        ),
+        isNull,
+      );
+    });
+  }
   test('DNS exact machine discovery preserves port and path', () async {
     final locator = AiServerLocator(
       resolve: (_) async => ['192.0.2.9'],
@@ -17,6 +167,22 @@ void main() {
       Uri.parse('http://192.0.2.9:11434/proxy'),
     );
   });
+  test(
+    'advertised account at hostname works when separate hostname is missing',
+    () async {
+      final locator = AiServerLocator(
+        resolve: (_) => throw StateError('DNS must not be needed'),
+        multicastResolve: (_) => throw StateError('mDNS must not be needed'),
+        probe: (_) async => true,
+      );
+      final peer = PeerModel(
+        id: 'bee',
+        name: 'ja-ai@${AiServerLocator.machineName}',
+        ip: '192.0.2.9',
+      );
+      expect((await locator.locate(old, [], peers: [peer]))!.host, '192.0.2.9');
+    },
+  );
   test(
     'LAN sweep rejects unrelated Ollama and accepts matching hostname',
     () async {

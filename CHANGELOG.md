@@ -2,6 +2,30 @@
 
 All notable changes to the **JA LAN Messenger** project will be documented in this file.
 
+## [1.14.0] - 2026-11-16
+
+### 🚀 Nâng cấp & Tính năng mới
+- **Tối ưu hóa Kiến trúc & Tách mô-đun Cohesion (AI Navigation & Modularity)**:
+  - Tách 4 tệp mã nguồn lớn nhất thành các mô-đun gắn kết (cohesive parts) với kiến trúc rõ ràng: `messenger_coordinator.dart` (tách thành thư mục `coordinator/`), `chat_view_panel.dart` (thư mục `chat_view/`), `settings_dialog.dart` (thư mục `settings/`), `peer_list_view.dart` (thư mục `peer_list/`).
+  - Bảo toàn 100% API công khai, virtual methods forwarding, virtual overrides và hợp đồng giao tiếp với `JA_LanMes_Cli`.
+  - Bổ sung tài liệu điều hướng kiến trúc toàn diện: [docs/AI_CONTEXT.md](docs/AI_CONTEXT.md) và các tệp hướng dẫn `MODULE.md` tại các thư mục trọng yếu.
+- **Tự động Khôi phục & Nhận diện Máy chủ AI qua Danh tính BeeBEEP (AI Server Auto-Recovery)**:
+  - Khắc phục lỗi tự động nhận diện máy chủ JA-AI (Ollama) khi DNS/mDNS không phân giải được hostname: `AiServerLocator` tự động tận dụng danh tính máy trạm nhận được từ gói tin bắt tay BeeBEEP, đối chiếu hostname / `account@hostname` và thăm dò trực tiếp endpoint API Ollama tại IP đang hoạt động của peer.
+  - Tự động bỏ qua các liên hệ nhóm, AI ảo, liên hệ offline và bảo toàn cấu hình cổng/đường dẫn tùy chỉnh của người dùng.
+- **Sửa Lỗi Đóng Cửa sổ khi Tiết kiệm Năng lượng (Power Gate & Close Dialog)**:
+  - Khắc phục lỗi hộp thoại xác nhận đóng (`CloseActionDialog`) bị đơ hoặc không thể nhấn nút do cơ chế tạm ngưng vẽ frame của `PowerAwareWidgetsBinding` khi cửa sổ không active/ẩn.
+  - Tự động đối soát và kích hoạt lại frame render khi người dùng chuẩn bị đóng cửa sổ hoặc tương tác khay hệ thống.
+  - Khắc phục race condition khi lưu cấu hình OTA có thể ghi đè lựa chọn đóng cửa sổ đã ghi nhớ trong `AppPreferences`.
+
+### 🐛 Sửa lỗi & Bổ sung Kiểm thử
+- Mở rộng bộ kiểm thử tự động toàn diện lên **621 tests (100% pass)**:
+  - Bổ sung `test/close_dialog_power_gate_test.dart` kiểm thử đối soát native focus, khôi phục tương tác và lưu trữ cấu hình đóng cửa sổ.
+  - Bổ sung `test/ai_recovery_coordinator_test.dart` và `test/ai_server_locator_test.dart` kiểm thử khôi phục máy chủ AI qua danh tính thiết bị và endpoint loopback không phụ thuộc DNS.
+  - Bổ sung `test/coordinator_dispatch_test.dart` kiểm thử toàn vẹn method dispatch và virtual overrides của `MessengerCoordinator`.
+
+### 📦 Phát hành
+- Đồng bộ version `1.14.0+24` trong `pubspec.yaml`, `constants.dart`, `Runner.rc`, `installer.iss`, `install.bat`, `ABOUT.txt`, `USERGUIDE.md`, `README.md`, `RELEASE_NOTES.md`.
+
 ## [1.13.0] - 2026-11-14
 
 ### 🚀 Nâng cấp & Tính năng mới

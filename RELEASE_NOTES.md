@@ -1,13 +1,13 @@
-TAG=v1.13.0
-TITLE=JA LAN Messenger v1.13.0 — IPv4:Port Bridge Support, Installer Directory Unlock & CLI Separation
+TAG=v1.14.0
+TITLE=JA LAN Messenger v1.14.0 — AI Server Auto-Recovery, Power Gate Close Fix & Cohesion Modularization
 BODY=
-## JA LAN Messenger v1.13.0 — IPv4:Port Bridge Support, Installer Directory Unlock & CLI Separation
+## JA LAN Messenger v1.14.0 — AI Server Auto-Recovery, Power Gate Close Fix & Cohesion Modularization
 
-- **Hỗ trợ Điểm cuối IPv4:port (Bridge & Multi-Host)**: Cho phép nhập địa chỉ dạng `IPv4` hoặc `IPv4:cổng` (1–65535) trong hộp thoại Thêm bạn IP, hỗ trợ kết nối đồng thời nhiều máy trạm được bắc cầu qua loopback từ CLI bridge độc lập (`JA_LanMes_Cli`).
-- **Mở khóa Thư mục Bộ cài đặt Tức thì (CWD Unlock)**: Tự động neo thư mục làm việc về thư mục chứa file thực thi và bàn giao tiến trình qua script độc lập, đảm bảo thư mục giải nén bộ cài đặt có thể xóa hoặc di chuyển ngay sau khi cài đặt.
-- **Tách biệt Kiến trúc Python CLI**: Mã nguồn và bộ công cụ CLI được duy trì tại repository độc lập `JA_LanMes_Cli`, bộ cài và file nén GUI được tinh gọn tối đa.
-- **Tối ưu hóa OTA Update**: Bỏ qua hậu tố build metadata khi so sánh phiên bản cập nhật và làm sạch định dạng release notes markdown.
-- **Đồng bộ Toàn diện Phiên bản**: Cập nhật `v1.13.0+23` vào toàn bộ mã nguồn, metadata Windows Runner, tài liệu hướng dẫn và bộ cài đặt.
+- **Tự động Khôi phục Máy chủ AI qua Danh tính BeeBEEP**: Tự động nhận diện và kết nối máy chủ JA-AI (Ollama) bằng cách đối chiếu hostname máy trạm từ gói tin bắt tay P2P và thăm dò trực tiếp endpoint API tại IP của máy chủ khi DNS/mDNS không phân giải được.
+- **Sửa Lỗi Đơ Hộp thoại Đóng Cửa sổ (Power Gate Fix)**: Khắc phục triệt để lỗi không nhấn được nút trong hộp thoại đóng khi ứng dụng đang ở chế độ tiết kiệm năng lượng (dừng render frame khi inactive), tự động đánh thức frame render và sửa race condition lưu cấu hình đóng cửa sổ.
+- **Tách Mô-đun Gắn kết & Bản đồ Kiến trúc (Cohesion Modularization)**: Phân tách 4 tệp mã nguồn lớn nhất thành các mô-đun gắn kết (parts), bảo toàn 100% API công khai và hợp đồng giao tiếp với `JA_LanMes_Cli`, bổ sung tài liệu kiến trúc `AI_CONTEXT.md` và các hướng dẫn `MODULE.md`.
+- **Mở rộng Bộ Kiểm thử Tự động**: Tích hợp các bộ test mới nâng tổng số kiểm thử lên 621 tests (100% pass).
+- **Đồng bộ Toàn diện Phiên bản**: Cập nhật `v1.14.0+24` vào toàn bộ mã nguồn, metadata Windows Runner, tài liệu hướng dẫn và bộ cài đặt.
 
 ### Cài đặt
 Chạy file `install.bat` để cài đặt ứng dụng vào Windows (có shortcut Desktop & Start Menu, đăng ký Control Panel), hoặc chạy trực tiếp `ja_lan_messenger.exe` để sử dụng dạng portable. Xem file `USERGUIDE.md` đính kèm để biết thêm chi tiết.

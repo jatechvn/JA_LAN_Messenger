@@ -1,4 +1,4 @@
-# Hướng dẫn sử dụng JA LAN Messenger v1.13.0
+# Hướng dẫn sử dụng JA LAN Messenger v1.14.0
 
 Ứng dụng nhắn tin và truyền tập tin ngang hàng (P2P) tốc độ cao dành riêng cho mạng cục bộ văn phòng (LAN), không cần máy chủ trung gian (Serverless), tích hợp Trợ lý Trí tuệ Nhân tạo JA-AI.
 
@@ -7,7 +7,7 @@
 ## 1. Yêu cầu hệ thống & Cài đặt / Gỡ cài đặt
 - **Hệ điều hành:** Windows 10 (bản 1809 trở lên) hoặc Windows 11 (64-bit).
 - **Cài đặt chuẩn (Khuyên dùng):**
-  1. Tải về gói phát hành `JA_LAN_Messenger_v1.13.0_Windows_x64.zip` và giải nén.
+  1. Tải về gói phát hành `JA_LAN_Messenger_v1.14.0_Windows_x64.zip` và giải nén.
   2. Nhấp đúp chạy file **`install.bat`**. Ứng dụng sẽ tự động được cài đặt vào `%LOCALAPPDATA%\Programs\JA_LAN_Messenger` (không đòi hỏi quyền Administrator).
   3. Phím tắt sẽ tự động được tạo ra **Màn hình chính (Desktop)** và **Menu Start**.
   4. Ứng dụng được đăng ký chính thức vào Windows, có thể quản lý qua **Control Panel** hoặc **Settings**.
@@ -53,6 +53,7 @@
   - Khung chat AI hỗ trợ chọn nhanh model từ popup trên thanh tiêu đề và nút Làm mới tức thì.
   - Tự động chuyển đổi mô hình (Auto-switch) khi đổi máy chủ AI mà model cũ không tồn tại.
 - **Khối suy nghĩ (Thought Process):** Đối với các model hỗ trợ Thinking (như `Qwen 3.5`, `DeepSeek R1`), bạn có thể bật/tắt chế độ Thinking và xem quá trình suy luận chi tiết qua khối accordion thu gọn.
+- **Tự dò lại IP máy AI khi mất kết nối:** App ưu tiên địa chỉ hiện tại của máy AI đã được nhận diện qua BeeBEEP/JA Messenger, xác minh API Ollama trước khi lưu IP mới, rồi mới thử DNS/mDNS và quét LAN nếu cần. Máy vừa xuất hiện hoặc đổi IP được thử lại ngay. Trạng thái BeeBEEP online không đồng nghĩa dịch vụ AI đã sẵn sàng; nếu không tìm được API, app vẫn báo lỗi kết nối.
 
 ### 2.5. Tinh chỉnh hiệu ứng kính mờ (Live Glass Tuning)
 - Trong **Cài đặt > Cài đặt nâng cao > Hiệu ứng kính mờ**:

@@ -164,6 +164,7 @@ class AppPreferences extends ChangeNotifier {
 
   String _closeBehavior = 'ask'; // 'ask', 'minimize', 'exit'
   bool _rememberCloseBehavior = false;
+  bool _closeBehaviorInitialized = false;
 
   bool _aiEnabled = true;
   String _aiServerUrl = 'http://172.21.175.20:11434';
@@ -332,6 +333,7 @@ class AppPreferences extends ChangeNotifier {
     _loadGeneration++;
     _closeBehavior = 'ask';
     _rememberCloseBehavior = false;
+    _closeBehaviorInitialized = true;
     _aiEnabled = true;
     _aiServerUrl = 'http://172.21.175.20:11434';
     _aiSelectedModel = 'qwen2.5-vl:3b';
@@ -386,6 +388,7 @@ class AppPreferences extends ChangeNotifier {
     _loadGeneration++;
     resetToDefaults();
     _customFile = file;
+    _closeBehaviorInitialized = false;
   }
 
   File _getPrefFile() {
@@ -420,13 +423,7 @@ class AppPreferences extends ChangeNotifier {
               ? nickname.trim()
               : null;
           if (currentGen != _loadGeneration) return;
-          if (data.containsKey('closeBehavior')) {
-            _closeBehavior = data['closeBehavior'] as String? ?? 'ask';
-          }
-          if (data.containsKey('rememberCloseBehavior')) {
-            _rememberCloseBehavior =
-                data['rememberCloseBehavior'] as bool? ?? false;
-          }
+          _restoreCloseBehavior(data);
           if (data.containsKey('aiEnabled')) {
             _aiEnabled = data['aiEnabled'] as bool? ?? true;
           }
@@ -675,11 +672,22 @@ class AppPreferences extends ChangeNotifier {
 
   Future<void> setCloseBehavior(String behavior, {bool? remember}) async {
     _closeBehavior = behavior;
-    if (remember != null) {
-      _rememberCloseBehavior = remember;
-    }
+    // Settings has no separate remember checkbox: a fixed action is the choice.
+    _rememberCloseBehavior = behavior != 'ask' && (remember ?? true);
+    _closeBehaviorInitialized = true;
     notifyListeners();
     await _save();
+  }
+
+  void _restoreCloseBehavior(Map<String, dynamic> data) {
+    final behavior = data['closeBehavior'];
+    if (behavior is String &&
+        const ['ask', 'minimize', 'exit'].contains(behavior)) {
+      _closeBehavior = behavior;
+    }
+    final remember = data['rememberCloseBehavior'];
+    if (remember is bool) _rememberCloseBehavior = remember;
+    _closeBehaviorInitialized = true;
   }
 
   Future<void> setAiConfig({
@@ -878,6 +886,9 @@ class AppPreferences extends ChangeNotifier {
           }
         } catch (_) {}
       }
+      // A startup write can invalidate an in-flight load. Preserve the saved
+      // close choice before writing defaults, unless the user explicitly set it.
+      if (!_closeBehaviorInitialized) _restoreCloseBehavior(data);
       data['closeBehavior'] = _closeBehavior;
       if (_localNickname != null) data['localNickname'] = _localNickname;
       data['rememberCloseBehavior'] = _rememberCloseBehavior;

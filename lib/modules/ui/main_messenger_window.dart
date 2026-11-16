@@ -330,6 +330,9 @@ class _MainMessengerWindowState extends State<MainMessengerWindow>
       }
 
       if (!mounted) return;
+      // A title-bar close may arrive before the matching focus notification.
+      await AppPowerManager.instance.synchronizeNative(isAlive: () => mounted);
+      if (!mounted) return;
       final result = await CloseActionDialog.show(context);
       if (result != null) {
         final action = result['action'] as String;

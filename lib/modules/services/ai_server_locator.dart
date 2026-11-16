@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import '../models/peer_model.dart';
 import '../network/network_utils.dart';
 
 /// Only accepts the named machine, never the first open Ollama port on the LAN.
@@ -23,21 +24,41 @@ class AiServerLocator {
        reverse = reverse ?? _reverse,
        probe = probe ?? _probe;
 
+  static bool _matchesMachine(String host) =>
+      host
+          .trim()
+          .toLowerCase()
+          .replaceFirst(RegExp(r'\.local\.?$', caseSensitive: false), '')
+          .replaceFirst(RegExp(r'\.$'), '') ==
+      machineName.toLowerCase();
+
+  /// Use the advertised machine identity, never a user-edited contact nickname.
+  static bool isTargetPeer(PeerModel peer) {
+    if (peer.isGroup ||
+        peer.isAllUsers ||
+        peer.isAiAssistant ||
+        peer.status == PeerStatus.offline) {
+      return false;
+    }
+    final hostname = (peer.hostname ?? '').trim();
+    if (hostname.isNotEmpty && hostname != '???') {
+      return _matchesMachine(hostname);
+    }
+    final separator = peer.name.lastIndexOf('@');
+    return separator >= 0 &&
+        _matchesMachine(peer.name.substring(separator + 1));
+  }
+
   Future<Uri?> locate(
     Uri old,
     List<String> subnets, {
+    Iterable<PeerModel> peers = const [],
     bool Function()? cancelled,
   }) async {
     final clock = Stopwatch()..start();
     bool stop() => clock.elapsed >= budget || (cancelled?.call() ?? false);
     final checked = <String>{};
     Uri endpoint(String ip) => old.replace(host: ip);
-    bool matches(String host) =>
-        host
-            .toLowerCase()
-            .replaceFirst(RegExp(r'\.local\.?$', caseSensitive: false), '')
-            .replaceFirst(RegExp(r'\.$'), '') ==
-        machineName.toLowerCase();
     Future<bool> valid(String ip) async {
       if (stop() || !checked.add(ip)) return false;
       try {
@@ -47,6 +68,23 @@ class AiServerLocator {
         return false;
       }
     }
+
+    // BeeBEEP/JA handshakes already supply a hostname and current address.
+    // Linux hosts need not publish DNS/PTR records for this route to work.
+    for (final peer in peers) {
+      if (stop()) return null;
+      if (!isTargetPeer(peer)) continue;
+      final address = NetworkUtils.parseIpv4Endpoint(peer.ip, peer.port);
+      if (address == null) continue;
+      if (await valid(address.ip) &&
+          isTargetPeer(peer) &&
+          NetworkUtils.parseIpv4Endpoint(peer.ip, peer.port)?.ip ==
+              address.ip) {
+        // Keep the configured AI port/path; the advertised port is for chat.
+        return endpoint(address.ip);
+      }
+    }
+    if (stop()) return null;
 
     // DNS and mDNS cover Linux machines without requiring a Messenger install.
     final answers = await Future.wait([
@@ -79,7 +117,7 @@ class AiServerLocator {
         if (!await valid(ip)) continue;
         try {
           final name = await reverse(ip).timeout(const Duration(seconds: 1));
-          if (!stop() && matches(name)) found ??= endpoint(ip);
+          if (!stop() && _matchesMachine(name)) found ??= endpoint(ip);
         } catch (_) {}
       }
     }
